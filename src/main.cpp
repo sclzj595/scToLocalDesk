@@ -19,7 +19,12 @@
     #include "core/interface/icrypto.hpp"
     #include "foundation/config_parser.hpp"
     #include "foundation/event_bus.hpp"
+#if SCLD_HAS_SPDLOG
+    // 日志后端：vendored spdlog（rotating + flush_on(Warn)），兜底见 #else
+    #include "foundation/logger/spdlog_logger.hpp"
+#else
     #include "foundation/logger/file_logger.hpp"
+#endif
     #include "foundation/thread_pool.hpp"
     #include "implement/capture/gdi_capture.hpp"
     #include "implement/crypto/crypto_factory.hpp"
@@ -42,7 +47,11 @@
     #include "service/screen_stream_service.hpp"
 
 using namespace sc::localdesk;
+#if SCLD_HAS_SPDLOG
+using sc::localdesk::foundation::SpdlogLogger;
+#else
 using sc::localdesk::foundation::FileLogger;
+#endif
 using sc::localdesk::foundation::EventBus;
 using sc::localdesk::foundation::IniConfig;
 using sc::localdesk::foundation::LogLevel;
@@ -103,11 +112,16 @@ int main(int argc, char* argv[]) {
     }
 
     // ---------------- DI 组装（Doc03 §5） ----------------
-    // 文件日志：exe 旁 logs/（Doc17），5MB×5 滚动归档；回显 stderr 保持冒烟诊断
-    const std::filesystem::path exe_dir =
-        std::filesystem::path(QApplication::applicationDirPath().toStdU16String());
-    auto logger = std::make_shared<FileLogger>(exe_dir / "logs" / "scToLocalDesk.log",
-                                               5 * 1024 * 1024, 5, true);
+    // 日志：exe 旁 logs/（Doc17），5MB×5 滚动；spdlog 后端 flush_on(Warn)，
+    // 兜底 FileLogger 每行 flush。二者均含 stderr 回显口径（spdlog 版经 wincolor 控制台，演示期文件为准）
+    const std::filesystem::path log_file =
+        std::filesystem::path(QApplication::applicationDirPath().toStdU16String())
+        / "logs" / "scToLocalDesk.log";
+#if SCLD_HAS_SPDLOG
+    auto logger = std::make_shared<SpdlogLogger>(log_file.u8string());
+#else
+    auto logger = std::make_shared<FileLogger>(log_file, 5 * 1024 * 1024, 5, true);
+#endif
     logger->set_level(parse_log_level(cfg.log_level));
     auto bus = std::make_shared<EventBus>();
     auto crypto = make_default_crypto();

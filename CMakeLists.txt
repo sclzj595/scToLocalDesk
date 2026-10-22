@@ -68,7 +68,13 @@ else()
     target_compile_options(sc_localdesk_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-if(SCTOLOCALDESK_WITH_SPDLOG)
+# 日志后端：vendored spdlog（header-only 平铺树）优先；缺失时按旧选项
+# find_package 兜底；都没有则回落 FileLogger（SCLD_HAS_SPDLOG 不定义）
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/spdlog.h")
+    target_include_directories(sc_localdesk_core PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
+    target_compile_definitions(sc_localdesk_core PUBLIC SCLD_HAS_SPDLOG=1)
+elseif(SCTOLOCALDESK_WITH_SPDLOG)
     find_package(spdlog CONFIG REQUIRED)
     target_link_libraries(sc_localdesk_core PUBLIC spdlog::spdlog)
     target_compile_definitions(sc_localdesk_core PUBLIC SCLD_HAS_SPDLOG=1)

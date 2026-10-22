@@ -1,7 +1,8 @@
 // ============================================================
 // scToLocalDesk | src/foundation/logger/ilogger.hpp
 // 日志抽象契约（Doc06 §6 / Doc12 §1）；实现：ConsoleLogger（内置兜底）、
-// SpdlogLogger（SCTOLOCALDESK_WITH_SPDLOG=ON 时编入）
+// FileLogger（滚动文件兜底）、SpdlogLogger（SCLD_HAS_SPDLOG：vendored
+// third_party/spdlog 优先，CMake 自动探测，find_package 兜底）
 // ============================================================
 #pragma once
 
