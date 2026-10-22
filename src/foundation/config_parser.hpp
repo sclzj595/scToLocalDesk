@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <mutex>
 #include <string>
@@ -31,7 +32,8 @@ public:
             return false;
         }
         FILE* fp = nullptr;
-        if (fopen_s(&fp, path_.string().c_str(), "rb") != 0 || fp == nullptr) {
+        // 宽字符打开：安装路径含中文/非 ASCII 时窄字符 fopen 会失败（企业环境常见）
+        if (_wfopen_s(&fp, path_.wstring().c_str(), L"rb") != 0 || fp == nullptr) {
             return false;
         }
         std::string section;
