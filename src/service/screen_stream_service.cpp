@@ -12,6 +12,7 @@
 #include "core/protocol/tlv.hpp"
 #include "foundation/event_bus.hpp"
 #include "foundation/logger/ilogger.hpp"
+#include "foundation/perf_counter.hpp"
 
 namespace sc::localdesk {
 
@@ -93,22 +94,44 @@ void ScreenStreamService::capture_loop(SendFn send, Options opt) {
     }
 
     const auto interval = std::chrono::milliseconds(1000 / (opt.fps > 0 ? opt.fps : 15));
+    const double budget_ms = static_cast<double>(interval.count());
     auto next_tick = std::chrono::steady_clock::now();
     VideoFrame frame;
 
+    // 采集+编码耗时可见性（perf_counter：吸收 NetComm MicroCounter 统计口径）
+    foundation::PerfCounter frame_perf;
+    constexpr uint64_t kPerfReportEvery = 300;   // 每 300 帧上报一次均值/峰值
+
     while (running_.load(std::memory_order_acquire)) {
         next_tick += interval;
-        if (capturer_->grab(frame)) {
-            std::vector<uint8_t> encoded;
-            if (encoder_->encode(frame, encoded) && !encoded.empty()) {
-                protocol::ScreenFrameHeader hdr;
-                hdr.width = frame.width;
-                hdr.height = frame.height;
-                hdr.timestamp_us = frame.timestamp_us != 0 ? frame.timestamp_us : now_us();
-                auto pkt = protocol::build_screen_frame(hdr, encoded.data(), encoded.size());
-                dropped_total_.fetch_add(queue_.push_overwrite(std::move(pkt)),
-                                         std::memory_order_relaxed);
+        {
+            foundation::ScopedPerf sp(frame_perf);   // grab+encode 全程计时
+            if (capturer_->grab(frame)) {
+                std::vector<uint8_t> encoded;
+                if (encoder_->encode(frame, encoded) && !encoded.empty()) {
+                    protocol::ScreenFrameHeader hdr;
+                    hdr.width = frame.width;
+                    hdr.height = frame.height;
+                    hdr.timestamp_us = frame.timestamp_us != 0 ? frame.timestamp_us : now_us();
+                    auto pkt = protocol::build_screen_frame(hdr, encoded.data(), encoded.size());
+                    dropped_total_.fetch_add(queue_.push_overwrite(std::move(pkt)),
+                                             std::memory_order_relaxed);
+                }
             }
+        }
+        // 帧预算超支：单帧告警（编码器/采集器性能退化的第一信号）
+        if (frame_perf.last_ms() > budget_ms) {
+            SCLD_LOG(log_, LogLevel::Warn, "stream",
+                     "帧处理超预算 last=" + std::to_string(frame_perf.last_ms())
+                         + "ms budget=" + std::to_string(budget_ms) + "ms");
+        }
+        // 周期统计上报：均值/峰值/最大吞吐参考
+        if (frame_perf.count() >= kPerfReportEvery) {
+            SCLD_LOG(log_, LogLevel::Info, "stream",
+                     "帧耗时统计 n=" + std::to_string(frame_perf.count())
+                         + " avg=" + std::to_string(frame_perf.avg_ms())
+                         + "ms max=" + std::to_string(frame_perf.max_ms()) + "ms");
+            frame_perf.reset();
         }
         // 丢帧聚合上报（Doc10 §3.2：连续丢弃上抛 StreamLag）
         if (dropped_total_.load(std::memory_order_relaxed) >= 100) {
