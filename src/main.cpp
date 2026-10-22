@@ -18,7 +18,10 @@
     #include "core/auth/unattended_authenticator.hpp"
     #include "core/interface/icrypto.hpp"
     #include "foundation/config_parser.hpp"
+    #include "foundation/enumx.hpp"
     #include "foundation/event_bus.hpp"
+    #include "foundation/hashx.hpp"
+    #include "foundation/jsonx.hpp"
 #if SCLD_HAS_SPDLOG
     // 日志后端：vendored spdlog（rotating + flush_on(Warn)），兜底见 #else
     #include "foundation/logger/spdlog_logger.hpp"
@@ -123,6 +126,17 @@ int main(int argc, char* argv[]) {
     auto logger = std::make_shared<FileLogger>(log_file, 5 * 1024 * 1024, 5, true);
 #endif
     logger->set_level(parse_log_level(cfg.log_level));
+
+    // third_party 头库自检：封装层链路通畅性（校验值/解析正确性）
+    {
+        const auto h = foundation::xxh3_64("scToLocalDesk", 0);
+        const auto j = foundation::json_parse(foundation::json_dump(
+            foundation::json{{"app", "scToLocalDesk"}, {"ver", 1}}));
+        SCLD_LOG(logger, LogLevel::Info, "main",
+                 "third_party ready: xxh3=" + std::to_string(h)
+                     + " json_ok=" + (j.has_value() && j->at("ver") == 1 ? "1" : "0")
+                     + " magic_enum=" + std::string(foundation::enum_name(LogLevel::Info)));
+    }
     auto bus = std::make_shared<EventBus>();
     auto crypto = make_default_crypto();
     auto pool = std::make_shared<ThreadPool>(4);

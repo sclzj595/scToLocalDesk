@@ -80,6 +80,29 @@ elseif(SCTOLOCALDESK_WITH_SPDLOG)
     target_compile_definitions(sc_localdesk_core PUBLIC SCLD_HAS_SPDLOG=1)
 endif()
 
+# ---------------------------------------------------------------
+# third_party 头库注册中心（全部 header-only，存在即启用，缺失自动降级）
+#   nlohmann/json   3.11.3  jsonx.hpp   协议信令/结构化配置（V1.0）
+#   xxHash          0.8.2   hashx.hpp  分片校验/指纹（FILE_CHUNK checksum）
+#   magic_enum      0.9.6   enumx.hpp  枚举反射（__has_include 双保险守卫）
+#   asio standalone 1.30.2  （预留）   TCP 直连/打洞二号线（未落位）
+# 约定：业务层只 include foundation/*x.hpp 封装头，禁止直接引库名
+# ---------------------------------------------------------------
+set(SCLD_TP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
+if(EXISTS "${SCLD_TP_DIR}/nlohmann/json.hpp")
+    target_include_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/nlohmann")
+endif()
+if(EXISTS "${SCLD_TP_DIR}/xxhash/xxhash.h")
+    target_include_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/xxhash")
+endif()
+if(EXISTS "${SCLD_TP_DIR}/magic_enum/include/magic_enum/magic_enum_all.hpp")
+    target_include_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/magic_enum/include")
+endif()
+if(EXISTS "${SCLD_TP_DIR}/asio/include/asio.hpp")
+    target_include_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/asio/include")
+    target_compile_definitions(sc_localdesk_core PUBLIC ASIO_STANDALONE)
+endif()
+
 # Qt 依赖红线静态断言：任何人往 core 里塞 Qt 头，链接/编译期直接失败
 if(TARGET sc_localdesk_core)
     add_custom_command(TARGET sc_localdesk_core POST_BUILD
