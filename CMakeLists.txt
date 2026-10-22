@@ -115,7 +115,6 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
 
         set(SCLD_QML_SOURCES
             src/main.cpp
-            src/ui/ui_main.cpp
             src/ui/qml.qrc
             src/implement/crypto/openssl_crypto.cpp
             src/platform/qt_adapter/qt_event_bridge.cpp
@@ -174,9 +173,14 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
             src/ui/qwidget/glass_theme.cpp
             src/ui/qwidget/glass_panel.cpp
             src/ui/qwidget/main_window.cpp
-            src/ui/qwidget/pages/pages.cpp
+            src/ui/qwidget/pages/pages.h           # AUTOMOC：pages.cpp 拆分后需显式列入以生成 moc
+            src/ui/qwidget/pages/toggle_switch.cpp
+            src/ui/qwidget/pages/device_list_page.cpp
+            src/ui/qwidget/pages/connect_code_page.cpp
+            src/ui/qwidget/pages/remote_view_page.cpp
+            src/ui/qwidget/pages/file_transfer_page.cpp
+            src/ui/qwidget/pages/settings_page.cpp
             src/ui/qwidget/popups/connect_confirm_dialog.cpp
-            src/ui/qwidget.qrc
             src/implement/crypto/openssl_crypto.cpp
             src/platform/qt_adapter/qt_event_bridge.cpp
             src/platform/qt_adapter/qt_udp_discovery.cpp
