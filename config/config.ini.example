@@ -1,0 +1,48 @@
+; scToLocalDesk 全量配置示例（契约唯一基准：docs/Doc17_Settings_Page.md）
+; 首次运行自动生成 config.ini；此处为 config.ini.example 交付模板
+
+[general]
+alias=FrontDesk-XiaoWang
+run_mode=controlled          ; controlled | controller
+view_mode=employee           ; employee | it
+
+[network]
+ws_port=8899
+heartbeat_interval_s=3
+offline_timeout_s=15
+send_queue_max_mb=8
+
+[discovery]
+multicast_enabled=true
+multicast_addr=239.255.88.99
+static_map=                  ; alias=ip:port;alias2=ip2:port2
+
+[session]
+encoder=mjpeg                ; mjpeg | h264
+capture=auto                 ; auto | dxgi | wgc
+fps=15                       ; 10 | 15 | 24 | 30
+quality=medium               ; low | medium | high | custom
+jpeg_quality=80              ; 1~100, quality=custom 时生效
+session_request_timeout_s=30
+
+[file]
+save_path=%USERPROFILE%\Desktop
+confirm_before_transfer=true
+chunk_size_kb=256            ; 64~1024
+overwrite=ask                ; ask | overwrite | rename
+
+[security]
+unattended_enabled=false     ; 无人值守总开关（docs/Doc16_Unattended_Mode.md）
+unattended_salt=             ; 16B 随机盐 hex
+unattended_password_key=     ; PBKDF2 派生密钥 hex（等价凭据，V1.2 评估 DPAPI 加密）
+unattended_verify_hash=      ; SHA256(K) hex，设置页密码校验
+unattended_fail_count=0
+
+[log]
+level=info                   ; trace | debug | info | warn | error | critical
+max_size_mb=10
+max_files=7
+
+[app]
+auto_start=false
+minimize_to_tray=true

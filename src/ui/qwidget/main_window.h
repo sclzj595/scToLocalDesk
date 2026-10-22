@@ -1,0 +1,46 @@
+// ============================================================
+// scToLocalDesk | src/ui/qwidget/main_window.h
+// QWidget 版主窗口（Doc13 §四.1）：玻璃标题栏 + Dock + 内容栈
+// ============================================================
+#pragma once
+
+#include "glass_panel.h"
+
+#include <QList>
+
+class QLabel;
+class QMenuBar;
+class QStackedWidget;
+class QTimer;
+
+namespace sc::localdesk::ui {
+
+class MainWindow final : public FramelessWindow {
+    Q_OBJECT
+
+public:
+    explicit MainWindow();
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
+private:
+    QWidget* makeTitleBar();
+    QWidget* makeDock();
+    void showToast(const QString& text);
+    /// Dock 选中态（对齐 QML：左缘主色竖线 + 图标变主色）
+    void setDockIndex(int idx);
+    /// 按当前栈页刷新 Dock 样式（选中竖线 + 图标染色）
+    void updateDockStyle();
+    /// 主题应用统一入口（标题栏按钮 / 菜单 / 设置页三处共用，保证联动一致）
+    void applyTheme(bool dark);
+
+    QLabel* themeBtn_{nullptr};
+    QStackedWidget* stack_{nullptr};
+    QList<QLabel*> dockBtns_;
+    QList<QLabel*> dockBars_;
+    QLabel* toastLbl_{nullptr};
+    QTimer* toastTimer_{nullptr};
+};
+
+}  // namespace sc::localdesk::ui

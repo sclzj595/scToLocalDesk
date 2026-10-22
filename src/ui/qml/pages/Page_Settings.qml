@@ -1,0 +1,288 @@
+// ============================================================
+// scToLocalDesk | src/ui/qml/pages/Page_Settings.qml
+// 配置页（Doc13 §四.5 / Doc17 全量配置项）：分组卡片布局
+// 卡片纯色底（红线2），仅体现控件规范：Switch/TextField/按钮
+// ============================================================
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import ".."
+
+Item {
+    id: root
+
+    signal configChanged(string key, string value)
+
+    ScrollView {
+        anchors.fill: parent
+        contentWidth: availableWidth
+
+        ColumnLayout {
+            width: root.width - 56
+            x: 28
+            y: 24
+            spacing: 16
+
+            Text {
+                text: "设置"
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontTitle
+                font.weight: Font.Medium
+                color: Theme.textMain
+            }
+
+            // ---- 通用 ----
+            GroupCard {
+                title: "通用"
+                TextRow {
+                    label: "本机连接名"
+                    value: "zhangsan@SC-DESK"
+                    onEdited: v => root.configChanged("general.alias", v)
+                }
+                SwitchRow {
+                    text: "开机自动启动"
+                    onToggled: root.configChanged("general.auto_start", checked ? "true" : "false")
+                }
+                SwitchRow {
+                    text: "启动后最小化到托盘"
+                    onToggled: root.configChanged("general.start_minimized", checked ? "true" : "false")
+                }
+            }
+
+            // ---- 外观 ----
+            GroupCard {
+                title: "外观"
+                SwitchRow {
+                    text: "深色主题"
+                    checked: Theme.isDark
+                    onToggled: {
+                        Theme.toggleDark();
+                        root.configChanged("appearance.theme", Theme.isDark ? "dark" : "light");
+                    }
+                }
+                SwitchRow {
+                    text: "降低透明度（无障碍）"
+                    checked: Theme.reducedTransparency
+                    onToggled: {
+                        Theme.reducedTransparency = checked;
+                        root.configChanged("appearance.reduce_transparency", checked ? "true" : "false");
+                    }
+                }
+            }
+
+            // ---- 网络 ----
+            GroupCard {
+                title: "网络"
+                TextRow {
+                    label: "会话端口"
+                    value: "8899"
+                    numeric: true
+                    onEdited: v => root.configChanged("network.ws_port", v)
+                }
+                TextRow {
+                    label: "组播地址"
+                    value: "239.255.88.99"
+                    onEdited: v => root.configChanged("network.multicast_addr", v)
+                }
+                TextRow {
+                    label: "心跳间隔（秒）"
+                    value: "3"
+                    numeric: true
+                    onEdited: v => root.configChanged("network.heartbeat_interval_s", v)
+                }
+            }
+
+            // ---- 远程会话 ----
+            GroupCard {
+                title: "远程会话"
+                TextRow {
+                    label: "帧率（fps）"
+                    value: "24"
+                    numeric: true
+                    onEdited: v => root.configChanged("session.fps", v)
+                }
+                TextRow {
+                    label: "JPEG 画质"
+                    value: "80"
+                    numeric: true
+                    onEdited: v => root.configChanged("session.jpeg_quality", v)
+                }
+            }
+
+            // ---- 文件传输 ----
+            GroupCard {
+                title: "文件传输"
+                TextRow {
+                    label: "接收目录"
+                    value: "C:/Users/11/Desktop"
+                    onEdited: v => root.configChanged("file.save_path", v)
+                }
+                TextRow {
+                    label: "分片大小（KB）"
+                    value: "512"
+                    numeric: true
+                    onEdited: v => root.configChanged("file.chunk_size_kb", v)
+                }
+                SwitchRow {
+                    text: "接收前需确认"
+                    checked: true
+                    onToggled: root.configChanged("file.confirm_before_transfer", checked ? "true" : "false")
+                }
+            }
+
+            // ---- 安全 ----
+            GroupCard {
+                title: "安全"
+                SwitchRow {
+                    text: "允许无人值守连接"
+                    checked: false
+                    onToggled: root.configChanged("security.unattended_enabled", checked ? "true" : "false")
+                }
+                TextRow {
+                    label: "无人值守密码"
+                    value: "••••••"
+                    echo: true
+                    onEdited: v => root.configChanged("security.unattended_password", v)
+                }
+            }
+
+            // ---- 日志 ----
+            GroupCard {
+                title: "日志"
+                TextRow {
+                    label: "日志级别"
+                    value: "info"
+                    onEdited: v => root.configChanged("log.level", v)
+                }
+                SwitchRow {
+                    text: "控制台输出"
+                    checked: true
+                    onToggled: root.configChanged("log.console", checked ? "true" : "false")
+                }
+            }
+        }
+    }
+
+    // ---- 分组卡片（纯色底，Doc13 §3.4.3） ----
+    component GroupCard: Rectangle {
+        id: cardRoot
+        property string title
+        default property alias content: col.data
+
+        Layout.fillWidth: true
+        height: col.implicitHeight + titleLbl.height + 42
+        radius: Theme.cardRadius
+        color: Theme.cardBg
+        border.color: Theme.cardBorder
+        border.width: 1
+
+        ColumnLayout {
+            id: col
+            anchors.fill: parent
+            anchors.margins: 18
+            spacing: 10
+
+            Text {
+                id: titleLbl
+                text: cardRoot.title
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontCard
+                font.weight: Font.Medium
+                color: Theme.textMain
+                Layout.bottomMargin: 4
+            }
+        }
+    }
+
+    component SwitchRow: RowLayout {
+        id: rowRoot
+        property string text
+        property alias checked: sw.checked
+        signal toggled()
+
+        Layout.fillWidth: true
+        Text {
+            text: rowRoot.text
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontBody
+            color: Theme.textMain
+            Layout.fillWidth: true
+        }
+        Switch {
+            id: sw
+            onToggled: rowRoot.toggled()
+            indicator: Rectangle {
+                implicitWidth: 42
+                implicitHeight: 24
+                radius: 12
+                color: sw.checked ? Theme.primary : Theme.divider
+                Behavior on color {
+                    ColorAnimation {
+                        duration: Theme.durHover
+                    }
+                }
+                Rectangle {
+                    x: sw.checked ? parent.width - width - 3 : 3
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 18
+                    height: 18
+                    radius: 9
+                    color: "#FFFFFF"
+                    Behavior on x {
+                        NumberAnimation {
+                            duration: Theme.durHover
+                            easing.type: Theme.easingType
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    component TextRow: RowLayout {
+        id: txtRoot
+        property string label
+        property string value
+        property bool echo: false
+        property bool numeric: false   // 纯数字输入（端口/帧率/画质等）
+        signal edited(string v)
+
+        Layout.fillWidth: true
+        Text {
+            text: txtRoot.label
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontBody
+            color: Theme.textMain
+            Layout.fillWidth: true
+        }
+        TextField {
+            Layout.preferredWidth: 220
+            text: txtRoot.value
+            echoMode: txtRoot.echo ? TextInput.Password : TextInput.Normal
+            selectByMouse: true
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontBody
+            color: Theme.textMain
+            placeholderTextColor: Theme.textHint
+            leftPadding: 12
+            rightPadding: 12
+            validator: txtRoot.numeric ? numVal : null
+            RegularExpressionValidator {
+                id: numVal
+                regularExpression: /[0-9]{0,5}/
+            }
+            background: Rectangle {
+                radius: Theme.btnRadius
+                color: Theme.winBg
+                border.color: parent.activeFocus ? Theme.primary : Theme.cardBorder
+                border.width: 1
+                Behavior on border.color {
+                    ColorAnimation {
+                        duration: Theme.durHover
+                    }
+                }
+            }
+            onEditingFinished: txtRoot.edited(text)
+        }
+    }
+}

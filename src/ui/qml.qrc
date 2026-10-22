@@ -1,0 +1,22 @@
+﻿<RCC>
+    <qresource prefix="/scToLocalDesk">
+        <file>qml/qmldir</file>
+        <file>qml/Theme.qml</file>
+        <file>qml/GlobalGlass.qml</file>
+        <file>qml/GlassBlurEffect.qml</file>
+        <file>qml/Toast.qml</file>
+        <file>qml/MainWindow.qml</file>
+        <file>qml/menu/MenuBarRow.qml</file>
+        <file>qml/menu/MenuEntryButton.qml</file>
+        <file>qml/menu/DropMenu.qml</file>
+        <file>qml/menu/WindowToolButton.qml</file>
+        <file>qml/dock/DockBar.qml</file>
+        <file>qml/pages/Page_DeviceList.qml</file>
+        <file>qml/pages/Page_Connect.qml</file>
+        <file>qml/pages/Page_RemoteView.qml</file>
+        <file>qml/pages/Page_FileTransfer.qml</file>
+        <file>qml/pages/Page_Settings.qml</file>
+        <file>qml/popups/Popup_ConnectConfirm.qml</file>
+        <file>qml/popups/Popup_UnattendedPassword.qml</file>
+    </qresource>
+</RCC>

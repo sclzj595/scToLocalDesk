@@ -1,0 +1,35 @@
+# scToLocalDesk clang-tidy：现代化 C++ 检查基线
+Checks: >
+  -*,
+  bugprone-*,
+  bugprone-avoid-c-arrays,
+  bugprone-exception-escape,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  performance-*,
+  readability-identifier-naming,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-slicing,
+  misc-unused-parameters
+
+CheckOptions:
+  - key:   readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key:   readability-identifier-naming.StructCase
+    value: CamelCase
+  - key:   readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key:   readability-identifier-naming.VariableCase
+    value: lower_case
+  - key:   readability-identifier-naming.MemberSuffix
+    value: '_'
+  - key:   readability-identifier-naming.ConstexprVariableCase
+    value: UPPER_CASE
+  - key:   readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key:   readability-identifier-naming.EnumeratorCase
+    value: UPPER_CASE
+
+WarningsAsErrors: 'bugprone-exception-escape'
+HeaderFilterRegex: 'src/.*'

@@ -1,0 +1,17 @@
+# build 产物
+build/
+build-msvc/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.user
+
+# 运行时
+logs/
+config.ini
+
+# IDE
+.vs/
+.vscode/
+.idea/

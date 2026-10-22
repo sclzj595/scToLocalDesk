@@ -1,0 +1,254 @@
+// ============================================================
+// scToLocalDesk | src/core/protocol/tlv.cpp
+// TLV 报文编解码实现（大端序，Doc05 §1）
+// ============================================================
+#include "core/protocol/tlv.hpp"
+
+namespace sc::localdesk::protocol {
+
+namespace {
+
+void push_be16(std::vector<uint8_t>& v, uint16_t x) {
+    v.push_back(static_cast<uint8_t>(x >> 8));
+    v.push_back(static_cast<uint8_t>(x));
+}
+
+void push_be32(std::vector<uint8_t>& v, uint32_t x) {
+    v.push_back(static_cast<uint8_t>(x >> 24));
+    v.push_back(static_cast<uint8_t>(x >> 16));
+    v.push_back(static_cast<uint8_t>(x >> 8));
+    v.push_back(static_cast<uint8_t>(x));
+}
+
+void push_str8(std::vector<uint8_t>& v, std::string_view s) {
+    v.push_back(static_cast<uint8_t>(s.size()));
+    v.insert(v.end(), s.begin(), s.end());
+}
+
+}  // namespace
+
+std::optional<MsgType> parse_header(const uint8_t* data, size_t size, uint32_t& body_len) {
+    if (data == nullptr || size < kHeaderSize) {
+        return std::nullopt;
+    }
+    body_len = (static_cast<uint32_t>(data[1]) << 24)
+             | (static_cast<uint32_t>(data[2]) << 16)
+             | (static_cast<uint32_t>(data[3]) << 8)
+             | static_cast<uint32_t>(data[4]);
+    return static_cast<MsgType>(data[0]);
+}
+
+bool is_frame_complete(const uint8_t* data, size_t size, size_t& frame_total) {
+    uint32_t body_len = 0;
+    const auto t = parse_header(data, size, body_len);
+    if (!t.has_value()) {
+        return false;
+    }
+    frame_total = kHeaderSize + body_len;
+    return size >= frame_total;
+}
+
+void write_header(std::vector<uint8_t>& out, MsgType type, uint32_t body_len) {
+    out.push_back(static_cast<uint8_t>(type));
+    push_be32(out, body_len);
+}
+
+std::vector<uint8_t> build_frame(MsgType type, const std::vector<uint8_t>& body) {
+    std::vector<uint8_t> out;
+    out.reserve(kHeaderSize + body.size());
+    write_header(out, type, static_cast<uint32_t>(body.size()));
+    out.insert(out.end(), body.begin(), body.end());
+    return out;
+}
+
+std::vector<uint8_t> build_request_connect(std::string_view alias, uint8_t flags) {
+    std::vector<uint8_t> body;
+    body.reserve(1 + alias.size() + 1);
+    push_str8(body, alias);
+    body.push_back(flags);
+    return build_frame(MsgType::SessionCtrl, body);
+}
+
+std::vector<uint8_t> build_auth_challenge(const uint8_t* salt16, const uint8_t* challenge16) {
+    std::vector<uint8_t> body;
+    body.reserve(1 + 16 + 16);
+    body.push_back(static_cast<uint8_t>(CtrlSubType::AuthChallenge));
+    body.insert(body.end(), salt16, salt16 + 16);
+    body.insert(body.end(), challenge16, challenge16 + 16);
+    return build_frame(MsgType::SessionCtrl, body);
+}
+
+std::vector<uint8_t> build_auth_proof(const uint8_t* proof32) {
+    std::vector<uint8_t> body;
+    body.reserve(1 + 32);
+    body.push_back(static_cast<uint8_t>(CtrlSubType::AuthProof));
+    body.insert(body.end(), proof32, proof32 + 32);
+    return build_frame(MsgType::SessionCtrl, body);
+}
+
+std::vector<uint8_t> build_file_meta(std::string_view file_id_hex, std::string_view name,
+                                     uint64_t size, uint32_t total_chunks) {
+    std::vector<uint8_t> body;
+    body.reserve(16 + 2 + name.size() + 8 + 4);
+    // file_id：hex 字符串转 16B
+    for (size_t i = 0; i + 1 < file_id_hex.size() && body.size() < 16; i += 2) {
+        const auto nib = [](char c) -> uint8_t {
+            return c <= '9' ? static_cast<uint8_t>(c - '0')
+                            : static_cast<uint8_t>((c | 0x20) - 'a' + 10);
+        };
+        body.push_back(static_cast<uint8_t>((nib(file_id_hex[i]) << 4)
+                                            | nib(file_id_hex[i + 1])));
+    }
+    push_be16(body, static_cast<uint16_t>(name.size()));
+    body.insert(body.end(), name.begin(), name.end());
+    for (int s = 56; s >= 0; s -= 8) {
+        body.push_back(static_cast<uint8_t>(size >> s));
+    }
+    push_be32(body, total_chunks);
+    return build_frame(MsgType::FileMeta, body);
+}
+
+bool parse_file_meta(const uint8_t* body, size_t len, FileMetaBody& out) {
+    if (body == nullptr || len < 16 + 2 + 8 + 4) {
+        return false;
+    }
+    static constexpr char kHex[] = "0123456789abcdef";
+    out.file_id.reserve(32);
+    for (size_t i = 0; i < 16; ++i) {
+        out.file_id.push_back(kHex[body[i] >> 4]);
+        out.file_id.push_back(kHex[body[i] & 0x0F]);
+    }
+    size_t pos = 16;
+    const uint16_t name_len = static_cast<uint16_t>((body[pos] << 8) | body[pos + 1]);
+    pos += 2;
+    if (pos + name_len + 12 > len) {
+        return false;
+    }
+    out.name.assign(reinterpret_cast<const char*>(body) + pos, name_len);
+    pos += name_len;
+    out.size = 0;
+    for (size_t i = 0; i < 8; ++i) {
+        out.size = (out.size << 8) | body[pos + i];
+    }
+    pos += 8;
+    out.total_chunks = (static_cast<uint32_t>(body[pos]) << 24)
+                     | (static_cast<uint32_t>(body[pos + 1]) << 16)
+                     | (static_cast<uint32_t>(body[pos + 2]) << 8)
+                     | static_cast<uint32_t>(body[pos + 3]);
+    return true;
+}
+
+std::vector<uint8_t> build_ctrl(CtrlSubType sub) {
+    const std::vector<uint8_t> body{static_cast<uint8_t>(sub)};
+    return build_frame(MsgType::SessionCtrl, body);
+}
+
+std::vector<uint8_t> build_reject(RejectReason reason) {
+    const std::vector<uint8_t> body{static_cast<uint8_t>(CtrlSubType::Reject),
+                                    static_cast<uint8_t>(reason)};
+    return build_frame(MsgType::SessionCtrl, body);
+}
+
+std::vector<uint8_t> build_close(CloseReason reason) {
+    const std::vector<uint8_t> body{static_cast<uint8_t>(CtrlSubType::Close),
+                                    static_cast<uint8_t>(reason)};
+    return build_frame(MsgType::SessionCtrl, body);
+}
+
+bool parse_request_connect(const uint8_t* body, size_t len, RequestConnectBody& out) {
+    if (body == nullptr || len < 3) {  // 至少 alias_len(1) + flags(1) + 1 字节别名
+        return false;
+    }
+    const uint8_t alias_len = body[0];
+    if (alias_len == 0 || static_cast<size_t>(1) + alias_len + 1 > len) {
+        return false;
+    }
+    out.alias.assign(reinterpret_cast<const char*>(body) + 1, alias_len);
+    out.flags = body[1 + alias_len];
+    return true;
+}
+
+std::vector<uint8_t> build_mouse_key(const MouseKeyBody& mk) {
+    std::vector<uint8_t> body;
+    body.reserve(8);
+    body.push_back(static_cast<uint8_t>(mk.kind));
+    if (mk.kind == MouseKeyKind::Mouse) {
+        // kind + action + x + y + wheel
+        body.push_back(mk.action);
+        push_be16(body, mk.x);
+        push_be16(body, mk.y);
+        body.push_back(static_cast<uint8_t>(static_cast<uint16_t>(mk.wheel) >> 8));
+        body.push_back(static_cast<uint8_t>(static_cast<uint16_t>(mk.wheel)));
+    } else {
+        // kind + vk + scan + down
+        push_be16(body, mk.vk);
+        push_be16(body, mk.scan);
+        body.push_back(mk.down);
+    }
+    return build_frame(MsgType::MouseKey, body);
+}
+
+bool parse_mouse_key(const uint8_t* body, size_t len, MouseKeyBody& out) {
+    if (body == nullptr || len < 1) {
+        return false;
+    }
+    const auto kind = static_cast<MouseKeyKind>(body[0]);
+    if (kind == MouseKeyKind::Mouse) {
+        if (len < 1 + 1 + 2 + 2 + 2) {
+            return false;
+        }
+        out.kind = kind;
+        out.action = body[1];
+        out.x = static_cast<uint16_t>((body[2] << 8) | body[3]);
+        out.y = static_cast<uint16_t>((body[4] << 8) | body[5]);
+        out.wheel = static_cast<int16_t>((body[6] << 8) | body[7]);
+        return true;
+    }
+    if (len < 1 + 2 + 2 + 1) {
+        return false;
+    }
+    out.kind = kind;
+    out.vk = static_cast<uint16_t>((body[1] << 8) | body[2]);
+    out.scan = static_cast<uint16_t>((body[3] << 8) | body[4]);
+    out.down = body[5];
+    return true;
+}
+
+std::vector<uint8_t> build_screen_frame(const ScreenFrameHeader& hdr, const uint8_t* data,
+                                        size_t len) {
+    std::vector<uint8_t> body;
+    body.reserve(16 + len);
+    push_be32(body, hdr.width);
+    push_be32(body, hdr.height);
+    for (int s = 56; s >= 0; s -= 8) {
+        body.push_back(static_cast<uint8_t>(static_cast<uint64_t>(hdr.timestamp_us) >> s));
+    }
+    if (data != nullptr && len > 0) {
+        body.insert(body.end(), data, data + len);
+    }
+    return build_frame(MsgType::ScreenFrame, body);
+}
+
+bool parse_screen_frame(const uint8_t* body, size_t len, ScreenFrameHeader& hdr,
+                        const uint8_t*& data, size_t& data_len) {
+    if (body == nullptr || len < 16) {
+        return false;
+    }
+    hdr.width = (static_cast<uint32_t>(body[0]) << 24)
+              | (static_cast<uint32_t>(body[1]) << 16)
+              | (static_cast<uint32_t>(body[2]) << 8)
+              | static_cast<uint32_t>(body[3]);
+    hdr.height = (static_cast<uint32_t>(body[4]) << 24)
+               | (static_cast<uint32_t>(body[5]) << 16)
+               | (static_cast<uint32_t>(body[6]) << 8)
+               | static_cast<uint32_t>(body[7]);
+    hdr.timestamp_us = 0;
+    for (size_t i = 8; i < 16; ++i) {
+        hdr.timestamp_us = (hdr.timestamp_us << 8) | body[i];
+    }
+    data = body + 16;
+    data_len = len - 16;
+    return true;
+}
+
+}  // namespace sc::localdesk::protocol
