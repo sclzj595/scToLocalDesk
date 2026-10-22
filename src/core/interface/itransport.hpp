@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -28,7 +29,9 @@ public:
 
     virtual void close() = 0;
 
-    using OnMessageCb = std::function<void(std::vector<uint8_t>)>;
+    /// 零拷贝消息缓冲（asio buffer 思想）：shared_ptr 所有权转移代替按值
+    /// 拷贝——画面帧 ~1MB/帧 × 30fps 下省出一整条内存带宽；订阅方只读
+    using OnMessageCb = std::function<void(std::shared_ptr<const std::vector<uint8_t>>)>;
     using OnStateCb   = std::function<void(TransportState)>;
 
     /// 回调在 IO 线程触发，实现方保证线程安全；跨线程投递统一走 EventBus

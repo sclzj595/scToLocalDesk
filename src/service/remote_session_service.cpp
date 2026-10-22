@@ -121,7 +121,9 @@ bool RemoteSessionService::start_listening(uint16_t port) {
         return false;
     }
     transport_->set_message_callback(
-        [this](std::vector<uint8_t> data) { on_transport_message(std::move(data)); });
+        [this](std::shared_ptr<const std::vector<uint8_t>> data) {
+            on_transport_message(std::move(data));
+        });
     transport_->set_state_callback(
         [this](TransportState st) { on_transport_state(st); });
 
@@ -262,13 +264,14 @@ std::string RemoteSessionService::session_id() const {
 
 // ---------------- Transport 回调 ----------------
 
-void RemoteSessionService::on_transport_message(std::vector<uint8_t> data) {
+void RemoteSessionService::on_transport_message(
+    std::shared_ptr<const std::vector<uint8_t>> data) {
     uint32_t body_len = 0;
-    const auto type = protocol::parse_header(data.data(), data.size(), body_len);
-    if (!type.has_value() || data.size() < protocol::kHeaderSize + body_len) {
+    const auto type = protocol::parse_header(data->data(), data->size(), body_len);
+    if (!type.has_value() || data->size() < protocol::kHeaderSize + body_len) {
         return;  // 畸形报文丢弃
     }
-    const uint8_t* body = data.data() + protocol::kHeaderSize;
+    const uint8_t* body = data->data() + protocol::kHeaderSize;
     switch (*type) {
     case protocol::MsgType::SessionCtrl:
         handle_session_ctrl(body, body_len);

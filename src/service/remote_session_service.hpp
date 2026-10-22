@@ -108,7 +108,7 @@ public:
 
     // ---------------- Transport 回调（IO 线程触发） ----------------
 
-    void on_transport_message(std::vector<uint8_t> data);
+    void on_transport_message(std::shared_ptr<const std::vector<uint8_t>> data);
     void on_transport_state(TransportState st);
 
 private:

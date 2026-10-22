@@ -54,13 +54,14 @@ bool WsTransport::start_server(uint16_t port) {
                                           [this](const QByteArray& msg) {
                                               // asio 模式：锁内只拷回调，锁外分发——
                                               // 大帧处理不阻塞回调表的其他访问者
+                                              // 零拷贝：一次堆分配直通订阅方（只读）
                                               OnMessageCb cb;
                                               {
                                                   std::lock_guard<std::mutex> lk(cb_mtx_);
                                                   cb = on_message_;
                                               }
                                               if (cb) {
-                                                  cb(std::vector<uint8_t>(
+                                                  cb(std::make_shared<const std::vector<uint8_t>>(
                                                       msg.cbegin(), msg.cend()));
                                               }
                                           });
@@ -89,14 +90,15 @@ void WsTransport::connect_client(const std::string& host, uint16_t port) {
     });
     QObject::connect(sock, &QWebSocket::binaryMessageReceived,
                      [this](const QByteArray& msg) {
-                         // 锁内拷回调、锁外分发（同上，asio 模式）
+                         // 锁内拷回调、锁外分发（同上，asio 模式）+ 零拷贝缓冲
                          OnMessageCb cb;
                          {
                              std::lock_guard<std::mutex> lk(cb_mtx_);
                              cb = on_message_;
                          }
                          if (cb) {
-                             cb(std::vector<uint8_t>(msg.cbegin(), msg.cend()));
+                             cb(std::make_shared<const std::vector<uint8_t>>(
+                                 msg.cbegin(), msg.cend()));
                          }
                      });
     QObject::connect(sock, &QWebSocket::disconnected, [this] {
