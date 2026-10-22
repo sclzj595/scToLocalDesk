@@ -44,6 +44,7 @@ set(SCLD_CORE_SOURCES
     src/core/auth/unattended_authenticator.cpp
     src/service/alias_service.cpp
     src/service/app_config.cpp
+    src/service/id_service.cpp
     src/service/remote_session_service.cpp
     src/service/screen_stream_service.cpp
     src/service/file_service.cpp
@@ -171,6 +172,7 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
                 src/platform/win32/single_instance.cpp
                 src/platform/win32/auto_start.cpp
                 src/platform/win32/input_injector.cpp
+                src/platform/win32/system_info.cpp
             )
         endif()
         target_compile_definitions(scToLocalDesk PRIVATE
@@ -179,7 +181,8 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
         if(MSVC)
             target_compile_options(scToLocalDesk PRIVATE /utf-8)
         endif()
-        target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS})
+        # system_info：GetAdaptersAddresses/GetUserNameW 所需系统库
+        target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS} iphlpapi advapi32)
     else()
         message(WARNING "未找到 Qt 6.2+，跳过 QT_APP 目标（请检查 CMAKE_PREFIX_PATH 指向 Qt 安装目录）")
     endif()
@@ -231,6 +234,7 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
                 src/platform/win32/single_instance.cpp
                 src/platform/win32/auto_start.cpp
                 src/platform/win32/input_injector.cpp
+                src/platform/win32/system_info.cpp
             )
         endif()
         target_compile_definitions(scToLocalDeskWidgets PRIVATE
@@ -238,7 +242,8 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
         if(MSVC)
             target_compile_options(scToLocalDeskWidgets PRIVATE /utf-8)
         endif()
-        target_link_libraries(scToLocalDeskWidgets PRIVATE ${SCLD_WGT_LIBS})
+        target_link_libraries(scToLocalDeskWidgets PRIVATE
+            ${SCLD_WGT_LIBS} iphlpapi advapi32)
     else()
         message(WARNING "未找到 Qt 6.2+ Widgets，跳过 WIDGETS_APP 目标")
     endif()

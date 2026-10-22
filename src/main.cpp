@@ -42,9 +42,11 @@
     #include "platform/qt_adapter/qt_tray.hpp"
     #include "platform/qt_adapter/qt_udp_discovery.hpp"
     #include "platform/qt_adapter/single_instance_guard.hpp"
+    #include "platform/win32/system_info.hpp"
     #include "service/alias_service.hpp"
     #include "service/app_config.hpp"
     #include "service/file_service.hpp"
+    #include "service/id_service.hpp"
     #include "service/input_service.hpp"
     #include "service/remote_session_service.hpp"
     #include "service/screen_stream_service.hpp"
@@ -138,6 +140,19 @@ int main(int argc, char* argv[]) {
                      + " magic_enum=" + std::string(foundation::enum_name(LogLevel::Info)));
     }
     auto bus = std::make_shared<EventBus>();
+
+    // 机器身份：9 位连接码 + 连接名派生（Doc18 §3.1；P1.4 心跳/设备列表接线点）
+    const platform::SystemInfo sys = platform::query_system_info();
+    const IdService id_service(sys.hostname, sys.username, sys.mac,
+                               QApplication::applicationDirPath().toStdString());
+    if (sys.mac.empty()) {
+        SCLD_LOG(logger, LogLevel::Warn, "id",
+                 "未发现在线非虚拟网卡，指纹缺 MAC 项（连接码弱化）");
+    }
+    SCLD_LOG(logger, LogLevel::Info, "id",
+             "self_code=" + id_service.self_code()
+                 + " self_name=" + id_service.self_name());
+
     auto crypto = make_default_crypto();
     auto pool = std::make_shared<ThreadPool>(4);
 
