@@ -120,6 +120,7 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
             src/platform/qt_adapter/qt_event_bridge.cpp
             src/platform/qt_adapter/qt_udp_discovery.cpp
             src/platform/qt_adapter/qt_tray.cpp
+            src/platform/qt_adapter/single_instance_guard.cpp
         )
         set(SCLD_QML_LIBS
             sc_localdesk_core
@@ -185,6 +186,7 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
             src/platform/qt_adapter/qt_event_bridge.cpp
             src/platform/qt_adapter/qt_udp_discovery.cpp
             src/platform/qt_adapter/qt_tray.cpp
+            src/platform/qt_adapter/single_instance_guard.cpp
         )
         set(SCLD_WGT_LIBS
             sc_localdesk_core

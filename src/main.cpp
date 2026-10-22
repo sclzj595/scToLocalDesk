@@ -7,9 +7,11 @@
 #ifdef SCLD_QT_APP
 
     #include <QApplication>
+    #include <QFileInfo>
     #include <QQmlApplicationEngine>
     #include <QQmlContext>
     #include <QQuickStyle>
+    #include <QQuickWindow>
     #include <QStandardPaths>
 
     #include "core/auth/manual_confirm_authenticator.hpp"
@@ -17,7 +19,7 @@
     #include "core/interface/icrypto.hpp"
     #include "foundation/config_parser.hpp"
     #include "foundation/event_bus.hpp"
-    #include "foundation/logger/console_logger.hpp"
+    #include "foundation/logger/file_logger.hpp"
     #include "foundation/thread_pool.hpp"
     #include "implement/capture/gdi_capture.hpp"
     #include "implement/crypto/crypto_factory.hpp"
@@ -31,6 +33,7 @@
     #include "platform/qt_adapter/qt_event_bridge.hpp"
     #include "platform/qt_adapter/qt_tray.hpp"
     #include "platform/qt_adapter/qt_udp_discovery.hpp"
+    #include "platform/qt_adapter/single_instance_guard.hpp"
     #include "service/alias_service.hpp"
     #include "service/app_config.hpp"
     #include "service/file_service.hpp"
@@ -39,7 +42,7 @@
     #include "service/screen_stream_service.hpp"
 
 using namespace sc::localdesk;
-using sc::localdesk::foundation::ConsoleLogger;
+using sc::localdesk::foundation::FileLogger;
 using sc::localdesk::foundation::EventBus;
 using sc::localdesk::foundation::IniConfig;
 using sc::localdesk::foundation::LogLevel;
@@ -80,7 +83,13 @@ int main(int argc, char* argv[]) {
     });
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
-    // TODO(V1.0): 单实例锁 → 已运行则唤起后退出（platform/win32）
+    // ---------------- 单实例锁（exe 名作 key：对照构建可并存，正式单 exe 即全局） ----------------
+    platform::SingleInstanceGuard guard;
+    if (!guard.acquire(QFileInfo(QApplication::applicationFilePath()).fileName())) {
+        fprintf(stderr, "[main] 已有实例在运行，已投递唤起请求，本实例退出\n");
+        fflush(stderr);
+        return 0;
+    }
 
     // ---------------- 配置加载（Doc17：exe 旁 config.ini，缺失则默认值落盘） ----------------
     IniConfig ini(QApplication::applicationDirPath().toStdWString() + L"\\config.ini");
@@ -94,7 +103,11 @@ int main(int argc, char* argv[]) {
     }
 
     // ---------------- DI 组装（Doc03 §5） ----------------
-    auto logger = std::make_shared<ConsoleLogger>();
+    // 文件日志：exe 旁 logs/（Doc17），5MB×5 滚动归档；回显 stderr 保持冒烟诊断
+    const std::filesystem::path exe_dir =
+        std::filesystem::path(QApplication::applicationDirPath().toStdU16String());
+    auto logger = std::make_shared<FileLogger>(exe_dir / "logs" / "scToLocalDesk.log",
+                                               5 * 1024 * 1024, 5, true);
     logger->set_level(parse_log_level(cfg.log_level));
     auto bus = std::make_shared<EventBus>();
     auto crypto = make_default_crypto();
@@ -158,6 +171,15 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "[main] QML 加载失败 rootObjects 为空\n");
         fflush(stderr);
         return -1;
+    }
+
+    // 单实例唤起：二次启动把首实例主窗带到前台（可能收拢在托盘）
+    if (auto* win = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst())) {
+        guard.set_raise_callback([win] {
+            win->show();
+            win->raise();
+            win->requestActivate();
+        });
     }
 
     // 托盘（显示窗口 / 停止服务 / 退出，Doc02 §5.4）
