@@ -13,6 +13,7 @@ namespace sc::localdesk {
 class AliasService;
 class RemoteSessionService;
 class FileService;
+class TrustStore;
 class UnattendedPasswordAuthenticator;
 
 namespace foundation {
@@ -63,6 +64,12 @@ public:
     Q_INVOKABLE bool setUnattendedEnabled(bool enabled, const QString& password);
     Q_INVOKABLE void copyText(const QString& text);       ///< 连接码复制进剪贴板
 
+    /// 信任缓存（Doc18 §3.2）：QML 确认弹窗/直连判定/清空入口
+    void set_trust_store(TrustStore* ts);
+    Q_INVOKABLE bool isTrusted(const QString& code);
+    Q_INVOKABLE void trust(const QString& code, const QString& name);
+    Q_INVOKABLE void clearTrust();
+
 signals:
     // 发现
     void deviceOnline(const QString& alias, const QString& ip);
@@ -87,6 +94,7 @@ private:
     AliasService* aliases_{nullptr};
     RemoteSessionService* sessions_{nullptr};
     FileService* files_{nullptr};
+    TrustStore* trust_{nullptr};
     foundation::ILogger* log_{nullptr};
     QString self_alias_;
     bool unattended_{false};

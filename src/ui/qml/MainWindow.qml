@@ -30,8 +30,7 @@ ApplicationWindow {
     color: "transparent"   // 20px 圆角需透明底
     background: null       // 去掉 Controls 默认方形白底（圆角外露白折角的根源）
 
-    // 信任缓存（向日葵模式演示：确认并勾选后免确认；V1.0 落 TrustStore）
-    property var trustCache: []
+    // 信任缓存走 ScLocaldesk（TrustStore 落盘，Doc18 §3.2）；此处仅暂存待确认对端
     property string pendingAlias: ""
     property string pendingCode: ""
 
@@ -65,7 +64,7 @@ ApplicationWindow {
 
                 Page_DeviceList {
                     onConnectRequested: (aliasName, code, trusted) => {
-                        if (trusted || trustCache.indexOf(code) >= 0) {
+                        if (trusted || ScLocaldesk.isTrusted(code)) {
                             toast.show("正在直连 " + aliasName + "（已信任）…");
                         }
                         else {
@@ -80,7 +79,7 @@ ApplicationWindow {
                     onConnectRequested: code => {
                         pendingAlias = "设备 " + code;
                         pendingCode = code;
-                        if (trustCache.indexOf(code) >= 0) {
+                        if (ScLocaldesk.isTrusted(code)) {
                             toast.show("正在直连（已信任）…");
                         }
                         else {
@@ -158,7 +157,7 @@ ApplicationWindow {
 
         onAccepted: remember => {
             if (remember) {
-                trustCache.push(pendingCode);   // 记忆缓存：确认之后才有
+                ScLocaldesk.trust(pendingCode, pendingAlias);   // 确认之后才有：落盘 trust.json
                 toast.show("已同意，" + pendingAlias + " 已加入信任缓存");
             }
             else {
@@ -218,7 +217,7 @@ ApplicationWindow {
             dockBar.currentIndex = 4;
             break;
         case "tool.clear":
-            trustCache = [];   // 清信任缓存
+            ScLocaldesk.clearTrust();   // 清信任缓存（trust.json 同步重写）
             toast.show("信任缓存已清除");
             break;
         case "help.about":

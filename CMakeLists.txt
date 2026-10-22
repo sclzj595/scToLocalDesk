@@ -48,6 +48,7 @@ set(SCLD_CORE_SOURCES
     src/service/remote_session_service.cpp
     src/service/screen_stream_service.cpp
     src/service/file_service.cpp
+    src/service/trust_store.cpp
 )
 
 add_library(sc_localdesk_core STATIC ${SCLD_CORE_SOURCES})

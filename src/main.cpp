@@ -50,6 +50,7 @@
     #include "service/input_service.hpp"
     #include "service/remote_session_service.hpp"
     #include "service/screen_stream_service.hpp"
+    #include "service/trust_store.hpp"
 
 using namespace sc::localdesk;
 #if SCLD_HAS_SPDLOG
@@ -153,6 +154,11 @@ int main(int argc, char* argv[]) {
              "self_code=" + id_service.self_code()
                  + " self_name=" + id_service.self_name());
 
+    // 信任缓存：exe 旁 trust.json（Doc18 §3.2；构造即加载，变更即原子落盘）
+    TrustStore trust_store(QApplication::applicationDirPath().toStdWString()
+                           + L"\\trust.json",
+                           logger.get());
+
     auto crypto = make_default_crypto();
     auto pool = std::make_shared<ThreadPool>(4);
 
@@ -206,6 +212,7 @@ int main(int argc, char* argv[]) {
     // QML 桥（EventBus → Qt 信号，Doc13 §4）
     platform::QtEventBridge bridge;
     bridge.init(bus.get(), aliases.get(), sessions.get(), files.get(), logger.get());
+    bridge.set_trust_store(&trust_store);
     qmlRegisterSingletonInstance("ScLocaldesk", 1, 0, "ScLocaldesk", &bridge);
 
     QQmlApplicationEngine engine;

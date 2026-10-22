@@ -18,6 +18,7 @@
 #include "glass_theme.h"
 #include "pages/pages.h"
 #include "popups/connect_confirm_dialog.h"
+#include "service/trust_store.hpp"
 
 namespace sc::localdesk::ui {
 
@@ -52,8 +53,13 @@ MainWindow::MainWindow() {
     stack_->addWidget(new RemoteViewPage());       // 2 远程画面
     stack_->addWidget(new FileTransferPage());     // 3 文件传输
     stack_->addWidget(settingsPage);               // 4 设置
-    // 设置页深色开关 → 统一主题入口（与标题栏按钮/菜单联动）
+    // 设置页：深色开关 → 统一主题入口；清空信任缓存 → TrustStore
     connect(settingsPage, &SettingsPage::themeChanged, this, &MainWindow::applyTheme);
+    connect(settingsPage, &SettingsPage::clearTrustRequested, this, [this] {
+        if (trust_ != nullptr) {
+            trust_->clear();
+        }
+    });
     updateDockStyle();   // 栈已就绪：应用初始选中态（第 0 项竖线+染色）
     body->addWidget(stack_, 1);
     root->addLayout(body, 1);
@@ -76,12 +82,16 @@ MainWindow::MainWindow() {
     auto* confirm = new ConnectConfirmDialog(this);
     connect(devList, &DeviceListPage::connectRequested, this,
             [this, confirm](const QString& alias, const QString& code, bool trusted) {
-                if (trusted) {
+                if (trusted || (trust_ != nullptr
+                                && trust_->is_trusted(code.toStdString()))) {
                     showToast(QStringLiteral("正在直连 %1（已信任）…").arg(alias));
                     return;
                 }
                 confirm->setPeer(alias, QStringLiteral("192.168.1.45"), code);
                 if (confirm->exec() == QDialog::Accepted) {
+                    if (confirm->rememberChecked() && trust_ != nullptr) {
+                        trust_->trust(code.toStdString(), alias.toStdString());
+                    }
                     showToast(confirm->rememberChecked()
                             ? QStringLiteral("已同意，%1 已加入信任缓存").arg(alias)
                             : QStringLiteral("已同意，会话建立中…"));
@@ -100,7 +110,15 @@ MainWindow::MainWindow() {
                 }
                 confirm->setPeer(QStringLiteral("设备 %1").arg(pretty),
                                  QStringLiteral("—"), pretty);
+                if (trust_ != nullptr && trust_->is_trusted(code.toStdString())) {
+                    showToast(QStringLiteral("正在直连（已信任）…"));
+                    return;
+                }
                 if (confirm->exec() == QDialog::Accepted) {
+                    if (confirm->rememberChecked() && trust_ != nullptr) {
+                        trust_->trust(code.toStdString(),
+                                      QStringLiteral("设备 %1").arg(code).toStdString());
+                    }
                     showToast(confirm->rememberChecked()
                             ? QStringLiteral("已同意，设备已加入信任缓存")
                             : QStringLiteral("已同意，会话建立中…"));
@@ -211,7 +229,10 @@ QWidget* MainWindow::makeTitleBar() {
             setDockIndex(4);
         }
         else {
-            showToast(QStringLiteral("信任设备缓存已清空"));   // TODO(V1.0) TrustStore
+            if (trust_ != nullptr) {
+                trust_->clear();
+            }
+            showToast(QStringLiteral("信任设备缓存已清空"));
         }
     });
     auto* mHelp = makeMenuBtn(QStringLiteral("帮助"));

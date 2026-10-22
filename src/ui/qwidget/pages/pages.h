@@ -124,6 +124,8 @@ public:
 signals:
     /// 深色主题开关切换（主窗口统一 applyTheme：QSS + Dock 染色 + glyph）
     void themeChanged(bool dark);
+    /// 清空信任设备缓存（TrustStore::clear 由主窗口执行，Doc18 §3.2）
+    void clearTrustRequested();
 
 private:
     /// 分组卡：卡内含标题 + body 容器（传出供调用方挂 QFormLayout，

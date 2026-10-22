@@ -16,6 +16,7 @@
 #include <service/alias_service.hpp>
 #include <service/file_service.hpp>
 #include <service/remote_session_service.hpp>
+#include <service/trust_store.hpp>
 
 namespace sc::localdesk::platform {
 
@@ -152,6 +153,26 @@ bool QtEventBridge::setUnattendedEnabled(bool enabled, const QString& password) 
     unattended_ = enabled;
     emit unattendedChanged();
     return true;
+}
+
+void QtEventBridge::set_trust_store(TrustStore* ts) {
+    trust_ = ts;
+}
+
+bool QtEventBridge::isTrusted(const QString& code) {
+    return trust_ != nullptr && trust_->is_trusted(code.toStdString());
+}
+
+void QtEventBridge::trust(const QString& code, const QString& name) {
+    if (trust_ != nullptr) {
+        trust_->trust(code.toStdString(), name.toStdString());
+    }
+}
+
+void QtEventBridge::clearTrust() {
+    if (trust_ != nullptr) {
+        trust_->clear();
+    }
 }
 
 }  // namespace sc::localdesk::platform

@@ -6,9 +6,11 @@
     #ifdef SCLD_QT_WIDGETS_UI
 
         #include <QApplication>
+        #include <QCoreApplication>
         #include <QFileInfo>
 
         #include "platform/qt_adapter/single_instance_guard.hpp"
+        #include "service/trust_store.hpp"
         #include "ui/qwidget/glass_theme.h"
         #include "ui/qwidget/main_window.h"
 
@@ -21,10 +23,15 @@ int main(int argc, char* argv[]) {
         return 0;   // 已有实例：唤起请求已投递
     }
 
+    // 信任缓存：exe 旁 trust.json（Doc18 §3.2，确认弹窗勾选记忆落盘）
+    sc::localdesk::TrustStore trust_store(
+        QCoreApplication::applicationDirPath().toStdWString() + L"\\trust.json");
+
     // 全局 QSS 一次性挂载（主题切换时重建，Doc13 §7）
     app.setStyleSheet(sc::localdesk::ui::GlassTheme::instance().buildQss());
 
     sc::localdesk::ui::MainWindow win;
+    win.setTrustStore(&trust_store);
     win.show();
 
     // 单实例唤起：二次启动把首实例主窗带到前台

@@ -118,8 +118,8 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     auto* trustBtn = new QPushButton(QStringLiteral("清空信任设备缓存"));
     trustBtn->setObjectName(QStringLiteral("secondaryBtn"));
     trustBtn->setCursor(Qt::PointingHandCursor);
-    connect(trustBtn, &QPushButton::clicked, this, [trustBtn] {
-        // TODO(V1.0) TrustStore::clearAll()
+    connect(trustBtn, &QPushButton::clicked, this, [this, trustBtn] {
+        emit clearTrustRequested();   // TrustStore::clear 由主窗口执行（Doc18 §3.2）
         trustBtn->setText(QStringLiteral("已清空 ✓"));
         trustBtn->setEnabled(false);
         QTimer::singleShot(1600, trustBtn, [trustBtn] {

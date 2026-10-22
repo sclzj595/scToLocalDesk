@@ -13,6 +13,10 @@ class QMenuBar;
 class QStackedWidget;
 class QTimer;
 
+namespace sc::localdesk {
+class TrustStore;
+}
+
 namespace sc::localdesk::ui {
 
 class MainWindow final : public FramelessWindow {
@@ -20,6 +24,11 @@ class MainWindow final : public FramelessWindow {
 
 public:
     explicit MainWindow();
+
+    /// 信任缓存注入（widgets_main 构造后调用，Doc18 §3.2）
+    void setTrustStore(TrustStore* ts) {
+        trust_ = ts;
+    }
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -41,6 +50,7 @@ private:
     QList<QLabel*> dockBars_;
     QLabel* toastLbl_{nullptr};
     QTimer* toastTimer_{nullptr};
+    TrustStore* trust_{nullptr};
 };
 
 }  // namespace sc::localdesk::ui
