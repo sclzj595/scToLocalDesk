@@ -5,11 +5,12 @@
 // ============================================================
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <vector>
 
-#include <QTimer>
+#include <QObject>
 #include <QWebSocket>
 #include <QWebSocketServer>
 
@@ -34,9 +35,14 @@ public:
 
 private:
     void set_state(TransportState st);
-    void start_timers();   ///< flush + KEEPALIVE（创建线程 = socket 所在线程）
+    void start_timers();   ///< KEEPALIVE（创建线程 = socket 所在线程）
     void stop_timers();
-    void flush_outbox();   ///< 发送外箱批量出队（20ms tick，Doc08 §4）
+    /// 事件驱动 flush（asio proactor 模式）：入队时投递一次排空事件 →
+    /// socket 线程抽干外箱 → 预算耗尽仍有余量则再投递；无定时器轮询，
+    /// 空闲零延迟、高负载自动批并（Doc08 §4）
+    void drain_outbox();
+    /// 投递 drain 事件（原子防重：同一线程多次入队只投一次）
+    void schedule_drain();
     void ping_tick();      ///< 链路层 KEEPALIVE：连续 3 次无 pong 断开（Doc08 §6）
 
     std::unique_ptr<QWebSocketServer> server_;  ///< 被控端监听
@@ -44,10 +50,15 @@ private:
     QString server_name_;
     TransportState state_{TransportState::Idle};
 
+    /// drain 事件投递上下文（纯 QObject，主线程亲和 = QWebSocket 线程；
+    /// 传输层自身非 QObject，借它把排空动作序列化到 socket 线程——
+    /// 等价 asio strand：同一时刻至多一个 drain 在执行）
+    std::unique_ptr<QObject> drain_ctx_;
+
     // 发送外箱：IO 线程入队（QWebSocket 非线程安全，禁止跨线程直发），
-    // socket 线程 20ms 批量 flush。画面帧 push_overwrite 丢旧留新，其余 push_wait_for
+    // socket 线程事件驱动抽干。画面帧 push_overwrite 丢旧留新，其余 push_wait_for
     foundation::BoundedQueue<QByteArray> tx_{128};
-    QTimer* flush_timer_{nullptr};
+    std::atomic<bool> flush_scheduled_{false};  ///< drain 事件防重标记
     QTimer* ping_timer_{nullptr};
     int ping_miss_{0};  ///< 连续无 pong 计数（仅 socket 线程访问）
 

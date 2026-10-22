@@ -1,7 +1,8 @@
 // ============================================================
 // scToLocalDesk | src/implement/transport/ws_transport.cpp
 // WsTransport 实现：Qt 信号 → C++ 回调桥接（Doc08 §7 线程模型）
-// 发送走外箱队列：IO 线程入队、socket 线程 flush（QWebSocket 非线程安全）
+// 发送走外箱队列：IO 线程入队、socket 线程事件驱动 drain（asio proactor，
+// 无轮询定时器；空闲零延迟，高负载自动批并）
 // ============================================================
 #include "implement/transport/ws_transport.hpp"
 
@@ -12,8 +13,7 @@
 namespace sc::localdesk {
 
 namespace {
-constexpr int kFlushIntervalMs = 20;      ///< 发送外箱 flush 周期
-constexpr int kFlushBudget = 32;          ///< 单次 flush 最多出队帧数（防饿主线程）
+constexpr int kFlushBudget = 32;          ///< 单次 drain 最多出队帧数（防饿主线程）
 constexpr int kPingIntervalMs = 5000;     ///< KEEPALIVE ping 周期（Doc08 §6）
 constexpr int kPingMaxMiss = 3;           ///< 连续无 pong 上限，超出判链路死亡
 constexpr int kNonScreenWaitMs = 100;     ///< 非画面帧入队限时
@@ -21,10 +21,14 @@ constexpr int kNonScreenWaitMs = 100;     ///< 非画面帧入队限时
 
 WsTransport::WsTransport(const QString& server_name)
     : server_name_(server_name) {
+    // drain 上下文在构造线程创建（主线程），与 QWebSocket 线程亲和一致
+    drain_ctx_ = std::make_unique<QObject>();
 }
 
 WsTransport::~WsTransport() {
     close();
+    // drain_ctx_ 析构需在其亲和线程（主线程）；传输层在主线程析构 → 安全
+    drain_ctx_.reset();
 }
 
 bool WsTransport::start_server(uint16_t port) {
@@ -48,9 +52,15 @@ bool WsTransport::start_server(uint16_t port) {
                          tx_.reopen();
                          QObject::connect(sock, &QWebSocket::binaryMessageReceived,
                                           [this](const QByteArray& msg) {
-                                              std::lock_guard<std::mutex> lk(cb_mtx_);
-                                              if (on_message_) {
-                                                  on_message_(std::vector<uint8_t>(
+                                              // asio 模式：锁内只拷回调，锁外分发——
+                                              // 大帧处理不阻塞回调表的其他访问者
+                                              OnMessageCb cb;
+                                              {
+                                                  std::lock_guard<std::mutex> lk(cb_mtx_);
+                                                  cb = on_message_;
+                                              }
+                                              if (cb) {
+                                                  cb(std::vector<uint8_t>(
                                                       msg.cbegin(), msg.cend()));
                                               }
                                           });
@@ -79,9 +89,14 @@ void WsTransport::connect_client(const std::string& host, uint16_t port) {
     });
     QObject::connect(sock, &QWebSocket::binaryMessageReceived,
                      [this](const QByteArray& msg) {
-                         std::lock_guard<std::mutex> lk(cb_mtx_);
-                         if (on_message_) {
-                             on_message_(std::vector<uint8_t>(msg.cbegin(), msg.cend()));
+                         // 锁内拷回调、锁外分发（同上，asio 模式）
+                         OnMessageCb cb;
+                         {
+                             std::lock_guard<std::mutex> lk(cb_mtx_);
+                             cb = on_message_;
+                         }
+                         if (cb) {
+                             cb(std::vector<uint8_t>(msg.cbegin(), msg.cend()));
                          }
                      });
     QObject::connect(sock, &QWebSocket::disconnected, [this] {
@@ -112,6 +127,7 @@ void WsTransport::send_binary(const std::vector<uint8_t>& data) {
     else {
         (void)tx_.push_wait_for(std::move(ba), kNonScreenWaitMs);
     }
+    schedule_drain();   // proactor：入队即投递排空事件（原子防重）
 }
 
 void WsTransport::close() {
@@ -141,44 +157,36 @@ void WsTransport::set_state_callback(OnStateCb cb) {
 
 void WsTransport::set_state(TransportState st) {
     state_ = st;
-    std::lock_guard<std::mutex> lk(cb_mtx_);
-    if (on_state_) {
-        on_state_(st);
+    // 锁内拷回调、锁外分发（回调可能级联会话层逻辑，勿持锁调用）
+    OnStateCb cb;
+    {
+        std::lock_guard<std::mutex> lk(cb_mtx_);
+        cb = on_state_;
+    }
+    if (cb) {
+        cb(st);
     }
 }
 
-// ---------------- 发送外箱 / KEEPALIVE ----------------
+// ---------------- 发送外箱（事件驱动）/ KEEPALIVE ----------------
 
-void WsTransport::start_timers() {
-    if (flush_timer_ == nullptr) {
-        flush_timer_ = new QTimer();
-        flush_timer_->setInterval(kFlushIntervalMs);
-        QObject::connect(flush_timer_, &QTimer::timeout,
-                         [this] { flush_outbox(); });
+void WsTransport::schedule_drain() {
+    // 原子防重：已有排空事件在途则不重复投递（drain 末尾有余量会自续）
+    if (flush_scheduled_.exchange(true)) {
+        return;
     }
-    if (ping_timer_ == nullptr) {
-        ping_timer_ = new QTimer();
-        ping_timer_->setInterval(kPingIntervalMs);
-        QObject::connect(ping_timer_, &QTimer::timeout, [this] { ping_tick(); });
-    }
-    flush_timer_->start();
-    ping_timer_->start();
+    // 经 drain_ctx_（主线程亲和）把排空动作序列化到 socket 线程——
+    // 等价 asio strand：同一时刻至多一个 drain 在执行
+    QMetaObject::invokeMethod(
+        drain_ctx_.get(),
+        [this] {
+            flush_scheduled_ = false;
+            drain_outbox();
+        },
+        Qt::QueuedConnection);
 }
 
-void WsTransport::stop_timers() {
-    if (flush_timer_ != nullptr) {
-        flush_timer_->stop();
-        flush_timer_->deleteLater();
-        flush_timer_ = nullptr;
-    }
-    if (ping_timer_ != nullptr) {
-        ping_timer_->stop();
-        ping_timer_->deleteLater();
-        ping_timer_ = nullptr;
-    }
-}
-
-void WsTransport::flush_outbox() {
+void WsTransport::drain_outbox() {
     if (peer_ == nullptr) {
         return;
     }
@@ -186,9 +194,30 @@ void WsTransport::flush_outbox() {
     int budget = kFlushBudget;
     while (budget-- > 0 && tx_.pop_wait(pkt, 0)) {
         if (peer_ == nullptr) {
-            return;  // flush 期间对端断开
+            return;  // drain 期间对端断开
         }
         peer_->sendBinaryMessage(pkt);
+    }
+    // 预算耗尽仍有积压：再投一轮（自续），保持批并节奏
+    if (!tx_.empty()) {
+        schedule_drain();
+    }
+}
+
+void WsTransport::start_timers() {
+    if (ping_timer_ == nullptr) {
+        ping_timer_ = new QTimer();
+        ping_timer_->setInterval(kPingIntervalMs);
+        QObject::connect(ping_timer_, &QTimer::timeout, [this] { ping_tick(); });
+    }
+    ping_timer_->start();
+}
+
+void WsTransport::stop_timers() {
+    if (ping_timer_ != nullptr) {
+        ping_timer_->stop();
+        ping_timer_->deleteLater();
+        ping_timer_ = nullptr;
     }
 }
 

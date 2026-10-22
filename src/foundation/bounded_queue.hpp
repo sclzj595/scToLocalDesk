@@ -121,6 +121,11 @@ public:
         return closed_;
     }
 
+    [[nodiscard]] bool empty() const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        return queue_.empty();
+    }
+
 private:
     const size_t capacity_;
     std::deque<T> queue_;
