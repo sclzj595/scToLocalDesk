@@ -181,6 +181,7 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
             src/platform/qt_adapter/qt_udp_discovery.cpp
             src/platform/qt_adapter/video_pipeline.cpp
             src/platform/qt_adapter/video_surface.cpp
+            src/platform/qt_adapter/remote_input_item.cpp
             src/platform/qt_adapter/qt_tray.cpp
             src/platform/qt_adapter/single_instance_guard.cpp
         )

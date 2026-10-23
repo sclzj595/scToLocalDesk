@@ -5,6 +5,7 @@
 #include "platform/qt_adapter/qt_event_bridge.hpp"
 
 #include <core/events.hpp>
+#include <core/protocol/tlv.hpp>
 
 #include <QApplication>
 #include <QClipboard>
@@ -186,6 +187,31 @@ bool QtEventBridge::sendFile(const QString& absPath) {
 
 void QtEventBridge::copyText(const QString& text) {
     QApplication::clipboard()->setText(text);
+}
+
+void QtEventBridge::sendMouse(int action, int x, int y, int wheel) {
+    if (sessions_ == nullptr) {
+        return;
+    }
+    protocol::MouseKeyBody mk;
+    mk.kind = protocol::MouseKeyKind::Mouse;
+    mk.action = static_cast<uint8_t>(action);
+    mk.x = static_cast<uint16_t>(x);
+    mk.y = static_cast<uint16_t>(y);
+    mk.wheel = static_cast<int16_t>(wheel);
+    (void)sessions_->send_input_event(mk);
+}
+
+void QtEventBridge::sendKey(int vk, int scan, bool down) {
+    if (sessions_ == nullptr) {
+        return;
+    }
+    protocol::MouseKeyBody mk;
+    mk.kind = protocol::MouseKeyKind::Keyboard;
+    mk.vk = static_cast<uint16_t>(vk);
+    mk.scan = static_cast<uint16_t>(scan);
+    mk.down = down ? 1 : 0;
+    (void)sessions_->send_input_event(mk);
 }
 
 bool QtEventBridge::acceptFile(const QString& fileId) {

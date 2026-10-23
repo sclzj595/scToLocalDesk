@@ -37,6 +37,19 @@ Item {
             color: "#666666"
         }
 
+        // 键鼠捕获（Doc18 §4.4）：盖住画面，归一化后经桥发送；
+        // 声明于工具条之前 → 工具条仍优先收事件
+        RemoteInputItem {
+            id: inputCatcher
+            anchors.fill: parent
+            videoSize: VideoPipeline.frameSize
+            focus: true
+            onVisibleChanged: if (visible) forceActiveFocus()
+            onInputMouse: (action, x, y, wheel) =>
+                          ScLocaldesk.sendMouse(action, x, y, wheel)
+            onInputKey: (vk, scan, down) => ScLocaldesk.sendKey(vk, scan, down)
+        }
+
         // 底部悬浮工具条：半透底 + 描边（内容区禁模糊，Doc13 红线2）
         Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter

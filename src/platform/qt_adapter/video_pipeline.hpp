@@ -14,6 +14,7 @@
 
 #include <QImage>
 #include <QObject>
+#include <QSize>
 
 #include "foundation/bounded_queue.hpp"
 
@@ -45,9 +46,18 @@ public:
     /// 解码 FPS（稳态值，设置页/诊断用）
     [[nodiscard]] double fps() const { return fps_.load(std::memory_order_relaxed); }
 
+    /// 最近一帧分辨率（键鼠归一化数据源，Doc18 §4.4）；无帧为 (0,0)
+    Q_PROPERTY(QSize frameSize READ frameSize NOTIFY frameSizeChanged)
+    [[nodiscard]] QSize frameSize() const {
+        return {static_cast<int>(frame_w_.load(std::memory_order_relaxed)),
+                static_cast<int>(frame_h_.load(std::memory_order_relaxed))};
+    }
+
 signals:
     /// 解码完成（解码线程 emit；接收方在主线程 → 自动 queued）
     void frameReady(const QImage& img);
+    /// 帧分辨率变更（解码线程 emit，queued）
+    void frameSizeChanged();
 
 private:
     /// EventBus 订阅回调（发布线程同步执行，仅入队必须快）
@@ -68,6 +78,8 @@ private:
 
     std::atomic<bool> running_{false};
     std::atomic<double> fps_{0.0};
+    std::atomic<uint32_t> frame_w_{0};  ///< 最近帧宽（键鼠归一化用）
+    std::atomic<uint32_t> frame_h_{0};
     std::thread decode_thread_;
 };
 

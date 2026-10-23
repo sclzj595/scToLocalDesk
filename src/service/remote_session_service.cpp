@@ -253,6 +253,10 @@ bool RemoteSessionService::send_business_frame(const std::vector<uint8_t>& frame
     return false;
 }
 
+bool RemoteSessionService::send_input_event(const protocol::MouseKeyBody& mk) {
+    return send_business_frame(protocol::build_mouse_key(mk));
+}
+
 RemoteSessionService::SessState RemoteSessionService::state() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return state_;

@@ -69,6 +69,9 @@ public:
     Q_INVOKABLE bool rejectFile(const QString& fileId);   ///< 接收确认弹窗【拒绝】
     Q_INVOKABLE bool setUnattendedEnabled(bool enabled, const QString& password);
     Q_INVOKABLE void copyText(const QString& text);       ///< 连接码复制进剪贴板
+    /// 键鼠透传发送（Doc18 §4.4）：RemoteInputItem 已归一化数据直发会话层
+    Q_INVOKABLE void sendMouse(int action, int x, int y, int wheel);
+    Q_INVOKABLE void sendKey(int vk, int scan, bool down);
 
     /// 信任缓存（Doc18 §3.2）：QML 确认弹窗/直连判定/清空入口
     void set_trust_store(TrustStore* ts);

@@ -207,6 +207,7 @@ int main(int argc, char* argv[]) {
         QObject::connect(&video,
                          &sc::localdesk::platform::VideoPipeline::frameReady,
                          rv, &sc::localdesk::ui::RemoteViewPage::on_frame);
+        rv->set_session(sessions.get());  // 键鼠透传出口（Doc18 §4.4）
     }
 
     // 单实例唤起：二次启动把首实例主窗带到前台

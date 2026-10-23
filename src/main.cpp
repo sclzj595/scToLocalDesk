@@ -52,6 +52,7 @@
     #include "platform/qt_adapter/single_instance_guard.hpp"
     #include "platform/qt_adapter/video_pipeline.hpp"
     #include "platform/qt_adapter/video_surface.hpp"
+    #include "platform/qt_adapter/remote_input_item.hpp"
     #include "platform/win32/system_info.hpp"
     #include "service/alias_service.hpp"
     #include "service/app_config.hpp"
@@ -276,6 +277,7 @@ int main(int argc, char* argv[]) {
     bridge.set_listening(listening);
     qmlRegisterSingletonInstance("ScLocaldesk", 1, 0, "ScLocaldesk", &bridge);
     qmlRegisterType<platform::VideoSurface>("ScLocaldesk", 1, 0, "VideoSurface");
+    qmlRegisterType<platform::RemoteInputItem>("ScLocaldesk", 1, 0, "RemoteInputItem");
 
     // 设备列表模型（Doc18 §3.4：QAbstractListModel 增量刷新，防整表抖动）
     platform::DeviceListModel device_model(bus, aliases.get(), &trust_store,
@@ -302,6 +304,27 @@ int main(int argc, char* argv[]) {
                      "auto startControl alias=" + smoke_alias.toStdString());
             (void)bridge.startControl(smoke_alias, false, "");
         });
+    }
+    // 冒烟钩子 2（默认关）：SCLD_SMOKE_INPUT=1 时 Running 后 2s 发键鼠序列
+    //（P2.4 E2E：Move→左键→HI 打字→滚轮，验证归一化+注入全类型）
+    if (qEnvironmentVariableIntValue("SCLD_SMOKE_INPUT") != 0) {
+        QObject::connect(&bridge, &platform::QtEventBridge::sessionStarted,
+                         [&bridge, &logger] {
+                             QTimer::singleShot(2000, &bridge, [&bridge, &logger] {
+                                 SCLD_LOG(logger, LogLevel::Info, "smoke",
+                                          "auto input sequence begin");
+                                 bridge.sendMouse(0, 32768, 32768, 0);  // Move 中心
+                                 bridge.sendMouse(1, 32768, 32768, 0);  // LeftDown
+                                 bridge.sendMouse(2, 32768, 32768, 0);  // LeftUp
+                                 bridge.sendKey(0x48, 0, true);   // H down
+                                 bridge.sendKey(0x48, 0, false);  // H up
+                                 bridge.sendKey(0x49, 0, true);   // I down
+                                 bridge.sendKey(0x49, 0, false);  // I up
+                                 bridge.sendMouse(7, 0, 0, 120);  // Wheel +1 格
+                                 SCLD_LOG(logger, LogLevel::Info, "smoke",
+                                          "auto input sequence end");
+                             });
+                         });
     }
     if (engine.rootObjects().isEmpty()) {
         fprintf(stderr, "[main] QML 加载失败 rootObjects 为空\n");

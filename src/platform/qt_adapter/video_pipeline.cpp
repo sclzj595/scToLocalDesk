@@ -136,6 +136,14 @@ void VideoPipeline::decode_loop() {
             ++drop_count;
             continue;
         }
+        // 帧分辨率登记（键鼠归一化数据源，Doc18 §4.4）；变更才 notify
+        const auto fw = static_cast<uint32_t>(img.width());
+        const auto fh = static_cast<uint32_t>(img.height());
+        const uint32_t old_w = frame_w_.exchange(fw, std::memory_order_relaxed);
+        const uint32_t old_h = frame_h_.exchange(fh, std::memory_order_relaxed);
+        if (old_w != fw || old_h != fh) {
+            emit frameSizeChanged();
+        }
         emit frameReady(img);
         ++decoded_count;
 

@@ -14,19 +14,25 @@
 #include <map>
 #include <string>
 
+#include "core/interface/iinput_injector.hpp"  // MouseAction（键鼠透传捕获）
+
 class QGridLayout;
 class QFrame;
+class QKeyEvent;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QMouseEvent;
 class QProgressBar;
 class QPushButton;
 class QTimer;
 class QVBoxLayout;
+class QWheelEvent;
 
 namespace sc::localdesk {
 struct AppConfig;  // 注意：定义处为 struct，前向声明必须一致（否则 MSVC 改名冲突）
 class AliasService;
+class RemoteSessionService;
 class TrustStore;
 namespace foundation {
 class IniConfig;
@@ -117,12 +123,15 @@ private:
     QLabel* errHint_{nullptr};
 };
 
-/// 远程画面页（画面区 + 底部悬浮工具条）
+/// 远程画面页（画面区 + 底部悬浮工具条 + 键鼠透传捕获，Doc18 §4.4）
 class RemoteViewPage final : public QWidget {
     Q_OBJECT
 
 public:
     explicit RemoteViewPage(QWidget* parent = nullptr);
+
+    /// DI：控制会话服务（键鼠事件发送出口），画面装配后调用
+    void set_session(RemoteSessionService* s) { sessions_ = s; }
 
 signals:
     void disconnected();
@@ -133,10 +142,19 @@ public slots:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
+    void keyReleaseEvent(QKeyEvent* event) override;
 
 private:
+    void send_mouse(MouseAction action, const QPointF& local, int wheel = 0);
+
     QWidget* toolbar_{nullptr};
     QImage frame_;
+    RemoteSessionService* sessions_{nullptr};
 };
 
 /// 文件传输列表页：行卡 + 主色进度条 + 状态色（完成绿/失败红）

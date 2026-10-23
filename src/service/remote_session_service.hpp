@@ -35,6 +35,7 @@ class ILogger;
 
 namespace protocol {
 struct RequestConnectBody;
+struct MouseKeyBody;
 }
 
 // 协议枚举直接以短名暴露给服务层
@@ -95,6 +96,9 @@ public:
 
     /// 会话中发送业务帧（画面/键鼠/文件），Running 前全部拒绝（Doc09 §3.1）
     [[nodiscard]] bool send_business_frame(const std::vector<uint8_t>& frame);
+
+    /// 控制端键鼠事件出口（Doc18 §4.4）：MouseKeyBody → MOUSE_KEY 帧，Running 红线内
+    [[nodiscard]] bool send_input_event(const protocol::MouseKeyBody& mk);
 
     void set_file_service(std::shared_ptr<FileService> files);
     void set_stream_service(std::shared_ptr<ScreenStreamService> stream);
