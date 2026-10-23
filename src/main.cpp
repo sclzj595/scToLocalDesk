@@ -10,6 +10,7 @@
     #include <QFileInfo>
     #include <QQmlApplicationEngine>
     #include <QQmlContext>
+    #include <QQuickItem>
     #include <QQuickStyle>
     #include <QQuickWindow>
     #include <QStandardPaths>
@@ -249,7 +250,21 @@ int main(int argc, char* argv[]) {
     tray.show();
 
     (void)discovery.start();
-    return app.exec();
+    const int rc = app.exec();
+    // 规避 Qt 6.5.3 窗口析构期焦点链 UAF（clearFocusInScope 触碰已释放
+    // focus scope，0xC0000005 稳定复现；启动期 forceActiveFocus 的深层
+    // 控件触发）：析构前对 activeFocusItem setFocus(false) 彻底退出焦点
+    // 链（清 scope 内 focus 标志，仅失焦不够），再销毁根窗口
+    const auto roots = engine.rootObjects();
+    for (QObject* root : roots) {
+        if (auto* win = qobject_cast<QQuickWindow*>(root)) {
+            if (auto* fi = win->activeFocusItem()) {
+                fi->setFocus(false);
+            }
+        }
+        delete root;
+    }
+    return rc;
 }
 
 #else
