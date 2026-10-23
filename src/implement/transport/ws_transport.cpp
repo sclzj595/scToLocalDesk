@@ -6,6 +6,7 @@
 // ============================================================
 #include "implement/transport/ws_transport.hpp"
 
+#include <QTimer>
 #include <QUrl>
 
 #include "core/protocol/msg_type.hpp"
@@ -35,9 +36,10 @@ bool WsTransport::start_server(uint16_t port) {
     server_ = std::make_unique<QWebSocketServer>(
         server_name_, QWebSocketServer::NonSecureMode);
     if (!server_->listen(QHostAddress::AnyIPv4, port)) {
+        last_error_ = server_->errorString();
         server_.reset();
         set_state(TransportState::Error);
-        return false;  // 端口占用（Doc08 §6）
+        return false;  // 端口占用/权限等（Doc08 §6）
     }
     QObject::connect(server_.get(), &QWebSocketServer::newConnection,
                      [this] {
@@ -232,7 +234,7 @@ void WsTransport::ping_tick() {
         peer_->close();
         return;
     }
-    peer_->sendPing(QByteArrayLiteral("ka"));
+    peer_->ping(QByteArrayLiteral("ka"));  // Qt6：sendPing 更名 ping
     ++ping_miss_;
 }
 

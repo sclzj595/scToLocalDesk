@@ -132,7 +132,7 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
     # （UI 预览模式），补装模块后无需改代码自动切回真实现
     find_package(Qt6 6.2 QUIET
         COMPONENTS Core Gui Quick QuickControls2 Network Widgets
-        OPTIONAL_COMPONENTS WebSocket)
+        OPTIONAL_COMPONENTS WebSockets)
     if(Qt6_FOUND)
         set(CMAKE_AUTOMOC ON)
         set(CMAKE_AUTORCC ON)
@@ -157,9 +157,9 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
             sc_localdesk_core
             Qt6::Core Qt6::Gui Qt6::Quick Qt6::QuickControls2
             Qt6::Network Qt6::Widgets)
-        if(TARGET Qt6::WebSocket)
+        if(TARGET Qt6::WebSockets)   # FIX: 曾误拼 WebSocket，恒走本地回环桩（监听必败假象）
             list(APPEND SCLD_QML_SOURCES src/implement/transport/ws_transport.cpp)
-            list(APPEND SCLD_QML_LIBS Qt6::WebSocket)
+            list(APPEND SCLD_QML_LIBS Qt6::WebSockets)
             set(SCLD_HAS_WEBSOCKET 1)
         else()
             set(SCLD_HAS_WEBSOCKET 0)

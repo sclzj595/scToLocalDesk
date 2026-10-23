@@ -129,7 +129,8 @@ bool RemoteSessionService::start_listening(uint16_t port) {
 
     if (!transport_->start_server(port)) {
         SCLD_LOG(log_, LogLevel::Error, "session",
-                 "端口 " + std::to_string(port) + " 监听失败（占用？）");
+                 "端口 " + std::to_string(port) + " 监听失败："
+                     + transport_->last_error());
         return false;
     }
     {

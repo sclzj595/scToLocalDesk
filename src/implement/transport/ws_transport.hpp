@@ -33,6 +33,11 @@ public:
     void set_message_callback(OnMessageCb cb) override;
     void set_state_callback(OnStateCb cb) override;
 
+    /// start_server/connect_client 失败原因（Qt errorString，诊断端口占用类问题）
+    [[nodiscard]] std::string last_error() const override {
+        return last_error_.toStdString();
+    }
+
 private:
     void set_state(TransportState st);
     void start_timers();   ///< KEEPALIVE（创建线程 = socket 所在线程）
@@ -48,6 +53,7 @@ private:
     std::unique_ptr<QWebSocketServer> server_;  ///< 被控端监听
     QWebSocket* peer_{nullptr};                 ///< 当前会话对端（单会话，Doc08 §3）
     QString server_name_;
+    QString last_error_;
     TransportState state_{TransportState::Idle};
 
     /// drain 事件投递上下文（纯 QObject，主线程亲和 = QWebSocket 线程；

@@ -37,6 +37,11 @@ public:
     /// 回调在 IO 线程触发，实现方保证线程安全；跨线程投递统一走 EventBus
     virtual void set_message_callback(OnMessageCb cb) = 0;
     virtual void set_state_callback(OnStateCb cb) = 0;
+
+    /// start_server/connect_client 最近一次失败原因（可观测性；无失败为空）
+    [[nodiscard]] virtual std::string last_error() const {
+        return {};
+    }
 };
 
 }  // namespace sc::localdesk
