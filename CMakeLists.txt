@@ -119,6 +119,15 @@ if(EXISTS "${SCLD_TP_DIR}/ffmpeg/include/libavcodec/avcodec.h")
         set_source_files_properties(src/implement/encoder/ffmpeg_encoder.cpp
             PROPERTIES COMPILE_OPTIONS "/W3")
     endif()
+    # 运行时 dll 自动跟产：构建后拷 third_party/ffmpeg/bin/*.dll 到每个
+    # 链接 core 的 exe 输出目录（avcodec 隐性依赖 swresample——手工拷
+    # exe 出去跑必踩，统一由构建期保证；部署清单 = exe + bin/*.dll）
+    file(GLOB SCLD_FFMPEG_DLLS "${SCLD_TP_DIR}/ffmpeg/bin/*.dll")
+    if(SCLD_FFMPEG_DLLS)
+        add_custom_command(TARGET sc_localdesk_core POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${SCLD_FFMPEG_DLLS} $<TARGET_FILE_DIR:sc_localdesk_core>)
+    endif()
 endif()
 
 # Qt 依赖红线静态断言：任何人往 core 里塞 Qt 头，链接/编译期直接失败
