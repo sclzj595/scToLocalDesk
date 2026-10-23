@@ -9,7 +9,9 @@
         #include <QCoreApplication>
         #include <QFileInfo>
 
+        #include "foundation/config_parser.hpp"
         #include "platform/qt_adapter/single_instance_guard.hpp"
+        #include "service/app_config.hpp"
         #include "service/trust_store.hpp"
         #include "ui/qwidget/glass_theme.h"
         #include "ui/qwidget/main_window.h"
@@ -23,6 +25,18 @@ int main(int argc, char* argv[]) {
         return 0;   // 已有实例：唤起请求已投递
     }
 
+    // 配置加载（Doc17：exe 旁 config.ini，缺失则默认值落盘；Doc18 §3.3 设置页生命周期）
+    sc::localdesk::foundation::IniConfig ini(
+        QCoreApplication::applicationDirPath().toStdWString() + L"\\config.ini");
+    sc::localdesk::AppConfig cfg;
+    if (!ini.load()) {
+        cfg.save(ini);
+        (void)ini.save();
+    }
+    else {
+        cfg.load(ini);
+    }
+
     // 信任缓存：exe 旁 trust.json（Doc18 §3.2，确认弹窗勾选记忆落盘）
     sc::localdesk::TrustStore trust_store(
         QCoreApplication::applicationDirPath().toStdWString() + L"\\trust.json");
@@ -32,6 +46,7 @@ int main(int argc, char* argv[]) {
 
     sc::localdesk::ui::MainWindow win;
     win.setTrustStore(&trust_store);
+    win.set_config_store(&ini, &cfg);
     win.show();
 
     // 单实例唤起：二次启动把首实例主窗带到前台

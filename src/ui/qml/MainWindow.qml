@@ -34,6 +34,19 @@ ApplicationWindow {
     property string pendingAlias: ""
     property string pendingCode: ""
 
+    // 启动回放：主题持久化（[appearance]，Doc18 §3.3）+ 端口占用提示（Doc18 风险清单 P1）
+    Component.onCompleted: {
+        if (ScLocaldesk.settingsValue("appearance.theme") === "dark" && !Theme.isDark) {
+            Theme.toggleDark();
+        }
+        if (ScLocaldesk.settingsValue("appearance.reduce_transparency") === "true") {
+            Theme.reducedTransparency = true;
+        }
+        if (!ScLocaldesk.listening) {
+            toast.show("会话端口监听失败，请在 设置→网络 更换端口后重启");
+        }
+    }
+
     // 主窗口圆角容器（Doc13 §1.2：20px）
     Rectangle {
         id: shell

@@ -47,6 +47,8 @@ public:
     void stop();
 
     void update_self(const std::string& alias, uint16_t ws_port);
+    /// 心跳间隔即时生效（设置页接线，Doc18 §3.3）；下限 500ms 防误配打爆网络
+    void set_heartbeat_interval(int ms);
     void set_status_busy(bool busy);  ///< 会话中：status=0x01（Doc05 §2）
 
 private slots:

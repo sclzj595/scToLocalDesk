@@ -19,6 +19,13 @@ class QPushButton;
 class QTimer;
 class QVBoxLayout;
 
+namespace sc::localdesk {
+struct AppConfig;  // 注意：定义处为 struct，前向声明必须一致（否则 MSVC 改名冲突）
+namespace foundation {
+class IniConfig;
+}
+}
+
 namespace sc::localdesk::ui {
 
 /// 滑动开关（对齐 QML SwitchRow：42×24 轨道 + 18px 圆钮，120ms 动画）
@@ -121,6 +128,9 @@ class SettingsPage final : public QWidget {
 public:
     explicit SettingsPage(QWidget* parent = nullptr);
 
+    /// 配置注入（Doc18 §3.3）：初始化控件真值并启用持久化（widgets_main 调用）
+    void bind_config(foundation::IniConfig* ini, AppConfig* cfg);
+
 signals:
     /// 深色主题开关切换（主窗口统一 applyTheme：QSS + Dock 染色 + glyph）
     void themeChanged(bool dark);
@@ -128,9 +138,31 @@ signals:
     void clearTrustRequested();
 
 private:
+    /// 控件变更统一入口：校验→更新 AppConfig→落盘（即时生效项在 QML 版由桥接服务）
+    void on_changed(const QString& key, const QString& value);
     /// 分组卡：卡内含标题 + body 容器（传出供调用方挂 QFormLayout，
     /// 不能对已有布局的卡直接再 setLayout——Qt 会拒绝二设布局）
     QFrame* makeGroupCard(const QString& title, QWidget** bodyOut);
+
+    foundation::IniConfig* ini_{nullptr};
+    AppConfig* cfg_{nullptr};
+    QLineEdit* aliasEd_{nullptr};
+    ToggleSwitch* autoStartSw_{nullptr};
+    ToggleSwitch* minTraySw_{nullptr};
+    ToggleSwitch* darkSw_{nullptr};
+    ToggleSwitch* reduceSw_{nullptr};
+    QLineEdit* portEd_{nullptr};
+    QLineEdit* mcEd_{nullptr};
+    QLineEdit* hbEd_{nullptr};
+    QLineEdit* fpsEd_{nullptr};
+    QLineEdit* qEd_{nullptr};
+    QLineEdit* dirEd_{nullptr};
+    QLineEdit* chunkEd_{nullptr};
+    ToggleSwitch* confirmSw_{nullptr};
+    ToggleSwitch* unattSw_{nullptr};
+    QLineEdit* lvEd_{nullptr};
+    QLineEdit* logMaxEd_{nullptr};
+    QLineEdit* logFilesEd_{nullptr};
 };
 
 }  // namespace sc::localdesk::ui

@@ -60,6 +60,13 @@ void UdpDiscoveryAdapter::update_self(const std::string& alias, uint16_t ws_port
     opt_.ws_port = ws_port;
 }
 
+void UdpDiscoveryAdapter::set_heartbeat_interval(int ms) {
+    opt_.heartbeat_ms = ms;
+    if (running_) {
+        timer_.start(ms > 500 ? ms : 500);  // 下限 500ms 防误配打爆网络
+    }
+}
+
 void UdpDiscoveryAdapter::set_status_busy(bool busy) {
     opt_.self_status_busy = busy;
 }

@@ -48,6 +48,7 @@ MainWindow::MainWindow() {
     auto* devList = new DeviceListPage();
     auto* connCode = new ConnectCodePage();
     auto* settingsPage = new SettingsPage();
+    settingsPage_ = settingsPage;
     stack_->addWidget(devList);                    // 0 设备列表
     stack_->addWidget(connCode);                   // 1 连接码连接
     stack_->addWidget(new RemoteViewPage());       // 2 远程画面
@@ -413,6 +414,12 @@ void MainWindow::applyTheme(bool dark) {
     themeBtn_->setText(dark ? QStringLiteral("☀") : QStringLiteral("☾"));
     updateDockStyle();   // Dock 选中竖线/图标染色/hover 随主题
     update();
+}
+
+void MainWindow::set_config_store(foundation::IniConfig* ini, AppConfig* cfg) {
+    if (settingsPage_ != nullptr) {
+        settingsPage_->bind_config(ini, cfg);
+    }
 }
 
 void MainWindow::showToast(const QString& text) {

@@ -14,19 +14,24 @@ class AliasService;
 class RemoteSessionService;
 class FileService;
 class TrustStore;
+class AppConfig;
 class UnattendedPasswordAuthenticator;
 
 namespace foundation {
 class EventBus;
 class ILogger;
+class IniConfig;
 }
 
 namespace platform {
+
+class UdpDiscoveryAdapter;
 
 class QtEventBridge final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString selfAlias READ selfAlias NOTIFY selfAliasChanged)
     Q_PROPERTY(bool unattendedEnabled READ unattendedEnabled NOTIFY unattendedChanged)
+    Q_PROPERTY(bool listening READ listening CONSTANT)
     /// Qt 6.5+ 才有 MultiEffect 真模糊（SCLD_HAS_MULTIEFFECT 编译期注入）；
     /// Qt 6.2（远程 Linux）QML 据此退化为半透底玻璃
     Q_PROPERTY(bool hasGlassBlur READ hasGlassBlur CONSTANT)
@@ -70,6 +75,21 @@ public:
     Q_INVOKABLE void trust(const QString& code, const QString& name);
     Q_INVOKABLE void clearTrust();
 
+    /// 设置页接线（Doc18 §3.3）：7 组字段 ↔ AppConfig，变更即落盘 config.ini
+    void set_config_store(foundation::IniConfig* ini, AppConfig* cfg);
+    void set_discovery(UdpDiscoveryAdapter* d);
+    /// 被控监听启动结果（端口占用 UI 提示，Doc18 风险清单 P1 顺带项）
+    void set_listening(bool on) {
+        listening_ = on;
+    }
+    [[nodiscard]] bool listening() const {
+        return listening_;
+    }
+    /// 读配置值（key 契约同 AppConfig section.key，未知返回空串）
+    Q_INVOKABLE QString settingsValue(const QString& key) const;
+    /// 写配置值：校验 → 更新 AppConfig → 全量落盘 → 即时生效项接服务 setter
+    Q_INVOKABLE void settingsSetValue(const QString& key, const QString& value);
+
 signals:
     // 发现
     void deviceOnline(const QString& alias, const QString& ip);
@@ -95,9 +115,13 @@ private:
     RemoteSessionService* sessions_{nullptr};
     FileService* files_{nullptr};
     TrustStore* trust_{nullptr};
+    foundation::IniConfig* ini_{nullptr};
+    AppConfig* cfg_{nullptr};
+    UdpDiscoveryAdapter* discovery_{nullptr};
     foundation::ILogger* log_{nullptr};
     QString self_alias_;
     bool unattended_{false};
+    bool listening_{false};
 };
 
 }  // namespace platform

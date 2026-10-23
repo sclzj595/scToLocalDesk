@@ -52,6 +52,9 @@ struct AppConfig {
     // [app]
     bool auto_start{false};
     bool minimize_to_tray{true};
+    // [appearance]（Doc18 §3.3：主题选择持久化）
+    std::string appearance_theme{"light"};  // light | dark
+    bool appearance_reduce_transparency{false};
 
     /// 从 ini 读取（缺失/非法回退成员当前值 = 默认值）
     void load(const foundation::IniConfig& ini);

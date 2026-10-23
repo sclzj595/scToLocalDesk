@@ -11,7 +11,8 @@ import ".."
 Item {
     id: root
 
-    signal configChanged(string key, string value)
+    // 7 组字段 ↔ AppConfig（Doc18 §3.3）：初值经 ScLocaldesk.settingsValue 注入，
+    // 变更经 settingsSetValue 校验/落盘 config.ini/即时生效项接服务 setter
 
     ScrollView {
         anchors.fill: parent
@@ -36,16 +37,18 @@ Item {
                 title: "通用"
                 TextRow {
                     label: "本机连接名"
-                    value: "zhangsan@SC-DESK"
-                    onEdited: v => root.configChanged("general.alias", v)
+                    value: ScLocaldesk.settingsValue("general.alias")
+                    onEdited: v => ScLocaldesk.settingsSetValue("general.alias", v)
                 }
                 SwitchRow {
                     text: "开机自动启动"
-                    onToggled: root.configChanged("general.auto_start", checked ? "true" : "false")
+                    checked: ScLocaldesk.settingsValue("app.auto_start") === "true"
+                    onToggled: ScLocaldesk.settingsSetValue("app.auto_start", checked ? "true" : "false")
                 }
                 SwitchRow {
                     text: "启动后最小化到托盘"
-                    onToggled: root.configChanged("general.start_minimized", checked ? "true" : "false")
+                    checked: ScLocaldesk.settingsValue("app.minimize_to_tray") === "true"
+                    onToggled: ScLocaldesk.settingsSetValue("app.minimize_to_tray", checked ? "true" : "false")
                 }
             }
 
@@ -57,7 +60,7 @@ Item {
                     checked: Theme.isDark
                     onToggled: {
                         Theme.toggleDark();
-                        root.configChanged("appearance.theme", Theme.isDark ? "dark" : "light");
+                        ScLocaldesk.settingsSetValue("appearance.theme", Theme.isDark ? "dark" : "light");
                     }
                 }
                 SwitchRow {
@@ -65,7 +68,7 @@ Item {
                     checked: Theme.reducedTransparency
                     onToggled: {
                         Theme.reducedTransparency = checked;
-                        root.configChanged("appearance.reduce_transparency", checked ? "true" : "false");
+                        ScLocaldesk.settingsSetValue("appearance.reduce_transparency", checked ? "true" : "false");
                     }
                 }
             }
@@ -75,20 +78,20 @@ Item {
                 title: "网络"
                 TextRow {
                     label: "会话端口"
-                    value: "8899"
+                    value: ScLocaldesk.settingsValue("network.ws_port")
                     numeric: true
-                    onEdited: v => root.configChanged("network.ws_port", v)
+                    onEdited: v => ScLocaldesk.settingsSetValue("network.ws_port", v)
                 }
                 TextRow {
                     label: "组播地址"
-                    value: "239.255.88.99"
-                    onEdited: v => root.configChanged("network.multicast_addr", v)
+                    value: ScLocaldesk.settingsValue("network.multicast_addr")
+                    onEdited: v => ScLocaldesk.settingsSetValue("network.multicast_addr", v)
                 }
                 TextRow {
                     label: "心跳间隔（秒）"
-                    value: "3"
+                    value: ScLocaldesk.settingsValue("network.heartbeat_interval_s")
                     numeric: true
-                    onEdited: v => root.configChanged("network.heartbeat_interval_s", v)
+                    onEdited: v => ScLocaldesk.settingsSetValue("network.heartbeat_interval_s", v)
                 }
             }
 
@@ -97,15 +100,15 @@ Item {
                 title: "远程会话"
                 TextRow {
                     label: "帧率（fps）"
-                    value: "24"
+                    value: ScLocaldesk.settingsValue("session.fps")
                     numeric: true
-                    onEdited: v => root.configChanged("session.fps", v)
+                    onEdited: v => ScLocaldesk.settingsSetValue("session.fps", v)
                 }
                 TextRow {
                     label: "JPEG 画质"
-                    value: "80"
+                    value: ScLocaldesk.settingsValue("session.jpeg_quality")
                     numeric: true
-                    onEdited: v => root.configChanged("session.jpeg_quality", v)
+                    onEdited: v => ScLocaldesk.settingsSetValue("session.jpeg_quality", v)
                 }
             }
 
@@ -114,19 +117,19 @@ Item {
                 title: "文件传输"
                 TextRow {
                     label: "接收目录"
-                    value: "C:/Users/11/Desktop"
-                    onEdited: v => root.configChanged("file.save_path", v)
+                    value: ScLocaldesk.settingsValue("file.save_path")
+                    onEdited: v => ScLocaldesk.settingsSetValue("file.save_path", v)
                 }
                 TextRow {
                     label: "分片大小（KB）"
-                    value: "512"
+                    value: ScLocaldesk.settingsValue("file.chunk_size_kb")
                     numeric: true
-                    onEdited: v => root.configChanged("file.chunk_size_kb", v)
+                    onEdited: v => ScLocaldesk.settingsSetValue("file.chunk_size_kb", v)
                 }
                 SwitchRow {
                     text: "接收前需确认"
-                    checked: true
-                    onToggled: root.configChanged("file.confirm_before_transfer", checked ? "true" : "false")
+                    checked: ScLocaldesk.settingsValue("file.confirm_before_transfer") === "true"
+                    onToggled: ScLocaldesk.settingsSetValue("file.confirm_before_transfer", checked ? "true" : "false")
                 }
             }
 
@@ -135,14 +138,15 @@ Item {
                 title: "安全"
                 SwitchRow {
                     text: "允许无人值守连接"
-                    checked: false
-                    onToggled: root.configChanged("security.unattended_enabled", checked ? "true" : "false")
+                    checked: ScLocaldesk.settingsValue("security.unattended_enabled") === "true"
+                    onToggled: ScLocaldesk.settingsSetValue("security.unattended_enabled", checked ? "true" : "false")
                 }
                 TextRow {
                     label: "无人值守密码"
-                    value: "••••••"
+                    value: ""
                     echo: true
-                    onEdited: v => root.configChanged("security.unattended_password", v)
+                    onEdited: v => ScLocaldesk.setUnattendedEnabled(
+                                  ScLocaldesk.settingsValue("security.unattended_enabled") === "true", v)
                 }
             }
 
@@ -151,13 +155,20 @@ Item {
                 title: "日志"
                 TextRow {
                     label: "日志级别"
-                    value: "info"
-                    onEdited: v => root.configChanged("log.level", v)
+                    value: ScLocaldesk.settingsValue("log.level")
+                    onEdited: v => ScLocaldesk.settingsSetValue("log.level", v)
                 }
-                SwitchRow {
-                    text: "控制台输出"
-                    checked: true
-                    onToggled: root.configChanged("log.console", checked ? "true" : "false")
+                TextRow {
+                    label: "日志上限（MB）"
+                    value: ScLocaldesk.settingsValue("log.max_size_mb")
+                    numeric: true
+                    onEdited: v => ScLocaldesk.settingsSetValue("log.max_size_mb", v)
+                }
+                TextRow {
+                    label: "日志文件数"
+                    value: ScLocaldesk.settingsValue("log.max_files")
+                    numeric: true
+                    onEdited: v => ScLocaldesk.settingsSetValue("log.max_files", v)
                 }
             }
         }

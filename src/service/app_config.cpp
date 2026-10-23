@@ -53,6 +53,10 @@ void AppConfig::load(const foundation::IniConfig& ini) {
 
     auto_start = ini.get_bool("app", "auto_start", auto_start);
     minimize_to_tray = ini.get_bool("app", "minimize_to_tray", minimize_to_tray);
+
+    appearance_theme = ini.get_str("appearance", "theme", appearance_theme);
+    appearance_reduce_transparency =
+        ini.get_bool("appearance", "reduce_transparency", appearance_reduce_transparency);
 }
 
 void AppConfig::save(foundation::IniConfig& ini) const {
@@ -93,6 +97,9 @@ void AppConfig::save(foundation::IniConfig& ini) const {
 
     ini.set_bool("app", "auto_start", auto_start);
     ini.set_bool("app", "minimize_to_tray", minimize_to_tray);
+
+    ini.set_str("appearance", "theme", appearance_theme);
+    ini.set_bool("appearance", "reduce_transparency", appearance_reduce_transparency);
 }
 
 }  // namespace sc::localdesk

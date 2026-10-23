@@ -2,6 +2,8 @@
 // scToLocalDesk | src/platform/win32/auto_start.cpp
 // 开机自启：CurrentUser Run 注册表键（Doc15 §3，无需管理员权限）
 // ============================================================
+#include "platform/win32/auto_start.hpp"
+
 #include <windows.h>
 
 #include <string>

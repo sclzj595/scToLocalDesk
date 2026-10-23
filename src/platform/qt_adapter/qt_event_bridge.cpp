@@ -13,7 +13,14 @@
 #include <foundation/event_bus.hpp>
 #include <foundation/logger/ilogger.hpp>
 
+#include <QApplication>
+#include <QStandardPaths>
+
+#include <foundation/config_parser.hpp>
+#include <platform/win32/auto_start.hpp>
+#include <platform/qt_adapter/qt_udp_discovery.hpp>
 #include <service/alias_service.hpp>
+#include <service/app_config.hpp>
 #include <service/file_service.hpp>
 #include <service/remote_session_service.hpp>
 #include <service/trust_store.hpp>
@@ -172,6 +179,279 @@ void QtEventBridge::trust(const QString& code, const QString& name) {
 void QtEventBridge::clearTrust() {
     if (trust_ != nullptr) {
         trust_->clear();
+    }
+}
+
+// ---------------- 设置页接线（Doc18 §3.3） ----------------
+
+namespace {
+
+bool parse_level(const std::string& s, foundation::LogLevel& out) {
+    if (s == "trace") {
+        out = foundation::LogLevel::Trace;
+    }
+    else if (s == "debug") {
+        out = foundation::LogLevel::Debug;
+    }
+    else if (s == "info") {
+        out = foundation::LogLevel::Info;
+    }
+    else if (s == "warn") {
+        out = foundation::LogLevel::Warn;
+    }
+    else if (s == "error") {
+        out = foundation::LogLevel::Error;
+    }
+    else {
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+void QtEventBridge::set_config_store(foundation::IniConfig* ini, AppConfig* cfg) {
+    ini_ = ini;
+    cfg_ = cfg;
+}
+
+void QtEventBridge::set_discovery(UdpDiscoveryAdapter* d) {
+    discovery_ = d;
+}
+
+QString QtEventBridge::settingsValue(const QString& key) const {
+    if (cfg_ == nullptr) {
+        return {};
+    }
+    const std::string k = key.toStdString();
+    if (k == "general.alias") {
+        return QString::fromStdString(cfg_->alias);
+    }
+    if (k == "app.auto_start") {
+        return cfg_->auto_start ? QStringLiteral("true") : QStringLiteral("false");
+    }
+    if (k == "app.minimize_to_tray") {
+        return cfg_->minimize_to_tray ? QStringLiteral("true") : QStringLiteral("false");
+    }
+    if (k == "appearance.theme") {
+        return QString::fromStdString(cfg_->appearance_theme);
+    }
+    if (k == "appearance.reduce_transparency") {
+        return cfg_->appearance_reduce_transparency ? QStringLiteral("true")
+                                                    : QStringLiteral("false");
+    }
+    if (k == "network.ws_port") {
+        return QString::number(cfg_->ws_port);
+    }
+    if (k == "network.multicast_addr") {
+        return QString::fromStdString(cfg_->multicast_addr);
+    }
+    if (k == "network.heartbeat_interval_s") {
+        return QString::number(cfg_->heartbeat_interval_s);
+    }
+    if (k == "session.fps") {
+        return QString::number(cfg_->fps);
+    }
+    if (k == "session.jpeg_quality") {
+        return QString::number(cfg_->jpeg_quality);
+    }
+    if (k == "file.save_path") {
+        return QString::fromStdString(cfg_->save_path);
+    }
+    if (k == "file.chunk_size_kb") {
+        return QString::number(cfg_->chunk_size_kb);
+    }
+    if (k == "file.confirm_before_transfer") {
+        return cfg_->confirm_before_transfer ? QStringLiteral("true") : QStringLiteral("false");
+    }
+    if (k == "security.unattended_enabled") {
+        return cfg_->unattended_enabled ? QStringLiteral("true") : QStringLiteral("false");
+    }
+    if (k == "log.level") {
+        return QString::fromStdString(cfg_->log_level);
+    }
+    if (k == "log.max_size_mb") {
+        return QString::number(cfg_->log_max_size_mb);
+    }
+    if (k == "log.max_files") {
+        return QString::number(cfg_->log_max_files);
+    }
+    return {};
+}
+
+void QtEventBridge::settingsSetValue(const QString& key, const QString& value) {
+    if (ini_ == nullptr || cfg_ == nullptr) {
+        SCLD_LOG(log_, foundation::LogLevel::Warn, "settings",
+                 "配置未注入，设置变更被忽略 key=" + key.toStdString());
+        return;
+    }
+    const std::string k = key.toStdString();
+    const std::string v = value.toStdString();
+    auto warn_invalid = [&](const char* why) {
+        SCLD_LOG(log_, foundation::LogLevel::Warn, "settings",
+                 "非法值已忽略 " + k + "=" + v + "（" + why + "）");
+    };
+    auto persist = [&](const char* note) {
+        cfg_->save(*ini_);
+        if (ini_->save()) {
+            SCLD_LOG(log_, foundation::LogLevel::Info, "settings",
+                     "已保存 " + k + "=" + v + note);
+        }
+        else {
+            SCLD_LOG(log_, foundation::LogLevel::Error, "settings",
+                     "config.ini 落盘失败");
+        }
+    };
+    bool num_ok = false;
+
+    if (k == "general.alias") {
+        if (v.empty()) {
+            warn_invalid("不能为空");
+            return;
+        }
+        cfg_->alias = v;
+        if (aliases_ != nullptr) {
+            aliases_->set_self_alias(v);
+        }
+        if (discovery_ != nullptr) {
+            discovery_->update_self(v, static_cast<uint16_t>(cfg_->ws_port));
+        }
+        persist("");
+    }
+    else if (k == "app.auto_start") {
+        cfg_->auto_start = (value == QStringLiteral("true"));
+        (void)platform::set_auto_start(
+            cfg_->auto_start, QCoreApplication::applicationFilePath().toStdWString());
+        persist("");
+    }
+    else if (k == "app.minimize_to_tray") {
+        cfg_->minimize_to_tray = (value == QStringLiteral("true"));
+        persist("");
+    }
+    else if (k == "appearance.theme") {
+        if (v != "dark" && v != "light") {
+            warn_invalid("仅 dark/light");
+            return;
+        }
+        cfg_->appearance_theme = v;
+        persist("");
+    }
+    else if (k == "appearance.reduce_transparency") {
+        cfg_->appearance_reduce_transparency = (value == QStringLiteral("true"));
+        persist("");
+    }
+    else if (k == "network.ws_port") {
+        const int port = value.toInt(&num_ok);
+        if (!num_ok || port < 1024 || port > 65535) {
+            warn_invalid("1024~65535");
+            return;
+        }
+        cfg_->ws_port = port;  // 监听 socket 构建期绑定，重启生效
+        persist("（重启生效）");
+    }
+    else if (k == "network.multicast_addr") {
+        cfg_->multicast_addr = v;  // 适配器 Options 构建期固定，重启生效
+        persist("（重启生效）");
+    }
+    else if (k == "network.heartbeat_interval_s") {
+        const int s = value.toInt(&num_ok);
+        if (!num_ok || s < 1 || s > 60) {
+            warn_invalid("1~60");
+            return;
+        }
+        cfg_->heartbeat_interval_s = s;
+        if (discovery_ != nullptr) {
+            discovery_->set_heartbeat_interval(s * 1000);
+        }
+        persist("");
+    }
+    else if (k == "session.fps") {
+        const int n = value.toInt(&num_ok);
+        if (!num_ok || (n != 10 && n != 15 && n != 24 && n != 30)) {
+            warn_invalid("档位 10/15/24/30");
+            return;
+        }
+        cfg_->fps = n;
+        if (sessions_ != nullptr) {
+            sessions_->set_stream_params(cfg_->fps, cfg_->jpeg_quality);
+        }
+        persist("");
+    }
+    else if (k == "session.jpeg_quality") {
+        const int n = value.toInt(&num_ok);
+        if (!num_ok || n < 1 || n > 100) {
+            warn_invalid("1~100");
+            return;
+        }
+        cfg_->jpeg_quality = n;
+        if (sessions_ != nullptr) {
+            sessions_->set_stream_params(cfg_->fps, cfg_->jpeg_quality);
+        }
+        persist("");
+    }
+    else if (k == "file.save_path") {
+        cfg_->save_path = v;
+        if (files_ != nullptr) {
+            files_->set_save_dir(value.isEmpty()
+                ? QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)
+                      .toStdString()
+                : v);
+        }
+        persist("");
+    }
+    else if (k == "file.chunk_size_kb") {
+        const int n = value.toInt(&num_ok);
+        if (!num_ok || n < 16 || n > 4096) {
+            warn_invalid("16~4096");
+            return;
+        }
+        cfg_->chunk_size_kb = n;
+        if (files_ != nullptr) {
+            files_->set_chunk_size(static_cast<uint32_t>(n));
+        }
+        persist("");
+    }
+    else if (k == "file.confirm_before_transfer") {
+        cfg_->confirm_before_transfer = (value == QStringLiteral("true"));
+        if (files_ != nullptr) {
+            files_->set_confirm_enabled(cfg_->confirm_before_transfer);
+        }
+        persist("");
+    }
+    else if (k == "security.unattended_enabled") {
+        cfg_->unattended_enabled = (value == QStringLiteral("true"));
+        (void)setUnattendedEnabled(cfg_->unattended_enabled,
+                                   QString());  // 内存开关同步；凭据 PBKDF2 为 V1.0 任务
+        persist("");
+    }
+    else if (k == "log.level") {
+        foundation::LogLevel lv;
+        if (!parse_level(v, lv)) {
+            warn_invalid("trace/debug/info/warn/error");
+            return;
+        }
+        cfg_->log_level = v;
+        if (log_ != nullptr) {
+            log_->set_level(lv);  // 即时生效
+        }
+        persist("");
+    }
+    else if (k == "log.max_size_mb" || k == "log.max_files") {
+        const int n = value.toInt(&num_ok);
+        if (!num_ok || n < 1 || n > 1024) {
+            warn_invalid("1~1024");
+            return;
+        }
+        if (k == "log.max_size_mb") {
+            cfg_->log_max_size_mb = n;
+        }
+        else {
+            cfg_->log_max_files = n;
+        }
+        persist("（重启生效）");  // 日志后端滚动参数构建期固定
+    }
+    else {
+        SCLD_LOG(log_, foundation::LogLevel::Warn, "settings", "未知设置键 " + k);
     }
 }
 

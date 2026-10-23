@@ -198,8 +198,8 @@ int main(int argc, char* argv[]) {
     input->set_injector(make_input_injector());
     sessions->set_input_service(input);
 
-    // 被控监听（network.ws_port，Doc17 §3.2）
-    (void)sessions->start_listening(static_cast<uint16_t>(cfg.ws_port));
+    // 被控监听（network.ws_port，Doc17 §3.2）；失败经桥提示 UI（Doc18 风险清单 P1 顺带）
+    const bool listening = sessions->start_listening(static_cast<uint16_t>(cfg.ws_port));
 
     // UDP 心跳（Qt 适配器，Doc07 §8；组播失败自动切静态映射由适配器上报）
     platform::UdpDiscoveryAdapter::Options opt;
@@ -213,6 +213,9 @@ int main(int argc, char* argv[]) {
     platform::QtEventBridge bridge;
     bridge.init(bus.get(), aliases.get(), sessions.get(), files.get(), logger.get());
     bridge.set_trust_store(&trust_store);
+    bridge.set_config_store(&ini, &cfg);
+    bridge.set_discovery(&discovery);
+    bridge.set_listening(listening);
     qmlRegisterSingletonInstance("ScLocaldesk", 1, 0, "ScLocaldesk", &bridge);
 
     QQmlApplicationEngine engine;

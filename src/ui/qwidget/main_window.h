@@ -15,9 +15,15 @@ class QTimer;
 
 namespace sc::localdesk {
 class TrustStore;
+struct AppConfig;  // 定义处为 struct，声明须一致
+namespace foundation {
+class IniConfig;
+}
 }
 
 namespace sc::localdesk::ui {
+
+class SettingsPage;
 
 class MainWindow final : public FramelessWindow {
     Q_OBJECT
@@ -29,6 +35,9 @@ public:
     void setTrustStore(TrustStore* ts) {
         trust_ = ts;
     }
+
+    /// 配置注入（Doc18 §3.3）：转发设置页，解锁控件真值回放与落盘
+    void set_config_store(foundation::IniConfig* ini, AppConfig* cfg);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -51,6 +60,7 @@ private:
     QLabel* toastLbl_{nullptr};
     QTimer* toastTimer_{nullptr};
     TrustStore* trust_{nullptr};
+    SettingsPage* settingsPage_{nullptr};
 };
 
 }  // namespace sc::localdesk::ui
