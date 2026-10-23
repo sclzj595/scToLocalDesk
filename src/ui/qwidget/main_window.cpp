@@ -291,9 +291,9 @@ QWidget* MainWindow::makeDock() {
                                          "border-bottom-left-radius: 20px; }"));
 
     auto* lay = new QVBoxLayout(dock);
-    lay->setContentsMargins(0, 52, 0, 0);
-    // 条目 46px 圆 + 间距 20：视觉节奏 66px 对齐 QML（56px 条目 + 10 间距，
-    // 46px 圆内缩 5px）；hover 高亮圆与 QML 同为 46px
+    // 顶距 57：首个图标中心 y=80，与 QML DockBar（topMargin 52 + 条目 56/2）
+    // 逐像素对齐；条目 46px 圆 + 间距 20：节奏 66px 对齐 QML
+    lay->setContentsMargins(0, 57, 0, 0);
     lay->setSpacing(20);
     lay->setAlignment(Qt::AlignHCenter);
 
@@ -310,7 +310,7 @@ QWidget* MainWindow::makeDock() {
         auto* btn = new QLabel(glyphs.at(i));
         btn->setFixedSize(46, 46);
         btn->setAlignment(Qt::AlignCenter);
-        btn->setStyleSheet(QStringLiteral("font-size: 24px; color: %1; border-radius: 23px;")
+        btn->setStyleSheet(QStringLiteral("font-size: 26px; color: %1; border-radius: 23px;")
                                .arg(GlassTheme::instance().textSecond().name(QColor::HexRgb)));
         btn->setProperty("pageIndex", i);
         btn->setToolTip(tips.at(i));
@@ -319,9 +319,10 @@ QWidget* MainWindow::makeDock() {
         lay->addWidget(btn);
         dockBtns_.append(btn);
 
-        // 选中标记：左缘主色竖线（对齐 QML DockBar §8）
-        auto* bar = new QLabel(btn);
-        bar->setGeometry(2, 13, 3, 20);
+        // 选中标记：Dock 左缘主色竖条（QML DockBar §8：x=10、4x32、圆角 2；
+        // 挂 dock 而非按钮——按钮左缘在 x=13，挂按钮会被裁掉出界 3px）
+        auto* bar = new QLabel(dock);
+        bar->setGeometry(10, 64 + i * 66, 4, 32);
         bar->setStyleSheet(QStringLiteral(
             "background: %1; border-radius: 2px;")
             .arg(GlassTheme::instance().primary().name(QColor::HexRgb)));
@@ -332,9 +333,9 @@ QWidget* MainWindow::makeDock() {
     // 此处 stack_ 尚未创建，读其 currentIndex 会空指针崩溃）
     for (int i = 0; i < dockBtns_.size(); ++i) {
         auto* btn = dockBtns_.at(i);
-        btn->setProperty("baseQss", QStringLiteral("font-size: 24px; color: %1; border-radius: 23px;")
+        btn->setProperty("baseQss", QStringLiteral("font-size: 26px; color: %1; border-radius: 23px;")
                                         .arg(GlassTheme::instance().textSecond().name(QColor::HexRgb)));
-        btn->setProperty("hoverQss", QStringLiteral("font-size: 24px; color: %1; border-radius: 23px; background: %2;")
+        btn->setProperty("hoverQss", QStringLiteral("font-size: 26px; color: %1; border-radius: 23px; background: %2;")
                                          .arg(GlassTheme::instance().textSecond().name(QColor::HexRgb),
                                               GlassTheme::instance().hoverBg().name(QColor::HexArgb)));
         btn->setStyleSheet(btn->property("baseQss").toString());
@@ -361,8 +362,8 @@ void MainWindow::updateDockStyle() {
         auto* btn = dockBtns_.at(i);
         const bool sel = (i == stack_->currentIndex());
         const QString color = sel ? primary : second;
-        btn->setProperty("baseQss", QStringLiteral("font-size: 24px; color: %1; border-radius: 23px;").arg(color));
-        btn->setProperty("hoverQss", QStringLiteral("font-size: 24px; color: %1; border-radius: 23px; background: %2;").arg(color, hover));
+        btn->setProperty("baseQss", QStringLiteral("font-size: 26px; color: %1; border-radius: 23px;").arg(color));
+        btn->setProperty("hoverQss", QStringLiteral("font-size: 26px; color: %1; border-radius: 23px; background: %2;").arg(color, hover));
         btn->setStyleSheet(btn->property("baseQss").toString());
         dockBars_.at(i)->setVisible(sel);
     }

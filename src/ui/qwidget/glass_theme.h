@@ -62,9 +62,11 @@ public:
     QColor winBg() const {
         return dark_ ? QColor{"#15171C"} : QColor{"#F7F9FC"};
     }
-    /// 玻璃半透底（QSS 无模糊，以 85% 不透明纯色模拟磨砂观感）
+    /// 玻璃半透底（QSS 无模糊，以纯色模拟磨砂观感）。浅色必须与 winBg 拉开
+    /// 明度差：QML 玻璃采样真实桌面天然带灰调，与内容区分界清晰；纯白半透
+    /// 叠在 winBg 上会同色无界，Dock 视觉上渗入内容区
     QColor glassBg() const {
-        return dark_ ? QColor(30, 33, 40, 217) : QColor(255, 255, 255, 217);
+        return dark_ ? QColor(30, 33, 40, 217) : QColor(236, 239, 243, 242);
     }
     QColor glassBorder() const {
         return dark_ ? QColor(255, 255, 255, 90) : QColor(255, 255, 255, 191);
