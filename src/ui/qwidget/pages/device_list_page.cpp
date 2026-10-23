@@ -182,10 +182,8 @@ void DeviceListPage::apply_snapshot() {
                     card->findChild<QLabel*>(QStringLiteral("codeLbl"))
                         ->setText(code_text(c.code));
                     card->findChild<QLabel*>(QStringLiteral("ipLbl"))
-                        ->setText(QStringLiteral("%1  %2")
-                                      .arg(QString::fromStdString(c.ip),
-                                           c.busy ? QStringLiteral("会话中")
-                                                  : QStringLiteral("可连接")));
+                        ->setText(c.busy ? QStringLiteral("会话中")
+                                         : QStringLiteral("可连接"));
                     auto* dot = card->findChild<QLabel*>(QStringLiteral("dotLbl"));
                     if (dot != nullptr) {
                         dot->setStyleSheet(QStringLiteral(
@@ -308,8 +306,9 @@ QWidget* DeviceListPage::makeDeviceCard(const QString& name, const QString& code
         .arg(busy ? GlassTheme::instance().accentGreen().name(QColor::HexRgb)
                   : GlassTheme::instance().accentBlue().name(QColor::HexRgb)));
     bottom->addWidget(dot);
-    auto* ipLbl = new QLabel(QStringLiteral("%1  %2").arg(ip,
-        busy ? QStringLiteral("会话中") : QStringLiteral("可连接")));
+    // 状态行对齐 QML：仅状态文字不含 IP（IP 已在连接名下方展示，避免重复）
+    auto* ipLbl = new QLabel(busy ? QStringLiteral("会话中")
+                                  : QStringLiteral("可连接"));
     ipLbl->setObjectName(QStringLiteral("ipLbl"));
     ipLbl->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
                              .arg(GlassTheme::instance().textSecond().name(QColor::HexRgb)));
