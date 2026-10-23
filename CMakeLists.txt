@@ -106,7 +106,8 @@ if(EXISTS "${SCLD_TP_DIR}/asio/include/asio.hpp")
 endif()
 # FFmpeg LGPL shared（动态链接合规）：vendored 于 third_party/ffmpeg，
 # 存在即启用 MJPEG 编码（sws 色彩转换）；缺失自动降级 RawEncoder。
-# 麒麟侧 P6 改走系统源 find_package（P6 排期，勿提前）
+# Linux 侧（P6：Ubuntu 22.04 基准，Debian 系）走 pkg-config 探测
+# 系统源 libavcodec-dev（FFmpeg 4.4，本编码器仅用稳定 API，可编译）
 if(EXISTS "${SCLD_TP_DIR}/ffmpeg/include/libavcodec/avcodec.h")
     target_include_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/ffmpeg/include")
     target_link_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/ffmpeg/lib")
