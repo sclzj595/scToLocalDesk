@@ -286,8 +286,10 @@ QWidget* MainWindow::makeTitleBar() {
 QWidget* MainWindow::makeDock() {
     auto* dock = new GlassPanel();
     dock->setFixedWidth(GlassTheme::kDockWidth);
+    // 去描边：全局 glassPanel QSS 的 1px 半透白 border 在灰玻璃右缘形成
+    // 亮缝（用户截图红框位），QML DockBar 无描边观感融合
     dock->setStyleSheet(dock->styleSheet()
-                        + QStringLiteral("QFrame#glassPanel { border-radius: 0px; "
+                        + QStringLiteral("QFrame#glassPanel { border: none; "
                                          "border-bottom-left-radius: 20px; }"));
 
     auto* lay = new QVBoxLayout(dock);
