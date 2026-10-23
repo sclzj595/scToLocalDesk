@@ -37,12 +37,30 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
     lay->addSpacing(20);
 }
 
+void RemoteViewPage::on_frame(const QImage& img) {
+    frame_ = img;
+    update();  // 触发 paintEvent 重画
+}
+
 void RemoteViewPage::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.fillRect(rect(), QColor(0, 0, 0));
-    p.setPen(QColor(0x66, 0x66, 0x66));
-    p.drawText(rect(), Qt::AlignCenter,
-               QStringLiteral("远程画面显示区\n（Session Running 后由此渲染 ScreenFrame）"));
+    if (frame_.isNull()) {
+        p.setPen(QColor(0x66, 0x66, 0x66));
+        p.drawText(rect(), Qt::AlignCenter,
+                   QStringLiteral("远程画面显示区\n（Session Running 后由此渲染 ScreenFrame）"));
+        return;
+    }
+    // 等比缩放铺满（与 QML VideoSurface 同观感）
+    const QSizeF area = size();
+    const QSizeF src = frame_.size();
+    const double scale = qMin(area.width() / src.width(),
+                              area.height() / src.height());
+    const double dw = src.width() * scale;
+    const double dh = src.height() * scale;
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    p.drawImage(QRectF((area.width() - dw) / 2, (area.height() - dh) / 2, dw, dh),
+                frame_);
 }
 
 }  // namespace sc::localdesk::ui

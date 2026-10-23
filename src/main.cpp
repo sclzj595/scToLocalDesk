@@ -35,6 +35,7 @@
     #include "implement/crypto/crypto_factory.hpp"
     #include "implement/encoder/raw_encoder.hpp"
 #if SCLD_HAS_FFMPEG
+    #include "implement/decoder/ffmpeg_decoder.hpp"
     #include "implement/encoder/ffmpeg_encoder.hpp"
 #endif
 #if SCLD_HAS_WEBSOCKET
@@ -48,6 +49,8 @@
     #include "platform/qt_adapter/qt_tray.hpp"
     #include "platform/qt_adapter/qt_udp_discovery.hpp"
     #include "platform/qt_adapter/single_instance_guard.hpp"
+    #include "platform/qt_adapter/video_pipeline.hpp"
+    #include "platform/qt_adapter/video_surface.hpp"
     #include "platform/win32/system_info.hpp"
     #include "service/alias_service.hpp"
     #include "service/app_config.hpp"
@@ -271,12 +274,20 @@ int main(int argc, char* argv[]) {
     bridge.set_self_code(id_service.code_number());
     bridge.set_listening(listening);
     qmlRegisterSingletonInstance("ScLocaldesk", 1, 0, "ScLocaldesk", &bridge);
+    qmlRegisterType<platform::VideoSurface>("ScLocaldesk", 1, 0, "VideoSurface");
 
     // 设备列表模型（Doc18 §3.4：QAbstractListModel 增量刷新，防整表抖动）
     platform::DeviceListModel device_model(bus, aliases.get(), &trust_store,
                                            logger.get());
 
+    // 控制端解码管线（Doc18 §4.2）：常驻启动（无帧零开销），
+    // 页面经 VideoSurface.pipeline 消费 frameReady
+    platform::VideoPipeline video_pipeline(bus, logger, &app);
+    video_pipeline.start();
+
     QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("VideoPipeline"),
+                                             &video_pipeline);
     engine.rootContext()->setContextProperty(QStringLiteral("DeviceListModel"),
                                              &device_model);
     engine.load(QUrl(QStringLiteral("qrc:/scToLocalDesk/qml/MainWindow.qml")));

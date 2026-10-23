@@ -1,0 +1,75 @@
+// ============================================================
+// scToLocalDesk | src/platform/qt_adapter/video_pipeline.hpp
+// 控制端解码渲染管线（Doc18 §4.2，双端共用）：
+//   EventBus(Evt_VideoFrame, 主线程) → BoundedQueue 只留最新 → 专属解码线程
+//   → FfmpegDecoder/RAW 直通 → QImage → frameReady 信号（跨线程 queued 投递）
+// QObject 线程亲和 = 创建线程（主线程），信号槽自动排队
+// ============================================================
+#pragma once
+
+#include <atomic>
+#include <cstdint>
+#include <memory>
+#include <thread>
+
+#include <QImage>
+#include <QObject>
+
+#include "foundation/bounded_queue.hpp"
+
+namespace sc::localdesk {
+
+class FfmpegDecoder;  // implement/decoder（cpp 依 SCLD_HAS_FFMPEG include）
+
+struct Evt_VideoFrame;  // core/events.hpp（platform 内引用需外层前向声明）
+
+namespace foundation {
+class EventBus;
+class ILogger;
+}
+
+namespace platform {
+
+class VideoPipeline final : public QObject {
+    Q_OBJECT
+
+public:
+    VideoPipeline(std::shared_ptr<foundation::EventBus> bus,
+                  std::shared_ptr<foundation::ILogger> logger,
+                  QObject* parent = nullptr);
+    ~VideoPipeline() override;
+
+    void start();
+    void stop();
+
+    /// 解码 FPS（稳态值，设置页/诊断用）
+    [[nodiscard]] double fps() const { return fps_.load(std::memory_order_relaxed); }
+
+signals:
+    /// 解码完成（解码线程 emit；接收方在主线程 → 自动 queued）
+    void frameReady(const QImage& img);
+
+private:
+    /// EventBus 订阅回调（发布线程同步执行，仅入队必须快）
+    void on_video_frame(const Evt_VideoFrame& e);
+
+    void decode_loop();
+
+    std::shared_ptr<foundation::EventBus> bus_;
+    std::shared_ptr<foundation::ILogger> log_;
+    std::unique_ptr<FfmpegDecoder> decoder_;
+
+    struct Pending {
+        std::shared_ptr<const std::vector<uint8_t>> payload;
+        uint32_t width{0};
+        uint32_t height{0};
+    };
+    foundation::BoundedQueue<Pending> queue_{3};  // 只留最新（画面最忌延迟累积）
+
+    std::atomic<bool> running_{false};
+    std::atomic<double> fps_{0.0};
+    std::thread decode_thread_;
+};
+
+}  // namespace platform
+}  // namespace sc::localdesk

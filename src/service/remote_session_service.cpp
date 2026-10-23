@@ -312,9 +312,25 @@ void RemoteSessionService::on_transport_message(
             (void)input_->handle(body, body_len);
         }
         break;
-    case protocol::MsgType::ScreenFrame:
-        // TODO(V1.0): 解码 → 控制端渲染（Doc10 §4）
+    case protocol::MsgType::ScreenFrame: {
+        // 控制端：帧头解析后经事件零拷贝上抛（解码渲染在 platform 层，Doc18 §4.2）
+        protocol::ScreenFrameHeader hdr;
+        const uint8_t* px = nullptr;
+        size_t px_len = 0;
+        if (!protocol::parse_screen_frame(body, body_len, hdr, px, px_len)
+            || px == nullptr || px_len == 0) {
+            break;  // 畸形帧丢弃
+        }
+        if (bus_ != nullptr) {
+            Evt_VideoFrame e;
+            e.payload = std::make_shared<std::vector<uint8_t>>(px, px + px_len);
+            e.width = hdr.width;
+            e.height = hdr.height;
+            e.timestamp_us = hdr.timestamp_us;
+            bus_->publish(e);
+        }
         break;
+    }
     default:
         break;
     }

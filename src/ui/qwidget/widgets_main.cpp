@@ -16,6 +16,7 @@
         #include "foundation/logger/file_logger.hpp"
         #include "platform/qt_adapter/qt_udp_discovery.hpp"
         #include "platform/qt_adapter/single_instance_guard.hpp"
+        #include "platform/qt_adapter/video_pipeline.hpp"
         #include "platform/win32/system_info.hpp"
         #include "service/alias_service.hpp"
         #include "service/app_config.hpp"
@@ -119,6 +120,15 @@ int main(int argc, char* argv[]) {
                          &sc::localdesk::ui::DeviceListPage::apply_snapshot);
         tick->start(1000);
         dev_page->apply_snapshot();
+    }
+
+    // 控制端解码管线（Doc18 §4.2）：常驻启动（无帧零开销），帧达即渲染
+    sc::localdesk::platform::VideoPipeline video(bus, logger, &app);
+    video.start();
+    if (auto* rv = win.remoteViewPage()) {
+        QObject::connect(&video,
+                         &sc::localdesk::platform::VideoPipeline::frameReady,
+                         rv, &sc::localdesk::ui::RemoteViewPage::on_frame);
     }
 
     // 单实例唤起：二次启动把首实例主窗带到前台

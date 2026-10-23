@@ -113,10 +113,13 @@ if(EXISTS "${SCLD_TP_DIR}/ffmpeg/include/libavcodec/avcodec.h")
     target_link_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/ffmpeg/lib")
     target_link_libraries(sc_localdesk_core PUBLIC avcodec avutil swscale)
     target_compile_definitions(sc_localdesk_core PUBLIC SCLD_HAS_FFMPEG=1)
-    target_sources(sc_localdesk_core PRIVATE src/implement/encoder/ffmpeg_encoder.cpp)
-    # FFmpeg 头内联窄化转换触发 C4244（/WX 下致命）：该 TU 单独降 /W3
+    target_sources(sc_localdesk_core PRIVATE
+        src/implement/encoder/ffmpeg_encoder.cpp
+        src/implement/decoder/ffmpeg_decoder.cpp)
+    # FFmpeg 头内联窄化转换触发 C4244（/WX 下致命）：相关 TU 单独降 /W3
     if(MSVC)
         set_source_files_properties(src/implement/encoder/ffmpeg_encoder.cpp
+            src/implement/decoder/ffmpeg_decoder.cpp
             PROPERTIES COMPILE_OPTIONS "/W3")
     endif()
     # 运行时 dll 自动跟产：构建后拷 third_party/ffmpeg/bin/*.dll 到每个
@@ -176,6 +179,8 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
             src/platform/qt_adapter/qt_event_bridge.cpp
             src/platform/qt_adapter/device_list_model.cpp
             src/platform/qt_adapter/qt_udp_discovery.cpp
+            src/platform/qt_adapter/video_pipeline.cpp
+            src/platform/qt_adapter/video_surface.cpp
             src/platform/qt_adapter/qt_tray.cpp
             src/platform/qt_adapter/single_instance_guard.cpp
         )
@@ -244,6 +249,7 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
             src/implement/crypto/openssl_crypto.cpp
             src/platform/qt_adapter/qt_event_bridge.cpp
             src/platform/qt_adapter/qt_udp_discovery.cpp
+            src/platform/qt_adapter/video_pipeline.cpp
             src/platform/qt_adapter/qt_tray.cpp
             src/platform/qt_adapter/single_instance_guard.cpp
         )

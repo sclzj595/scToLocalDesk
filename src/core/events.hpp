@@ -5,7 +5,9 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "core/interface/types.hpp"
 
@@ -69,6 +71,13 @@ struct Evt_SessionClosed final : IEvent {
 
 struct Evt_StreamLag final : IEvent {
     uint64_t dropped_frames{0};
+};
+
+/// 控制端收到一帧画面（payload 为压缩数据或 RAW BGRA，shared_ptr 零拷贝流转）
+struct Evt_VideoFrame final : IEvent {
+    std::shared_ptr<const std::vector<uint8_t>> payload;
+    uint32_t width{0};
+    uint32_t height{0};
 };
 
 // ---------------- 文件（Doc11 §2） ----------------

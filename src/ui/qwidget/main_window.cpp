@@ -50,9 +50,11 @@ MainWindow::MainWindow() {
     auto* connCode = new ConnectCodePage();
     auto* settingsPage = new SettingsPage();
     settingsPage_ = settingsPage;
+    auto* remoteView = new RemoteViewPage();
+    remoteView_ = remoteView;
     stack_->addWidget(devList);                    // 0 设备列表
     stack_->addWidget(connCode);                   // 1 连接码连接
-    stack_->addWidget(new RemoteViewPage());       // 2 远程画面
+    stack_->addWidget(remoteView);                 // 2 远程画面
     stack_->addWidget(new FileTransferPage());     // 3 文件传输
     stack_->addWidget(settingsPage);               // 4 设置
     // 设置页：深色开关 → 统一主题入口；清空信任缓存 → TrustStore

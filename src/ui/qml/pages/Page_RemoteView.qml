@@ -7,6 +7,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import ".."
+import ScLocaldesk 1.0
 
 Item {
     id: root
@@ -18,8 +19,17 @@ Item {
         anchors.fill: parent
         color: "#000000"
 
+        // 远程画面（Doc18 §4.2）：VideoPipeline.frameReady → 等比铺满；
+        // 无帧时兜底提示居中可见
+        VideoSurface {
+            id: surface
+            anchors.fill: parent
+            pipeline: VideoPipeline
+        }
+
         Text {
             anchors.centerIn: parent
+            visible: surface.pipeline === null
             text: "远程画面显示区\n（Session Running 后由此渲染 ScreenFrame）"
             horizontalAlignment: Text.AlignHCenter
             font.family: Theme.fontFamily

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <QAbstractButton>
+#include <QImage>
 #include <QWidget>
 
 #include <cstdint>
@@ -126,11 +127,16 @@ public:
 signals:
     void disconnected();
 
+public slots:
+    /// 解码管线输出（queued 跨线程；有帧即走画面分支，无帧走占位文案）
+    void on_frame(const QImage& img);
+
 protected:
     void paintEvent(QPaintEvent* event) override;
 
 private:
     QWidget* toolbar_{nullptr};
+    QImage frame_;
 };
 
 /// 文件传输列表页：行卡 + 主色进度条 + 状态色（完成绿/失败红）

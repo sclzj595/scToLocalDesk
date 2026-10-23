@@ -25,6 +25,7 @@ namespace sc::localdesk::ui {
 
 class SettingsPage;
 class DeviceListPage;
+class RemoteViewPage;
 
 class MainWindow final : public FramelessWindow {
     Q_OBJECT
@@ -43,6 +44,11 @@ public:
     /// 设备列表页访问（widgets_main 装配发现栈后接真数据，Doc18 §3.4）
     DeviceListPage* devicePage() const {
         return devList_;
+    }
+
+    /// 远程画面页访问（widgets_main 接解码管线 frameReady，Doc18 §4.2）
+    RemoteViewPage* remoteViewPage() const {
+        return remoteView_;
     }
 
 protected:
@@ -68,6 +74,7 @@ private:
     TrustStore* trust_{nullptr};
     SettingsPage* settingsPage_{nullptr};
     DeviceListPage* devList_{nullptr};
+    RemoteViewPage* remoteView_{nullptr};
 };
 
 }  // namespace sc::localdesk::ui
