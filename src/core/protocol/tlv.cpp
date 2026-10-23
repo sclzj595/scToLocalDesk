@@ -63,7 +63,9 @@ std::vector<uint8_t> build_frame(MsgType type, const std::vector<uint8_t>& body)
 
 std::vector<uint8_t> build_request_connect(std::string_view alias, uint8_t flags) {
     std::vector<uint8_t> body;
-    body.reserve(1 + alias.size() + 1);
+    body.reserve(1 + 1 + alias.size() + 1);
+    // SESSION_CTRL body 首字节恒为 sub（Doc05 §3；此前漏写致被控端当未知 sub 丢弃）
+    body.push_back(static_cast<uint8_t>(CtrlSubType::RequestConnect));
     push_str8(body, alias);
     body.push_back(flags);
     return build_frame(MsgType::SessionCtrl, body);
@@ -156,15 +158,18 @@ std::vector<uint8_t> build_close(CloseReason reason) {
 }
 
 bool parse_request_connect(const uint8_t* body, size_t len, RequestConnectBody& out) {
-    if (body == nullptr || len < 3) {  // 至少 alias_len(1) + flags(1) + 1 字节别名
+    if (body == nullptr || len < 4) {  // 至少 sub(1) + alias_len(1) + flags(1) + 1 字节别名
         return false;
     }
-    const uint8_t alias_len = body[0];
-    if (alias_len == 0 || static_cast<size_t>(1) + alias_len + 1 > len) {
+    if (body[0] != static_cast<uint8_t>(CtrlSubType::RequestConnect)) {
         return false;
     }
-    out.alias.assign(reinterpret_cast<const char*>(body) + 1, alias_len);
-    out.flags = body[1 + alias_len];
+    const uint8_t alias_len = body[1];
+    if (alias_len == 0 || static_cast<size_t>(2) + alias_len + 1 > len) {
+        return false;
+    }
+    out.alias.assign(reinterpret_cast<const char*>(body) + 2, alias_len);
+    out.flags = body[2 + alias_len];
     return true;
 }
 
