@@ -15,6 +15,7 @@ Popup {
     property string peerAlias: ""
     property string peerCode: ""
     property string peerIp: ""
+    property bool outgoing: false  ///< true=控制端发起确认（同意即拨号），false=被控端入站申请
     property Item glassSource
 
     /// remember=勾选了"记住此设备"（V1.0 TODO 写入 TrustStore）

@@ -14,6 +14,16 @@
         #include "foundation/config_parser.hpp"
         #include "foundation/event_bus.hpp"
         #include "foundation/logger/file_logger.hpp"
+        #include "core/auth/manual_confirm_authenticator.hpp"
+        #include "core/auth/unattended_authenticator.hpp"
+        #include "core/events.hpp"
+        #include "implement/capture/gdi_capture.hpp"
+        #include "implement/crypto/crypto_factory.hpp"
+        #include "implement/encoder/raw_encoder.hpp"
+#if SCLD_HAS_FFMPEG
+        #include "implement/encoder/ffmpeg_encoder.hpp"
+#endif
+        #include "implement/transport/ws_transport.hpp"
         #include "platform/qt_adapter/qt_udp_discovery.hpp"
         #include "platform/qt_adapter/single_instance_guard.hpp"
         #include "platform/qt_adapter/video_pipeline.hpp"
@@ -21,10 +31,16 @@
         #include "service/alias_service.hpp"
         #include "service/app_config.hpp"
         #include "service/id_service.hpp"
+        #include "service/input_service.hpp"
+        #include "service/remote_session_service.hpp"
+        #include "service/screen_stream_service.hpp"
         #include "service/trust_store.hpp"
         #include "ui/qwidget/glass_theme.h"
         #include "ui/qwidget/main_window.h"
         #include "ui/qwidget/pages/pages.h"
+
+        #include <QMessageBox>
+        #include <QMetaObject>
 
 namespace {
 sc::localdesk::foundation::LogLevel parse_log_level(const std::string& s) {
@@ -102,10 +118,72 @@ int main(int argc, char* argv[]) {
                  "组播发现启动失败（设备列表将为空，不影响本机功能）");
     }
 
+    // 会话栈（Doc18 §4.3，与 QML 版同构）：WS 监听 + 鉴权三路 + 推流/键鼠
+    using namespace sc::localdesk;
+    auto crypto = make_default_crypto();
+    auto transport = std::make_shared<WsTransport>(QStringLiteral("scToLocalDesk"));
+    UnattendedSecret secret;
+    secret.salt_hex = cfg.unattended_salt;
+    secret.key_hex = cfg.unattended_key;
+    secret.verify_hash_hex = cfg.unattended_verify_hash;
+    auto unattended_auth = std::make_shared<UnattendedPasswordAuthenticator>(
+        crypto, secret, cfg.unattended_enabled);
+    auto manual_auth = std::make_shared<ManualConfirmAuthenticator>();
+    auto sessions = std::make_shared<RemoteSessionService>(
+        transport, manual_auth, unattended_auth, crypto, aliases, bus, logger);
+    sessions->set_stream_params(cfg.fps, cfg.jpeg_quality);
+    auto stream = std::make_shared<ScreenStreamService>(bus, logger);
+#if SCLD_HAS_FFMPEG
+    stream->set_source(std::make_shared<GdiCapturer>(),
+                       cfg.encoder == "raw" ? std::shared_ptr<IEncoder>(std::make_shared<RawEncoder>())
+                                            : std::make_shared<FfmpegEncoder>());
+#else
+    stream->set_source(std::make_shared<GdiCapturer>(), std::make_shared<RawEncoder>());
+#endif
+    auto input = std::make_shared<InputService>();
+    input->set_injector(make_input_injector());
+    sessions->set_stream_service(stream);
+    sessions->set_input_service(input);
+    const bool listening = sessions->start_listening(static_cast<uint16_t>(cfg.ws_port));
+    if (!listening) {
+        SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn, "session",
+                 "被控监听失败 port=" + std::to_string(cfg.ws_port));
+    }
+
     // 全局 QSS 一次性挂载（主题切换时重建，Doc13 §7）
     app.setStyleSheet(sc::localdesk::ui::GlassTheme::instance().buildQss());
 
     sc::localdesk::ui::MainWindow win;
+
+    // 入站连接申请 → 主线程确认（暂用 QMessageBox，玻璃化随 P4 UI 专项；
+    // SCLD_SMOKE_APPROVE=1 冒烟钩子：自动放行，双实例 E2E 用）
+    const bool smoke_approve = qEnvironmentVariable("SCLD_SMOKE_APPROVE") == "1";
+    bus->subscribe<Evt_ConnectRequest>(
+        [&win, sessions, smoke_approve, &logger](const Evt_ConnectRequest& e) {
+            QMetaObject::invokeMethod(
+                &win,
+                [&win, sessions, smoke_approve, &logger, e] {
+                    if (e.auto_approved) {
+                        return;  // 无人值守已放行，无需确认
+                    }
+                    if (smoke_approve) {
+                        SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info,
+                                 "smoke", "auto approve");
+                        sessions->approve();
+                        return;
+                    }
+                    const auto r = QMessageBox::question(
+                        &win, QStringLiteral("连接请求"),
+                        QStringLiteral("对方请求远程协助本机，是否同意？"));
+                    if (r == QMessageBox::Yes) {
+                        sessions->approve();
+                    }
+                    else {
+                        sessions->reject();
+                    }
+                },
+                Qt::QueuedConnection);
+        });
     win.setTrustStore(&trust_store);
     win.set_config_store(&ini, &cfg);
     win.show();

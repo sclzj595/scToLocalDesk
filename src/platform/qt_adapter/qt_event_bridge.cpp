@@ -116,6 +116,23 @@ QString QtEventBridge::selfCode() const {
                : QString::fromStdString(IdService::format_code(self_code_));
 }
 
+QString QtEventBridge::deviceAlias(const QString& code) const {
+    if (aliases_ == nullptr) {
+        return {};
+    }
+    bool ok = false;
+    const uint32_t c = QString(code).remove(' ').toUInt(&ok);
+    if (!ok || c == 0) {
+        return {};
+    }
+    for (const auto& dev : aliases_->online_devices()) {
+        if (dev.code == c) {
+            return QString::fromStdString(dev.alias);
+        }
+    }
+    return {};
+}
+
 QString QtEventBridge::deviceIp(const QString& code) const {
     if (aliases_ == nullptr) {
         return {};

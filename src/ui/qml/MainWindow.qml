@@ -79,10 +79,12 @@ ApplicationWindow {
                     onConnectRequested: (aliasName, code, trusted) => {
                         if (trusted || ScLocaldesk.isTrusted(code)) {
                             toast.show("正在直连 " + aliasName + "（已信任）…");
+                            ScLocaldesk.startControl(aliasName, false, "");
                         }
                         else {
                             pendingAlias = aliasName;
                             pendingCode = code;
+                            confirmPopup.outgoing = true;   // 控制端发起：同意即 startControl
                             confirmPopup.open();
                         }
                     }
@@ -90,12 +92,19 @@ ApplicationWindow {
 
                 Page_Connect {
                     onConnectRequested: code => {
-                        pendingAlias = "设备 " + code;
+                        const aliasName = ScLocaldesk.deviceAlias(code);
+                        if (aliasName === "") {
+                            toast.show("设备不在线：" + code);
+                            return;
+                        }
+                        pendingAlias = aliasName;
                         pendingCode = code;
                         if (ScLocaldesk.isTrusted(code)) {
                             toast.show("正在直连（已信任）…");
+                            ScLocaldesk.startControl(aliasName, false, "");
                         }
                         else {
+                            confirmPopup.outgoing = true;
                             confirmPopup.open();
                         }
                     }
@@ -169,14 +178,22 @@ ApplicationWindow {
         peerIp: pendingCode === "" ? "" : ScLocaldesk.deviceIp(pendingCode)
 
         onAccepted: remember => {
-            if (remember) {
-                ScLocaldesk.trust(pendingCode, pendingAlias);   // 确认之后才有：落盘 trust.json
-                toast.show("已同意，" + pendingAlias + " 已加入信任缓存");
+            if (confirmPopup.outgoing) {
+                // 控制端发起：确认后真正拨号（Doc18 §4.3；密码模式走无人值守弹窗）
+                ScLocaldesk.startControl(pendingAlias, false, "");
+                toast.show("正在连接 " + pendingAlias + " …");
             }
             else {
-                toast.show("已同意，会话建立中…");
+                // 被控端入站申请
+                if (remember) {
+                    ScLocaldesk.trust(pendingCode, pendingAlias);   // 确认之后才有：落盘 trust.json
+                    toast.show("已同意，" + pendingAlias + " 已加入信任缓存");
+                }
+                else {
+                    toast.show("已同意，会话建立中…");
+                }
+                ScLocaldesk.approve();
             }
-            ScLocaldesk.approve();
         }
         onRejected: {
             ScLocaldesk.reject();
@@ -244,7 +261,19 @@ ApplicationWindow {
         target: ScLocaldesk
         function onConnectRequest(alias) {
             pendingAlias = alias;
+            pendingCode = "";
+            confirmPopup.outgoing = false;   // 入站申请：同意即 approve
             confirmPopup.open();
+        }
+        function onSessionStarted(alias) {
+            dockBar.currentIndex = 2;        // 切远程画面页（管线已在跑）
+            toast.show("会话已建立：" + alias);
+        }
+        function onSessionClosed(reason) {
+            if (dockBar.currentIndex === 2) {
+                dockBar.currentIndex = 0;    // 断开回设备列表
+            }
+            toast.show("会话已结束：" + reason);
         }
     }
 }

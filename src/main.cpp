@@ -15,6 +15,7 @@
     #include <QQuickStyle>
     #include <QQuickWindow>
     #include <QStandardPaths>
+    #include <QTimer>
 
     #include "core/auth/manual_confirm_authenticator.hpp"
     #include "core/auth/unattended_authenticator.hpp"
@@ -291,6 +292,17 @@ int main(int argc, char* argv[]) {
     engine.rootContext()->setContextProperty(QStringLiteral("DeviceListModel"),
                                              &device_model);
     engine.load(QUrl(QStringLiteral("qrc:/scToLocalDesk/qml/MainWindow.qml")));
+
+    // 冒烟钩子（env 门控，默认关闭）：SCLD_SMOKE_CONNECT=<alias> 延时自动
+    // 发起会话，供双实例 E2E（对端配 SCLD_SMOKE_APPROVE=1 自动放行）
+    const QString smoke_alias = qEnvironmentVariable("SCLD_SMOKE_CONNECT");
+    if (!smoke_alias.isEmpty()) {
+        QTimer::singleShot(3500, &bridge, [&, smoke_alias] {
+            SCLD_LOG(logger, LogLevel::Info, "smoke",
+                     "auto startControl alias=" + smoke_alias.toStdString());
+            (void)bridge.startControl(smoke_alias, false, "");
+        });
+    }
     if (engine.rootObjects().isEmpty()) {
         fprintf(stderr, "[main] QML 加载失败 rootObjects 为空\n");
         fflush(stderr);
