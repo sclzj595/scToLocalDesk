@@ -104,6 +104,21 @@ if(EXISTS "${SCLD_TP_DIR}/asio/include/asio.hpp")
     target_include_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/asio/include")
     target_compile_definitions(sc_localdesk_core PUBLIC ASIO_STANDALONE)
 endif()
+# FFmpeg LGPL shared（动态链接合规）：vendored 于 third_party/ffmpeg，
+# 存在即启用 MJPEG 编码（sws 色彩转换）；缺失自动降级 RawEncoder。
+# 麒麟侧 P6 改走系统源 find_package（P6 排期，勿提前）
+if(EXISTS "${SCLD_TP_DIR}/ffmpeg/include/libavcodec/avcodec.h")
+    target_include_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/ffmpeg/include")
+    target_link_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/ffmpeg/lib")
+    target_link_libraries(sc_localdesk_core PUBLIC avcodec avutil swscale)
+    target_compile_definitions(sc_localdesk_core PUBLIC SCLD_HAS_FFMPEG=1)
+    target_sources(sc_localdesk_core PRIVATE src/implement/encoder/ffmpeg_encoder.cpp)
+    # FFmpeg 头内联窄化转换触发 C4244（/WX 下致命）：该 TU 单独降 /W3
+    if(MSVC)
+        set_source_files_properties(src/implement/encoder/ffmpeg_encoder.cpp
+            PROPERTIES COMPILE_OPTIONS "/W3")
+    endif()
+endif()
 
 # Qt 依赖红线静态断言：任何人往 core 里塞 Qt 头，链接/编译期直接失败
 if(TARGET sc_localdesk_core)

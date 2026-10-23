@@ -2,6 +2,7 @@
 // scToLocalDesk | src/main.cpp
 // 桌面应用入口：单实例锁 → DI 组装 → QML 挂载（仅 SCTOLOCALDESK_BUILD_QT_APP 编入）
 // ============================================================
+#include <chrono>
 #include <memory>
 
 #ifdef SCLD_QT_APP
@@ -33,6 +34,9 @@
     #include "implement/capture/gdi_capture.hpp"
     #include "implement/crypto/crypto_factory.hpp"
     #include "implement/encoder/raw_encoder.hpp"
+#if SCLD_HAS_FFMPEG
+    #include "implement/encoder/ffmpeg_encoder.hpp"
+#endif
 #if SCLD_HAS_WEBSOCKET
     #include "implement/transport/ws_transport.hpp"
 #else
@@ -142,6 +146,41 @@ int main(int argc, char* argv[]) {
                      + " json_ok=" + (j.has_value() && j->at("ver") == 1 ? "1" : "0")
                      + " magic_enum=" + std::string(foundation::enum_name(LogLevel::Info)));
     }
+    // FFmpeg 编码自检：真实抓一帧桌面走 MJPEG 全程（压缩比/耗时落日志，
+    // 性能基线用；SCLD_HAS_FFMPEG 缺失时编译期整体剔除）
+#if SCLD_HAS_FFMPEG
+    {
+        GdiCapturer cap_probe;
+        if (cap_probe.init()) {
+            VideoFrame f_probe;
+            if (cap_probe.grab(f_probe)) {
+                FfmpegEncoder enc_probe;
+                const auto t0 = std::chrono::steady_clock::now();
+                std::vector<uint8_t> jpg;
+                const bool ok = enc_probe.open(EncoderConfig{"mjpeg", cfg.fps,
+                                                             cfg.jpeg_quality})
+                             && enc_probe.encode(f_probe, jpg);
+                const double ms = std::chrono::duration<double, std::milli>(
+                                      std::chrono::steady_clock::now() - t0)
+                                      .count();
+                if (ok && !jpg.empty()) {
+                    SCLD_LOG(logger, LogLevel::Info, "encoder",
+                             "ffmpeg 自检 " + std::to_string(f_probe.width) + "x"
+                                 + std::to_string(f_probe.height) + " raw="
+                                 + std::to_string(f_probe.size) + "B jpg="
+                                 + std::to_string(jpg.size()) + "B 压缩比 "
+                                 + std::to_string(f_probe.size / jpg.size())
+                                 + "x 耗时 " + std::to_string(ms) + "ms");
+                }
+                else {
+                    SCLD_LOG(logger, LogLevel::Warn, "encoder", "ffmpeg 自检失败，推流期将回退");
+                }
+            }
+            cap_probe.shutdown();
+        }
+    }
+#endif
+
     auto bus = std::make_shared<EventBus>();
 
     // 机器身份：9 位连接码 + 连接名派生（Doc18 §3.1；P1.4 心跳/设备列表接线点）
@@ -190,9 +229,20 @@ int main(int argc, char* argv[]) {
     files->set_save_dir(save_dir.toStdString());
     sessions->set_file_service(files);
 
-    // 被控端推流管线（骨架期 GDI 采集 + RAW 直通；MJPG/DXGI 为 V1.0 任务，Doc10 §1）
+    // 被控端推流管线（编码器按 session.encoder 选择：ffmpeg | raw，
+    // FFmpeg 未编入时自动回落 raw 直通；MJPG/DXGI 为 V1.0 任务，Doc10 §1）
+#if SCLD_HAS_FFMPEG
+    auto stream = std::make_shared<ScreenStreamService>(bus, logger);
+    if (cfg.encoder == "raw") {
+        stream->set_source(std::make_shared<GdiCapturer>(), std::make_shared<RawEncoder>());
+    }
+    else {
+        stream->set_source(std::make_shared<GdiCapturer>(), std::make_shared<FfmpegEncoder>());
+    }
+#else
     auto stream = std::make_shared<ScreenStreamService>(bus, logger);
     stream->set_source(std::make_shared<GdiCapturer>(), std::make_shared<RawEncoder>());
+#endif
     sessions->set_stream_service(stream);
 
     // 被控端键鼠注入（SendInput，普通用户权限可用）
