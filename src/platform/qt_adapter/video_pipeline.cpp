@@ -82,7 +82,15 @@ void VideoPipeline::decode_loop() {
     auto window_start = std::chrono::steady_clock::now();
 
     Pending task;
-    while (queue_.pop_wait(task, 200)) {
+    // pop_wait 超时返回 false ≠ 队列关闭：以 running_ 为循环条件，
+    // 超时仅空转（此前 while(pop_wait) 写法使线程在无帧 200ms 后即退出）
+    while (running_.load(std::memory_order_acquire)) {
+        if (!queue_.pop_wait(task, 200)) {
+            if (queue_.closed()) {
+                break;
+            }
+            continue;
+        }
         if (!running_.load(std::memory_order_acquire)) {
             break;
         }

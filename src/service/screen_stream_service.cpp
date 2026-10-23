@@ -65,8 +65,10 @@ bool ScreenStreamService::start(SendFn send, const Options& opt) {
     queue_.clear();
     dropped_total_.store(0, std::memory_order_relaxed);
     running_.store(true, std::memory_order_release);
-    capture_thread_ = std::thread(&ScreenStreamService::capture_loop, this, std::move(send), opt);
-    send_thread_ = std::thread([this, send] { send_loop(std::move(send)); });
+    // SendFn 值拷贝两份（capture_loop 不发送但签名保留；此前 std::move 后
+    // send_thread 拿到空 function，首帧 bad_function_call → terminate）
+    capture_thread_ = std::thread(&ScreenStreamService::capture_loop, this, send, opt);
+    send_thread_ = std::thread([this, send] { send_loop(send); });
     SCLD_LOG(log_, LogLevel::Info, "stream",
              "推流已启动 fps=" + std::to_string(opt.fps));
     return true;
