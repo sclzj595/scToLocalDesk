@@ -166,7 +166,7 @@ ApplicationWindow {
         glassSource: shell
         peerAlias: pendingAlias
         peerCode: pendingCode
-        peerIp: "192.168.1.45"
+        peerIp: pendingCode === "" ? "" : ScLocaldesk.deviceIp(pendingCode)
 
         onAccepted: remember => {
             if (remember) {

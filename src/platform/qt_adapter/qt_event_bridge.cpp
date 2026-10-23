@@ -22,6 +22,7 @@
 #include <service/alias_service.hpp>
 #include <service/app_config.hpp>
 #include <service/file_service.hpp>
+#include <service/id_service.hpp>
 #include <service/remote_session_service.hpp>
 #include <service/trust_store.hpp>
 
@@ -107,6 +108,30 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
 
 QString QtEventBridge::selfAlias() const {
     return self_alias_;
+}
+
+QString QtEventBridge::selfCode() const {
+    return self_code_ == 0
+               ? QString()
+               : QString::fromStdString(IdService::format_code(self_code_));
+}
+
+QString QtEventBridge::deviceIp(const QString& code) const {
+    if (aliases_ == nullptr) {
+        return {};
+    }
+    bool ok = false;
+    QString digits = code;
+    const uint32_t c = digits.remove(' ').toUInt(&ok);
+    if (!ok || c == 0) {
+        return {};
+    }
+    for (const auto& dev : aliases_->online_devices()) {
+        if (dev.code == c) {
+            return QString::fromStdString(dev.ip);
+        }
+    }
+    return {};
 }
 
 bool QtEventBridge::unattendedEnabled() const {

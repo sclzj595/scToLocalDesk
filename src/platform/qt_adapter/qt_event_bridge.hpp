@@ -30,6 +30,7 @@ class UdpDiscoveryAdapter;
 class QtEventBridge final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString selfAlias READ selfAlias NOTIFY selfAliasChanged)
+    Q_PROPERTY(QString selfCode READ selfCode CONSTANT)
     Q_PROPERTY(bool unattendedEnabled READ unattendedEnabled NOTIFY unattendedChanged)
     Q_PROPERTY(bool listening READ listening CONSTANT)
     /// Qt 6.5+ 才有 MultiEffect 真模糊（SCLD_HAS_MULTIEFFECT 编译期注入）；
@@ -78,6 +79,13 @@ public:
     /// 设置页接线（Doc18 §3.3）：7 组字段 ↔ AppConfig，变更即落盘 config.ini
     void set_config_store(foundation::IniConfig* ini, AppConfig* cfg);
     void set_discovery(UdpDiscoveryAdapter* d);
+    /// 本机 9 位连接码（IdService 派生结果，P1.1；QML 本机信息卡/复制用）
+    void set_self_code(uint32_t code) {
+        self_code_ = code;
+    }
+    [[nodiscard]] QString selfCode() const;
+    /// 按连接码反查在线设备 IP（确认弹窗 peerIp 真值，Doc18 §3.4）；未知返回空
+    Q_INVOKABLE QString deviceIp(const QString& code) const;
     /// 被控监听启动结果（端口占用 UI 提示，Doc18 风险清单 P1 顺带项）
     void set_listening(bool on) {
         listening_ = on;
@@ -120,6 +128,7 @@ private:
     UdpDiscoveryAdapter* discovery_{nullptr};
     foundation::ILogger* log_{nullptr};
     QString self_alias_;
+    uint32_t self_code_{0};
     bool unattended_{false};
     bool listening_{false};
 };

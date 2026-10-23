@@ -24,6 +24,7 @@ class IniConfig;
 namespace sc::localdesk::ui {
 
 class SettingsPage;
+class DeviceListPage;
 
 class MainWindow final : public FramelessWindow {
     Q_OBJECT
@@ -38,6 +39,11 @@ public:
 
     /// 配置注入（Doc18 §3.3）：转发设置页，解锁控件真值回放与落盘
     void set_config_store(foundation::IniConfig* ini, AppConfig* cfg);
+
+    /// 设备列表页访问（widgets_main 装配发现栈后接真数据，Doc18 §3.4）
+    DeviceListPage* devicePage() const {
+        return devList_;
+    }
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -61,6 +67,7 @@ private:
     QTimer* toastTimer_{nullptr};
     TrustStore* trust_{nullptr};
     SettingsPage* settingsPage_{nullptr};
+    DeviceListPage* devList_{nullptr};
 };
 
 }  // namespace sc::localdesk::ui

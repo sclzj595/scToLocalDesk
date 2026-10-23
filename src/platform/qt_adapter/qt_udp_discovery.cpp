@@ -15,6 +15,15 @@ namespace sc::localdesk::platform {
 
 namespace {
 constexpr uint16_t kHeartbeatMagic = 0x534C;  // "SL"
+constexpr uint8_t kTlvCode = 0x10;            // 可选体类型：9 位连接码（4B 大端）
+
+void append_tlv_u32(QByteArray& out, uint8_t type, uint32_t v) {
+    out.append(static_cast<char>(type));
+    out.append(static_cast<char>(4));
+    for (int s = 24; s >= 0; s -= 8) {
+        out.append(static_cast<char>((v >> s) & 0xFF));
+    }
+}
 }  // namespace
 
 UdpDiscoveryAdapter::UdpDiscoveryAdapter(Options opt, AliasService* aliases,
@@ -73,6 +82,7 @@ void UdpDiscoveryAdapter::set_status_busy(bool busy) {
 
 QByteArray UdpDiscoveryAdapter::build_heartbeat() const {
     // [magic 2B][alias_len 1B][alias][ipv4 4B][port 2B][version 2B][status 1B]
+    //  + 可选 TLV（旧端解析器只读固定字段，尾部多余字节天然向后兼容，Doc18 §3.4）
     QByteArray out;
     const std::string alias = opt_.self_alias;
     out.append(static_cast<char>(kHeartbeatMagic >> 8));
@@ -97,8 +107,13 @@ QByteArray UdpDiscoveryAdapter::build_heartbeat() const {
     }
     out.append(static_cast<char>(opt_.ws_port >> 8));
     out.append(static_cast<char>(opt_.ws_port & 0xFF));
-    out.append(static_cast<char>(0));  // version 1.0
+    // version 2B（高 8 位主/低 8 位次，Doc05 §2；此前漏发次版本致 TLV 错位——FIX）
+    out.append(static_cast<char>(0));  // major 1.0
+    out.append(static_cast<char>(0));  // minor
     out.append(static_cast<char>(opt_.self_status_busy ? 0x01 : 0x00));
+    if (opt_.self_code != 0) {
+        append_tlv_u32(out, kTlvCode, opt_.self_code);
+    }
     return out;
 }
 
@@ -143,6 +158,23 @@ void UdpDiscoveryAdapter::on_ready_read() {
         dev.version = static_cast<uint16_t>((p[pos] << 8) | p[pos + 1]);
         pos += 2;
         dev.status = p[pos];
+        ++pos;
+
+        // 可选 TLV 序列：[type 1B][len 1B][value]，未知类型跳过（向前兼容）
+        while (pos + 2 <= static_cast<size_t>(datagram.size())) {
+            const uint8_t type = p[pos];
+            const uint8_t len = p[pos + 1];
+            if (pos + 2 + len > static_cast<size_t>(datagram.size())) {
+                break;  // 半截 TLV：丢弃剩余
+            }
+            if (type == kTlvCode && len == 4) {
+                dev.code = (static_cast<uint32_t>(p[pos + 2]) << 24)
+                         | (static_cast<uint32_t>(p[pos + 3]) << 16)
+                         | (static_cast<uint32_t>(p[pos + 4]) << 8)
+                         | static_cast<uint32_t>(p[pos + 5]);
+            }
+            pos += 2 + len;
+        }
 
         if (aliases_ != nullptr) {
             aliases_->upsert_device(dev);  // 冲突/上/下线事件由服务发布（Doc07 §5）

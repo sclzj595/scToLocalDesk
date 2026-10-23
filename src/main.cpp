@@ -39,6 +39,7 @@
     #include "implement/transport/ws_transport_stub.hpp"
 #endif
     #include "platform/qt_adapter/qt_event_bridge.hpp"
+    #include "platform/qt_adapter/device_list_model.hpp"
     #include "platform/qt_adapter/qt_tray.hpp"
     #include "platform/qt_adapter/qt_udp_discovery.hpp"
     #include "platform/qt_adapter/single_instance_guard.hpp"
@@ -207,6 +208,7 @@ int main(int argc, char* argv[]) {
     opt.self_alias = cfg.alias;
     opt.ws_port = static_cast<uint16_t>(cfg.ws_port);
     opt.heartbeat_ms = cfg.heartbeat_interval_s * 1000;
+    opt.self_code = id_service.code_number();  // 心跳可选 TLV（Doc18 §3.4）
     platform::UdpDiscoveryAdapter discovery(opt, aliases.get(), logger.get());
 
     // QML 桥（EventBus → Qt 信号，Doc13 §4）
@@ -215,10 +217,17 @@ int main(int argc, char* argv[]) {
     bridge.set_trust_store(&trust_store);
     bridge.set_config_store(&ini, &cfg);
     bridge.set_discovery(&discovery);
+    bridge.set_self_code(id_service.code_number());
     bridge.set_listening(listening);
     qmlRegisterSingletonInstance("ScLocaldesk", 1, 0, "ScLocaldesk", &bridge);
 
+    // 设备列表模型（Doc18 §3.4：QAbstractListModel 增量刷新，防整表抖动）
+    platform::DeviceListModel device_model(bus, aliases.get(), &trust_store,
+                                           logger.get());
+
     QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("DeviceListModel"),
+                                             &device_model);
     engine.load(QUrl(QStringLiteral("qrc:/scToLocalDesk/qml/MainWindow.qml")));
     if (engine.rootObjects().isEmpty()) {
         fprintf(stderr, "[main] QML 加载失败 rootObjects 为空\n");

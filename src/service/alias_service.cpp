@@ -45,37 +45,50 @@ void AliasService::upsert_device(const DeviceInfo& dev) {
         return;
     }
     const int64_t now = now_us();
-    std::lock_guard<std::mutex> lk(mtx_);
-    const auto it = table_.find(dev.alias);
-    if (it == table_.end()) {
-        DeviceInfo info = dev;
-        info.last_seen_us = now;
-        table_.emplace(dev.alias, info);
-        SCLD_LOG(log_, LogLevel::Info, "discovery",
-                 "[alias=" + dev.alias + "] 设备上线 ip=" + dev.ip);
-        if (bus_) {
-            bus_->publish(make_online_evt(info));
+    // 事件一律锁外发布：订阅方可能同步回查本服务（DeviceListModel），
+    // 持锁 publish 会造成同线程对非递归 mutex 重入加锁（UB，已踩坑）
+    std::optional<Evt_DeviceOnline> online_evt;
+    std::optional<Evt_AliasConflict> conflict_evt;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        const auto it = table_.find(dev.alias);
+        if (it == table_.end()) {
+            DeviceInfo info = dev;
+            info.last_seen_us = now;
+            table_.emplace(dev.alias, info);
+            SCLD_LOG(log_, LogLevel::Info, "discovery",
+                     "[alias=" + dev.alias + "] 设备上线 ip=" + dev.ip);
+            online_evt = make_online_evt(info);
         }
-        return;
-    }
-    // 别名冲突：同别名异 IP 且旧条目未超时（Doc07 §6.2）
-    if (it->second.ip != dev.ip && now - it->second.last_seen_us < offline_timeout_us_) {
-        if (bus_) {
-            Evt_AliasConflict e;
-            e.device_alias = dev.alias;
-            e.conflict_ip = dev.ip;
-            e.timestamp_us = now;
-            bus_->publish(e);
+        else {
+            // 别名冲突：同别名异 IP 且旧条目未超时（Doc07 §6.2）
+            if (it->second.ip != dev.ip
+                && now - it->second.last_seen_us < offline_timeout_us_) {
+                Evt_AliasConflict e;
+                e.device_alias = dev.alias;
+                e.conflict_ip = dev.ip;
+                e.timestamp_us = now;
+                conflict_evt = e;
+                SCLD_LOG(log_, LogLevel::Warn,
+                         "discovery", "[alias=" + dev.alias + "] 别名冲突 old_ip="
+                             + it->second.ip + " new_ip=" + dev.ip);
+            }
+            it->second.ip = dev.ip;
+            it->second.port = dev.port;
+            it->second.status = dev.status;
+            it->second.version = dev.version;
+            if (dev.code != 0) {
+                it->second.code = dev.code;  // 旧包无码不覆盖已有值（Doc18 §3.4）
+            }
+            it->second.last_seen_us = now;
         }
-        SCLD_LOG(log_, LogLevel::Warn,
-                 "discovery", "[alias=" + dev.alias + "] 别名冲突 old_ip="
-                     + it->second.ip + " new_ip=" + dev.ip);
     }
-    it->second.ip = dev.ip;
-    it->second.port = dev.port;
-    it->second.status = dev.status;
-    it->second.version = dev.version;
-    it->second.last_seen_us = now;
+    if (online_evt.has_value()) {
+        bus_->publish(*online_evt);
+    }
+    else if (conflict_evt.has_value()) {
+        bus_->publish(*conflict_evt);
+    }
 }
 
 std::optional<DeviceInfo> AliasService::resolve(const std::string& alias) const {

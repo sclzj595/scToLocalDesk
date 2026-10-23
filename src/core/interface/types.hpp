@@ -17,6 +17,7 @@ struct DeviceInfo {
     uint16_t port{0};         ///< WebSocket 监听端口
     uint16_t version{0};      ///< 协议版本（高 8 位主 / 低 8 位次）
     uint8_t status{0};        ///< 0x00 空闲可协助，0x01 会话中
+    uint32_t code{0};         ///< 对端 9 位连接码（0=未知：旧包无可选 TLV，Doc18 §3.4）
     int64_t last_seen_us{0};  ///< 最近一次心跳时间（稳态时钟，微秒）
 };
 

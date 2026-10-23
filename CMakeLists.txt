@@ -149,6 +149,7 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
             src/ui/qml.qrc
             src/implement/crypto/openssl_crypto.cpp
             src/platform/qt_adapter/qt_event_bridge.cpp
+            src/platform/qt_adapter/device_list_model.cpp
             src/platform/qt_adapter/qt_udp_discovery.cpp
             src/platform/qt_adapter/qt_tray.cpp
             src/platform/qt_adapter/single_instance_guard.cpp
@@ -224,9 +225,9 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
         set(SCLD_WGT_LIBS
             sc_localdesk_core
             Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
-        if(TARGET Qt6::WebSocket)
+        if(TARGET Qt6::WebSockets)   # FIX: 曾误拼 WebSocket，恒走本地回环桩（同 QML 版）
             list(APPEND SCLD_WGT_SOURCES src/implement/transport/ws_transport.cpp)
-            list(APPEND SCLD_WGT_LIBS Qt6::WebSocket)
+            list(APPEND SCLD_WGT_LIBS Qt6::WebSockets)
         endif()
 
         add_executable(scToLocalDeskWidgets WIN32 ${SCLD_WGT_SOURCES})
@@ -236,6 +237,7 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
                 src/platform/win32/auto_start.cpp
                 src/platform/win32/input_injector.cpp
                 src/platform/win32/system_info.cpp
+                src/platform/qt_adapter/qt_udp_discovery.cpp
             )
         endif()
         target_compile_definitions(scToLocalDeskWidgets PRIVATE

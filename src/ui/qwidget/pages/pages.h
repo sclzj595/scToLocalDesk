@@ -9,6 +9,10 @@
 #include <QAbstractButton>
 #include <QWidget>
 
+#include <cstdint>
+#include <map>
+#include <string>
+
 class QGridLayout;
 class QFrame;
 class QLabel;
@@ -21,6 +25,8 @@ class QVBoxLayout;
 
 namespace sc::localdesk {
 struct AppConfig;  // 注意：定义处为 struct，前向声明必须一致（否则 MSVC 改名冲突）
+class AliasService;
+class TrustStore;
 namespace foundation {
 class IniConfig;
 }
@@ -58,6 +64,16 @@ class DeviceListPage final : public QWidget {
 public:
     explicit DeviceListPage(QWidget* parent = nullptr);
 
+    /// 服务注入（Doc18 §3.4）：AliasService 快照 + TrustStore 信任角标
+    void bind_services(AliasService* aliases, TrustStore* trust);
+    /// 本机信息卡真值（IdService 派生，widgets_main 调用）
+    void set_self(const QString& name, const QString& code);
+    /// 心跳快照对账：与在线表 diff，仅增删/更新变化卡（增量刷新，1s 调用）
+    void apply_snapshot();
+
+    /// 按连接码反查在线设备 IP（确认弹窗真值，Doc18 §3.4）；未知返回空
+    [[nodiscard]] QString deviceIp(const QString& code) const;
+
 signals:
     /// trusted=false 时由主窗口弹确认弹窗
     void connectRequested(const QString& aliasName, const QString& code, bool trusted);
@@ -66,12 +82,21 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
-    QWidget* makeDeviceCard(const QString& name, const QString& user,
-                            const QString& code, const QString& ip,
-                            const QString& stateText, const QColor& stateColor,
-                            bool trusted);
-    QString self_name_;
-    QString self_code_;
+    QWidget* makeDeviceCard(const QString& name, const QString& code,
+                            const QString& ip, bool busy, bool trusted);
+    void reflow();
+    AliasService* aliases_{nullptr};
+    TrustStore* trust_{nullptr};
+    struct Card {
+        QWidget* widget{nullptr};
+        uint32_t code{0};
+        bool busy{false};
+        bool trusted{false};
+        std::string ip;
+    };
+    std::map<std::string, Card> cards_;  // alias → 卡（保序 diff）
+    QLabel* self_name_lbl_{nullptr};
+    QLabel* self_code_lbl_{nullptr};
     QGridLayout* grid_{nullptr};
 };
 

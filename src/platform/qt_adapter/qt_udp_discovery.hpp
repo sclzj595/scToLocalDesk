@@ -37,6 +37,7 @@ public:
         int heartbeat_ms{3000};       // Doc17 network.heartbeat_interval_s
         std::string log_tag{"discovery"};
         bool self_status_busy{false}; ///< 0x01 会话中（Doc05 §2）
+        uint32_t self_code{0};        ///< 9 位连接码（心跳可选 TLV 0x10，Doc18 §3.4）
     };
 
     UdpDiscoveryAdapter(Options opt, AliasService* aliases, foundation::ILogger* logger,

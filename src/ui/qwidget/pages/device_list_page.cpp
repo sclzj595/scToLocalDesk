@@ -1,4 +1,6 @@
 // scToLocalDesk | 设备发现列表页（DeviceListPage）实现（自 pages.cpp 原样拆出）
+// 真数据驱动（Doc18 §3.4）：本机卡 IdService 派生；设备卡 apply_snapshot()
+// 与 AliasService 在线表 diff 增量刷新；信任角标走 TrustStore
 #include "pages.h"
 #include "page_kit.h"
 
@@ -17,16 +19,29 @@
 #include <QVBoxLayout>
 
 #include "../glass_theme.h"
+#include "service/alias_service.hpp"
+#include "service/id_service.hpp"
+#include "service/trust_store.hpp"
 
 namespace sc::localdesk::ui {
+
+namespace {
+
+QString code_text(uint32_t code) {
+    return code == 0 ? QStringLiteral("--- --- ---")
+                     : QString::fromStdString(IdService::format_code(code));
+}
+
+QString code_raw(uint32_t code) {
+    return code == 0 ? QString()
+                     : QString::number(code).rightJustified(9, '0');
+}
+
+}  // namespace
 
 // ---------------- 设备列表页 ----------------
 
 DeviceListPage::DeviceListPage(QWidget* parent) : QWidget(parent) {
-    // 演示数据（V1.0 由 bridge.selfAlias / IdService / TrustStore 驱动）
-    self_name_ = QStringLiteral("zhangsan@SC-DESK");
-    self_code_ = QStringLiteral("538194207");
-
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(28, 24, 28, 24);
     lay->setSpacing(18);
@@ -43,25 +58,25 @@ DeviceListPage::DeviceListPage(QWidget* parent) : QWidget(parent) {
     auto* nameCol = new QVBoxLayout();
     nameCol->setSpacing(3);
     nameCol->addWidget(makeHint(QStringLiteral("本机连接名")));
-    auto* nameLbl = new QLabel(self_name_);
-    nameLbl->setStyleSheet(QStringLiteral("font-size: 14px; font-weight: 600; color: %1;")
-                               .arg(GlassTheme::instance().textMain().name(QColor::HexRgb)));
-    nameCol->addWidget(nameLbl);
+    self_name_lbl_ = new QLabel(QStringLiteral("—"));
+    self_name_lbl_->setStyleSheet(QStringLiteral("font-size: 14px; font-weight: 600; color: %1;")
+                                      .arg(GlassTheme::instance().textMain().name(QColor::HexRgb)));
+    nameCol->addWidget(self_name_lbl_);
     selfLay->addLayout(nameCol);
     selfLay->addStretch();
 
     auto* codeCol = new QVBoxLayout();
     codeCol->setSpacing(3);
     codeCol->addWidget(makeHint(QStringLiteral("本机连接码")));
-    auto* codeLbl = new QLabel(QStringLiteral("538 194 207"));
-    QFont codeFont = codeLbl->font();
+    self_code_lbl_ = new QLabel(QStringLiteral("—"));
+    QFont codeFont = self_code_lbl_->font();
     codeFont.setPointSizeF(12.0);
     codeFont.setBold(true);
     codeFont.setLetterSpacing(QFont::AbsoluteSpacing, 3.0);
-    codeLbl->setFont(codeFont);
-    codeLbl->setStyleSheet(QStringLiteral("color: %1;")
-                               .arg(GlassTheme::instance().primary().name(QColor::HexRgb)));
-    codeCol->addWidget(codeLbl);
+    self_code_lbl_->setFont(codeFont);
+    self_code_lbl_->setStyleSheet(QStringLiteral("color: %1;")
+                                      .arg(GlassTheme::instance().primary().name(QColor::HexRgb)));
+    codeCol->addWidget(self_code_lbl_);
     selfLay->addLayout(codeCol);
 
     auto* copyBtn = new QPushButton(QStringLiteral("复制"));
@@ -70,7 +85,7 @@ DeviceListPage::DeviceListPage(QWidget* parent) : QWidget(parent) {
         "color: %1; border: 1px solid rgba(157,78,221,0.45); padding: 6px 16px;")
         .arg(GlassTheme::instance().primary().name(QColor::HexRgb)));
     connect(copyBtn, &QPushButton::clicked, this, [this, copyBtn] {
-        QApplication::clipboard()->setText(self_code_);
+        QApplication::clipboard()->setText(self_code_lbl_->text().split(' ').join(QString()));
         // 复制反馈：按钮文字临时变化（对齐 QML 版）
         copyBtn->setText(QStringLiteral("已复制 ✓"));
         QTimer::singleShot(1600, copyBtn, [copyBtn] {
@@ -87,7 +102,7 @@ DeviceListPage::DeviceListPage(QWidget* parent) : QWidget(parent) {
     head->addWidget(makeHint(QStringLiteral("首次连接需对方确认，确认后免验证直连")));
     lay->addLayout(head);
 
-    // ---- 设备卡网格 ----
+    // ---- 设备卡网格（演示占位移除，apply_snapshot 增量填充） ----
     auto* scroll = new QScrollArea();
     scroll->setWidgetResizable(true);
     scroll->setStyleSheet(QStringLiteral(
@@ -98,40 +113,138 @@ DeviceListPage::DeviceListPage(QWidget* parent) : QWidget(parent) {
     grid_->setSpacing(16);
     scroll->setWidget(gridHost);
     lay->addWidget(scroll, 1);
-
-    struct Demo {
-        const char* name;
-        const char* user;
-        const char* code;
-        const char* ip;
-        const char* state;
-        const char* color;
-        bool trusted;
-    };
-    const Demo demos[] = {
-        {"设计部-张工", "zhang.s@DESIGN-01", "482 130 556", "192.168.1.23",
-         "可连接", "#3A86FF", true},
-        {"运维室-李工", "li.y@OPS-PC", "107 662 384", "192.168.1.45",
-         "会话中", "#4CC9F0", false},
-        {"会议室-终端", "meeting@CONF-TV", "903 245 117", "192.168.1.88",
-         "离线", "#F72585", true},
-    };
-    for (int i = 0; i < 3; ++i) {
-        grid_->addWidget(makeDeviceCard(demos[i].name, demos[i].user, demos[i].code,
-                                        demos[i].ip, demos[i].state,
-                                        QColor(demos[i].color), demos[i].trusted),
-                         i / 3, i % 3);
-    }
     grid_->setColumnStretch(0, 1);
     grid_->setColumnStretch(1, 1);
     grid_->setColumnStretch(2, 1);
     grid_->setRowStretch(1, 1);
 }
 
-QWidget* DeviceListPage::makeDeviceCard(const QString& name, const QString& user,
-                                        const QString& code, const QString& ip,
-                                        const QString& stateText,
-                                        const QColor& stateColor, bool trusted) {
+void DeviceListPage::bind_services(AliasService* aliases, TrustStore* trust) {
+    aliases_ = aliases;
+    trust_ = trust;
+}
+
+void DeviceListPage::set_self(const QString& name, const QString& code) {
+    self_name_lbl_->setText(name.isEmpty() ? QStringLiteral("—") : name);
+    self_code_lbl_->setText(code.isEmpty() ? QStringLiteral("—") : code);
+}
+
+void DeviceListPage::apply_snapshot() {
+    if (aliases_ == nullptr) {
+        return;
+    }
+    const auto devices = aliases_->online_devices();
+    std::map<std::string, bool> seen;
+    for (const auto& dev : devices) {
+        seen[dev.alias] = true;
+        const auto it = cards_.find(dev.alias);
+        const bool trusted = trust_ != nullptr && dev.code != 0
+                             && trust_->is_trusted(code_raw(dev.code).toStdString());
+        if (it == cards_.end()) {
+            // 新上线：建卡入网格
+            Card c;
+            c.widget = makeDeviceCard(QString::fromStdString(dev.alias),
+                                      code_text(dev.code),
+                                      QString::fromStdString(dev.ip),
+                                      dev.status == 0x01, trusted);
+            c.code = dev.code;
+            c.busy = dev.status == 0x01;
+            c.trusted = trusted;
+            c.ip = dev.ip;
+            cards_.emplace(dev.alias, c);
+            reflow();
+        }
+        else {
+            // 已在线：仅变化项更新卡面（增量，不重建）
+            Card& c = it->second;
+            bool dirty = false;
+            if (static_cast<bool>(dev.status == 0x01) != c.busy) {
+                c.busy = dev.status == 0x01;
+                dirty = true;
+            }
+            if (dev.code != 0 && dev.code != c.code) {
+                c.code = dev.code;
+                dirty = true;
+            }
+            if (trusted != c.trusted) {
+                c.trusted = trusted;
+                dirty = true;
+            }
+            if (dev.ip != c.ip) {
+                c.ip = dev.ip;
+                dirty = true;
+            }
+            if (dirty) {
+                c.widget->setProperty("devCode", code_raw(c.code));
+                c.widget->setProperty("devTrusted", c.trusted);
+                auto* card = qobject_cast<QFrame*>(c.widget);
+                if (card != nullptr) {
+                    card->findChild<QLabel*>(QStringLiteral("codeLbl"))
+                        ->setText(code_text(c.code));
+                    card->findChild<QLabel*>(QStringLiteral("ipLbl"))
+                        ->setText(QStringLiteral("%1  %2")
+                                      .arg(QString::fromStdString(c.ip),
+                                           c.busy ? QStringLiteral("会话中")
+                                                  : QStringLiteral("可连接")));
+                    auto* dot = card->findChild<QLabel*>(QStringLiteral("dotLbl"));
+                    if (dot != nullptr) {
+                        dot->setStyleSheet(QStringLiteral(
+                            "background: %1; border-radius: 4px; max-width: 8px; max-height: 8px;")
+                            .arg(c.busy ? GlassTheme::instance().accentGreen().name(QColor::HexRgb)
+                                        : GlassTheme::instance().accentBlue().name(QColor::HexRgb)));
+                    }
+                    auto* badge = card->findChild<QLabel*>(QStringLiteral("badgeLbl"));
+                    if (badge != nullptr) {
+                        badge->setText(c.trusted ? QStringLiteral("已信任")
+                                                 : QStringLiteral("待确认"));
+                        badge->setStyleSheet(QStringLiteral(
+                            "font-size: 11px; padding: 3px 8px; border-radius: 4px; color: %1; "
+                            "background: %2;")
+                            .arg(c.trusted ? GlassTheme::instance().accentGreen().name(QColor::HexRgb)
+                                           : GlassTheme::instance().textHint().name(QColor::HexRgb))
+                            .arg(c.trusted ? "rgba(76,201,240,0.12)" : "rgba(110,118,129,0.10)"));
+                    }
+                }
+            }
+        }
+    }
+    // 离线：快照中不存在的卡移除
+    for (auto it = cards_.begin(); it != cards_.end();) {
+        if (seen.find(it->first) == seen.end()) {
+            it->second.widget->deleteLater();
+            it = cards_.erase(it);
+            reflow();
+        }
+        else {
+            ++it;
+        }
+    }
+}
+
+QString DeviceListPage::deviceIp(const QString& code) const {
+    bool ok = false;
+    const uint32_t c = code.toUInt(&ok);
+    if (!ok || c == 0) {
+        return {};
+    }
+    for (const auto& [alias, card] : cards_) {
+        if (card.code == c) {
+            return QString::fromStdString(card.ip);
+        }
+    }
+    return {};
+}
+
+void DeviceListPage::reflow() {
+    int i = 0;
+    for (auto& [alias, c] : cards_) {
+        grid_->addWidget(c.widget, i / 3, i % 3);
+        ++i;
+    }
+}
+
+QWidget* DeviceListPage::makeDeviceCard(const QString& name, const QString& code,
+                                        const QString& ip, bool busy, bool trusted) {
     auto* card = new QFrame();
     card->setObjectName(QStringLiteral("deviceCard"));
     card->setFixedHeight(104);
@@ -156,15 +269,17 @@ QWidget* DeviceListPage::makeDeviceCard(const QString& name, const QString& user
     nameLbl->setStyleSheet(QStringLiteral("font-size: 14px; font-weight: 600; color: %1;")
                                .arg(GlassTheme::instance().textMain().name(QColor::HexRgb)));
     nameCol->addWidget(nameLbl);
-    auto* userLbl = new QLabel(user);
-    userLbl->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
-                               .arg(GlassTheme::instance().textHint().name(QColor::HexRgb)));
-    nameCol->addWidget(userLbl);
+    auto* ipTop = new QLabel(ip);
+    ipTop->setObjectName(QStringLiteral("ipTopLbl"));
+    ipTop->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
+                             .arg(GlassTheme::instance().textHint().name(QColor::HexRgb)));
+    nameCol->addWidget(ipTop);
     top->addLayout(nameCol);
     top->addStretch();
 
     // 信任角标（向日葵模式：确认后才有记忆缓存）
     auto* badge = new QLabel(trusted ? QStringLiteral("已信任") : QStringLiteral("待确认"));
+    badge->setObjectName(QStringLiteral("badgeLbl"));
     badge->setStyleSheet(QStringLiteral(
         "font-size: 11px; padding: 3px 8px; border-radius: 4px; color: %1; "
         "background: %2;")
@@ -177,6 +292,7 @@ QWidget* DeviceListPage::makeDeviceCard(const QString& name, const QString& user
     auto* bottom = new QHBoxLayout();
     bottom->setSpacing(6);
     auto* codeLbl = new QLabel(code);
+    codeLbl->setObjectName(QStringLiteral("codeLbl"));
     QFont cf = codeLbl->font();
     cf.setBold(true);
     cf.setLetterSpacing(QFont::AbsoluteSpacing, 1.0);
@@ -185,8 +301,16 @@ QWidget* DeviceListPage::makeDeviceCard(const QString& name, const QString& user
                                .arg(GlassTheme::instance().primary().name(QColor::HexRgb)));
     bottom->addWidget(codeLbl);
     bottom->addStretch();
-    bottom->addWidget(makeStateDot(stateColor));
-    auto* ipLbl = new QLabel(QStringLiteral("%1  %2").arg(ip, stateText));
+    auto* dot = new QLabel();
+    dot->setObjectName(QStringLiteral("dotLbl"));
+    dot->setStyleSheet(QStringLiteral(
+        "background: %1; border-radius: 4px; max-width: 8px; max-height: 8px;")
+        .arg(busy ? GlassTheme::instance().accentGreen().name(QColor::HexRgb)
+                  : GlassTheme::instance().accentBlue().name(QColor::HexRgb)));
+    bottom->addWidget(dot);
+    auto* ipLbl = new QLabel(QStringLiteral("%1  %2").arg(ip,
+        busy ? QStringLiteral("会话中") : QStringLiteral("可连接")));
+    ipLbl->setObjectName(QStringLiteral("ipLbl"));
     ipLbl->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
                              .arg(GlassTheme::instance().textSecond().name(QColor::HexRgb)));
     bottom->addWidget(ipLbl);
@@ -199,9 +323,12 @@ bool DeviceListPage::eventFilter(QObject* watched, QEvent* e) {
     auto* card = qobject_cast<QFrame*>(watched);
     if (card != nullptr && card->property("devCode").isValid()) {
         if (e->type() == QEvent::MouseButtonRelease) {
-            emit connectRequested(card->property("devName").toString(),
-                                  card->property("devCode").toString(),
-                                  card->property("devTrusted").toBool());
+            const QString code = card->property("devCode").toString();
+            if (!code.isEmpty()) {  // 旧包无码不可点（对齐 QML enabled 守卫）
+                emit connectRequested(card->property("devName").toString(),
+                                      code,
+                                      card->property("devTrusted").toBool());
+            }
         }
     }
     return QWidget::eventFilter(watched, e);

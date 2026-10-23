@@ -13,6 +13,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import ".."
+import ScLocaldesk 1.0
 
 Item {
     id: root
@@ -20,9 +21,9 @@ Item {
     /// trusted=false 时由 MainWindow 弹确认；true 直连
     signal connectRequested(string aliasName, string code, bool trusted)
 
-    // 演示数据（V1.0 由 bridge.selfAlias / IdService / TrustStore 驱动）
-    readonly property string selfName: "zhangsan@SC-DESK"
-    readonly property string selfCode: "538 194 207"
+    // 本机身份由 IdService 派生（P1.1），设备网格由 DeviceListModel 增量驱动（Doc18 §3.4）
+    readonly property string selfName: ScLocaldesk.selfAlias
+    readonly property string selfCode: ScLocaldesk.selfCode
 
     ColumnLayout {
         anchors.fill: parent
@@ -169,7 +170,17 @@ Item {
             cellWidth: 292
             cellHeight: 108
             clip: true
-            model: devices
+            model: DeviceListModel
+
+            // 空态：局域网暂无对端（不再有写死演示卡）
+            Text {
+                anchors.centerIn: parent
+                visible: DeviceListModel.count === 0
+                text: "未发现局域网设备，等待心跳中…"
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                color: Theme.textHint
+            }
 
             delegate: Item {
                 id: cardWrap
@@ -250,7 +261,7 @@ Item {
                                     color: Theme.textMain
                                 }
                                 Text {
-                                    text: model.user
+                                    text: model.ip
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontHint
                                     color: Theme.textHint
@@ -277,7 +288,7 @@ Item {
                         RowLayout {
                             spacing: 6
                             Text {
-                                text: model.code
+                                text: model.codeText
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontBody
                                 font.letterSpacing: 1
@@ -292,12 +303,10 @@ Item {
                                 width: 8
                                 height: 8
                                 radius: 4
-                                color: model.state === 0 ? Theme.accentBlue
-                                       : model.state === 1 ? Theme.accentGreen
-                                       : Theme.accentRed
+                                color: model.busy ? Theme.accentGreen : Theme.accentBlue
                             }
                             Text {
-                                text: model.ip
+                                text: model.busy ? "会话中" : "可连接"
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontHint
                                 color: Theme.textSecond
@@ -311,37 +320,10 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.connectRequested(model.name, model.code, model.trusted)
+                    enabled: model.codeRaw !== ""
+                    onClicked: root.connectRequested(model.name, model.codeRaw, model.trusted)
                 }
             }
-        }
-    }
-
-    ListModel {
-        id: devices
-        ListElement {
-            name: "设计部-张工"
-            user: "zhang.s@DESIGN-01"
-            code: "482 130 556"
-            ip: "192.168.1.23"
-            state: 0
-            trusted: true
-        }
-        ListElement {
-            name: "运维室-李工"
-            user: "li.y@OPS-PC"
-            code: "107 662 384"
-            ip: "192.168.1.45"
-            state: 1
-            trusted: false
-        }
-        ListElement {
-            name: "会议室-终端"
-            user: "meeting@CONF-TV"
-            code: "903 245 117"
-            ip: "192.168.1.88"
-            state: 2
-            trusted: true
         }
     }
 }

@@ -46,6 +46,7 @@ MainWindow::MainWindow() {
     stack_ = new QStackedWidget();
     stack_->setObjectName(QStringLiteral("contentRoot"));
     auto* devList = new DeviceListPage();
+    devList_ = devList;
     auto* connCode = new ConnectCodePage();
     auto* settingsPage = new SettingsPage();
     settingsPage_ = settingsPage;
@@ -88,7 +89,7 @@ MainWindow::MainWindow() {
                     showToast(QStringLiteral("正在直连 %1（已信任）…").arg(alias));
                     return;
                 }
-                confirm->setPeer(alias, QStringLiteral("192.168.1.45"), code);
+                confirm->setPeer(alias, devList_->deviceIp(code), code);
                 if (confirm->exec() == QDialog::Accepted) {
                     if (confirm->rememberChecked() && trust_ != nullptr) {
                         trust_->trust(code.toStdString(), alias.toStdString());
