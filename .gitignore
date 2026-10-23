@@ -1,6 +1,7 @@
 # build 产物
 build/
 build-msvc/
+build-vs/
 out/
 cmake-build-*/
 CMakeFiles/
