@@ -6,6 +6,7 @@
 // ============================================================
 #include "implement/transport/ws_transport.hpp"
 
+#include <QNetworkProxy>
 #include <QTimer>
 #include <QUrl>
 
@@ -83,6 +84,8 @@ bool WsTransport::start_server(uint16_t port) {
 void WsTransport::connect_client(const std::string& host, uint16_t port) {
     set_state(TransportState::Connecting);
     auto* sock = new QWebSocket();
+    // 内网直连红线：禁走系统代理（clash 等会劫持 ws:// 拨号致 UnsupportedSocketOperation）
+    sock->setProxy(QNetworkProxy::NoProxy);
     peer_ = sock;
     ping_miss_ = 0;
     tx_.clear();
