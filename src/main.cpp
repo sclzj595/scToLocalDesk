@@ -258,6 +258,7 @@ int main(int argc, char* argv[]) {
     auto sessions = std::make_shared<RemoteSessionService>(
         transport, manualAuth, unattendedAuth, crypto, aliases, bus, logger);
     sessions->set_stream_params(cfg.fps, cfg.jpeg_quality);
+    sessions->set_trust_store(&trust_store);  // 已信任设备免确认直连（Doc18 §3.2）
 
     auto files = std::make_shared<FileService>(transport, bus, logger);
     files->set_thread_pool(pool);

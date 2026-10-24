@@ -17,6 +17,7 @@
 #include "service/file_service.hpp"
 #include "service/input_service.hpp"
 #include "service/screen_stream_service.hpp"
+#include "service/trust_store.hpp"
 
 namespace sc::localdesk {
 
@@ -434,6 +435,32 @@ void RemoteSessionService::handle_request_connect(const protocol::RequestConnect
 
     session_id_ = make_session_id();
     peer_alias_ = req.alias;
+
+    // 信任缓存直连（Doc18 §3.2）：对端连接码已记忆 → 免人工确认直接放行。
+    // alias→code 反查走在线表；对端未上报 code（旧心跳）或不在表内则
+    // 自然降级人工确认——信任判定永远以本机 trust.json 为准，不扩协议
+    if (trust_ != nullptr) {
+        uint32_t peer_code = 0;
+        for (const auto& dev : aliases_->online_devices()) {
+            if (dev.alias == req.alias) {
+                peer_code = dev.code;
+                break;
+            }
+        }
+        if (peer_code != 0 && trust_->is_trusted(std::to_string(peer_code))) {
+            std::lock_guard<std::mutex> lk(mtx_);
+            if (transport_ != nullptr) {
+                transport_->send_binary(
+                    protocol::build_ctrl(protocol::CtrlSubType::Approved));
+            }
+            enter_running(false);
+            publish_request_event(req.alias, true);
+            SCLD_LOG(log_, LogLevel::Info, "session",
+                     "[session_id=" + session_id_ + "][alias=" + req.alias
+                         + "] 已信任设备，自动放行 code=" + std::to_string(peer_code));
+            return;
+        }
+    }
 
     // 鉴权路由（Doc09 §3.5 / Doc16 §3）
     AuthRequest auth_req;

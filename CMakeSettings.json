@@ -11,10 +11,7 @@
       "name": "win-x64-debug",
       "displayName": "Windows MSVC Debug (Qt 6.5.3)",
       "generator": "Visual Studio 16 2019",
-      "architecture": {
-        "value": "x64",
-        "strategy": "set"
-      },
+      "architecture": "x64",
       "configurationType": "Debug",
       "buildRoot": "${projectDir}\\build\\win-x64-debug",
       "installRoot": "${projectDir}\\install\\win-x64-debug",

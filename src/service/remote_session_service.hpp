@@ -32,6 +32,7 @@ namespace foundation {
 class EventBus;
 class ILogger;
 }
+class TrustStore;
 
 namespace protocol {
 struct RequestConnectBody;
@@ -103,6 +104,11 @@ public:
     void set_file_service(std::shared_ptr<FileService> files);
     void set_stream_service(std::shared_ptr<ScreenStreamService> stream);
     void set_input_service(std::shared_ptr<InputService> input);
+    /// 信任缓存注入（Doc18 §3.2）：被控端对已记忆设备免人工确认直连；
+    /// 可空（未注入则全部请求走人工确认）
+    void set_trust_store(TrustStore* ts) {
+        trust_ = ts;
+    }
 
     /// 应用设置页推流参数（Doc17 session.fps / session.jpeg_quality）
     void set_stream_params(int fps, int quality);
@@ -133,6 +139,7 @@ private:
     std::shared_ptr<FileService> files_;
     std::shared_ptr<ScreenStreamService> stream_;
     std::shared_ptr<InputService> input_;
+    TrustStore* trust_{nullptr};
     std::shared_ptr<foundation::EventBus> bus_;
     std::shared_ptr<foundation::ILogger> log_;
 

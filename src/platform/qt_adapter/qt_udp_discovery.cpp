@@ -24,6 +24,30 @@ void append_tlv_u32(QByteArray& out, uint8_t type, uint32_t v) {
         out.append(static_cast<char>((v >> s) & 0xFF));
     }
 }
+
+/// 组播出口网卡选择：第一个 Up+Running+CanBroadcast 且带 IPv4 的网卡，
+/// 排除点对点 TUN（WireGuard/clash 等带 CanPointToPoint 标志）——这类
+/// 接口常以低 metric 抢走默认组播出口，同机双端互相收不到心跳、跨机
+/// 场景组播进隧道直接丢失。设备发现语义上只属于局域网广播域，故显式
+/// 绑定广播型非隧道网卡
+QNetworkInterface pick_lan_iface() {
+    const auto ifaces = QNetworkInterface::allInterfaces();
+    for (const auto& i : ifaces) {
+        const auto f = i.flags();
+        if (!(f & QNetworkInterface::IsUp) || !(f & QNetworkInterface::IsRunning)
+            || !(f & QNetworkInterface::CanBroadcast)
+            || (f & QNetworkInterface::IsLoopBack)
+            || (f & QNetworkInterface::IsPointToPoint)) {
+            continue;
+        }
+        for (const auto& e : i.addressEntries()) {
+            if (e.ip().protocol() == QAbstractSocket::IPv4Protocol) {
+                return i;
+            }
+        }
+    }
+    return {};
+}
 }  // namespace
 
 UdpDiscoveryAdapter::UdpDiscoveryAdapter(Options opt, AliasService* aliases,
@@ -44,17 +68,27 @@ bool UdpDiscoveryAdapter::start() {
                  "组播端口绑定失败 port=" + std::to_string(opt_.multicast_port));
         return false;
     }
-    if (!socket_.joinMulticastGroup(group)) {
+    const QNetworkInterface iface = pick_lan_iface();
+    const bool joined = iface.isValid()
+                            ? socket_.joinMulticastGroup(group, iface)
+                            : socket_.joinMulticastGroup(group);
+    if (!joined) {
         SCLD_LOG(log_, foundation::LogLevel::Warn, opt_.log_tag,
                  "加入组播组失败（跨网段？切静态映射模式，Doc07 §7）");
         return false;
+    }
+    if (iface.isValid()) {
+        socket_.setMulticastInterface(iface);
     }
     timer_.start(opt_.heartbeat_ms);
     running_ = true;
     send_heartbeat();  // 启动即报一次，缩短发现延迟
     SCLD_LOG(log_, foundation::LogLevel::Info, opt_.log_tag,
              "组播发现已启动 group=" + opt_.multicast_addr
-                 + " port=" + std::to_string(opt_.multicast_port));
+                 + " port=" + std::to_string(opt_.multicast_port)
+                 + " iface=" + (iface.isValid()
+                                    ? iface.humanReadableName().toStdString()
+                                    : "default"));
     return true;
 }
 

@@ -132,6 +132,7 @@ int main(int argc, char* argv[]) {
     auto sessions = std::make_shared<RemoteSessionService>(
         transport, manual_auth, unattended_auth, crypto, aliases, bus, logger);
     sessions->set_stream_params(cfg.fps, cfg.jpeg_quality);
+    sessions->set_trust_store(&trust_store);  // 已信任设备免确认直连（Doc18 §3.2）
     auto stream = std::make_shared<ScreenStreamService>(bus, logger);
 #if SCLD_HAS_FFMPEG
     stream->set_source(std::make_shared<GdiCapturer>(),
@@ -159,16 +160,32 @@ int main(int argc, char* argv[]) {
     // SCLD_SMOKE_APPROVE=1 冒烟钩子：自动放行，双实例 E2E 用）
     const bool smoke_approve = qEnvironmentVariable("SCLD_SMOKE_APPROVE") == "1";
     bus->subscribe<Evt_ConnectRequest>(
-        [&win, sessions, smoke_approve, &logger](const Evt_ConnectRequest& e) {
+        [&win, sessions, smoke_approve, &trust_store, aliases,
+         &logger](const Evt_ConnectRequest& e) {
             QMetaObject::invokeMethod(
                 &win,
-                [&win, sessions, smoke_approve, &logger, e] {
+                [&win, sessions, smoke_approve, &trust_store, aliases, &logger,
+                 e] {
                     if (e.auto_approved) {
                         return;  // 无人值守已放行，无需确认
                     }
                     if (smoke_approve) {
                         SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info,
                                  "smoke", "auto approve");
+                        // 模拟"同意+记住"：在线表反查对端 code 写入信任缓存
+                        //（E2E 第二轮免确认直连的前置，Doc18 §3.2）
+                        for (const auto& dev : aliases->online_devices()) {
+                            if (dev.alias == e.device_alias && dev.code != 0) {
+                                trust_store.trust(std::to_string(dev.code),
+                                                  e.device_alias);
+                                SCLD_LOG(logger,
+                                         sc::localdesk::foundation::LogLevel::Info,
+                                         "smoke",
+                                         "auto trust code="
+                                             + std::to_string(dev.code));
+                                break;
+                            }
+                        }
                         sessions->approve();
                         return;
                     }

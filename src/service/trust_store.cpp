@@ -48,6 +48,20 @@ std::string read_all(const std::filesystem::path& p) {
     return out;
 }
 
+/// 连接码归一化：去空格统一为 9 位裸数字。UI 入口两种形态
+/// （设备卡 codeRaw 无空格 / 连接码页 "xxx xxx xxx"）+ 服务层
+/// std::to_string(uint32) 反查，三种来源必须同形态才能命中
+std::string normalize_code(const std::string& code) {
+    std::string out;
+    out.reserve(code.size());
+    for (const char c : code) {
+        if (c != ' ') {
+            out.push_back(c);
+        }
+    }
+    return out;
+}
+
 }  // namespace
 
 TrustStore::TrustStore(std::filesystem::path file, foundation::ILogger* logger)
@@ -75,7 +89,10 @@ void TrustStore::load() {
             continue;  // 畸形条目跳过
         }
         Entry e;
-        e.code = item.at("code").get<std::string>();
+        e.code = normalize_code(item.at("code").get<std::string>());
+        if (e.code.empty()) {
+            continue;
+        }
         if (item.contains("name") && item.at("name").is_string()) {
             e.name = item.at("name").get<std::string>();
         }
@@ -120,9 +137,10 @@ void TrustStore::save() {
 }
 
 bool TrustStore::is_trusted(const std::string& code) const {
+    const std::string norm = normalize_code(code);
     std::lock_guard<std::mutex> lk(mtx_);
     for (const auto& e : entries_) {
-        if (e.code == code) {
+        if (e.code == norm) {
             return true;
         }
     }
@@ -130,23 +148,25 @@ bool TrustStore::is_trusted(const std::string& code) const {
 }
 
 void TrustStore::trust(const std::string& code, const std::string& name) {
+    const std::string norm = normalize_code(code);
     std::lock_guard<std::mutex> lk(mtx_);
     for (auto& e : entries_) {
-        if (e.code == code) {
+        if (e.code == norm) {
             e.name = name;
             e.trusted_at = now_timestamp();
             save();
             return;
         }
     }
-    entries_.push_back(Entry{code, name, now_timestamp()});
+    entries_.push_back(Entry{norm, name, now_timestamp()});
     save();
 }
 
 void TrustStore::untrust(const std::string& code) {
+    const std::string norm = normalize_code(code);
     std::lock_guard<std::mutex> lk(mtx_);
     for (auto it = entries_.begin(); it != entries_.end(); ++it) {
-        if (it->code == code) {
+        if (it->code == norm) {
             entries_.erase(it);
             save();
             return;
