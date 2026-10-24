@@ -6,6 +6,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import ScLocaldesk
 import ".."
 
 Item {
@@ -39,6 +40,29 @@ Item {
             return;
         }
         root.connectRequested(code.slice(0, 3) + " " + code.slice(3, 6) + " " + code.slice(6, 9));
+    }
+
+    // 粘贴 9 位码：拆三段分发；带空格/横线均容忍
+    function distributePaste(seg, pasted) {
+        const digits = pasted.replace(/[^0-9]/g, "");
+        if (digits.length < 2) {
+            return false;  // 单个数字走正常输入
+        }
+        const all = f0.text + f1.text + f2.text;
+        const idx = seg.segIndex * 3;
+        const merged = (all.slice(0, idx) + digits + all.slice(idx + seg.text.length))
+                           .replace(/[^0-9]/g, "").slice(0, 9);
+        f0.text = merged.slice(0, 3);
+        f1.text = merged.slice(3, 6);
+        f2.text = merged.slice(6, 9);
+        const filled = f0.text.length + f1.text.length + f2.text.length;
+        const target = filled <= 3 ? f0 : filled <= 6 ? f1 : f2;
+        target.forceActiveFocus();
+        target.cursorPosition = target.text.length;
+        if (filled === 9) {
+            root.tryConnect();
+        }
+        return true;
     }
 
     ColumnLayout {
@@ -98,21 +122,48 @@ Item {
                         }
                     }
                 }
+                // 粘贴拦截：QML TextField 无 pasted 信号，经 bridge 读剪贴板分发
+                Keys.onPressed: event => {
+                    if (event.matches(StandardKey.Paste)) {
+                        if (root.distributePaste(seg, ScLocaldesk.clipboardText())) {
+                            event.accepted = true;  // 分发接管，走默认粘贴会破坏分段
+                        }
+                        return;
+                    }
+                    if (event.key === Qt.Key_Backspace) {
+                        if (text.length === 0 && prevSeg != null) {
+                            prevSeg.forceActiveFocus();
+                            prevSeg.selectAll();
+                            event.accepted = true;
+                        } else if (text.length > 0 && prevSeg != null
+                                   && selectionStart === -1 && cursorPosition === 0) {
+                            // 光标在本段 0 位：删上一段末位（三段视作连续串）
+                            prevSeg.text = prevSeg.text.slice(0, prevSeg.text.length - 1);
+                            prevSeg.forceActiveFocus();
+                            prevSeg.cursorPosition = prevSeg.text.length;
+                            event.accepted = true;
+                        }
+                    } else if (event.key === Qt.Key_Left && cursorPosition === 0
+                               && prevSeg != null) {
+                        prevSeg.forceActiveFocus();
+                        prevSeg.cursorPosition = prevSeg.text.length;
+                        event.accepted = true;
+                    } else if (event.key === Qt.Key_Right && cursorPosition === text.length
+                               && text.length === 3 && nextSeg != null) {
+                        nextSeg.forceActiveFocus();
+                        nextSeg.cursorPosition = 0;
+                        event.accepted = true;
+                    }
+                }
                 onTextChanged: if (text.length === 3 && nextSeg != null) {
                     nextSeg.forceActiveFocus();
                     nextSeg.selectAll();
                 }
-                // Keys 无 onBackspacePressed 便捷信号：用通用 onPressed 拦截
-                Keys.onPressed: event => {
-                    if (event.key === Qt.Key_Backspace && text.length === 0
-                            && prevSeg != null) {
-                        prevSeg.forceActiveFocus();
-                        prevSeg.selectAll();
-                        event.accepted = true;
-                    }
-                }
                 Keys.onReturnPressed: root.tryConnect()
                 Keys.onEnterPressed: root.tryConnect()
+                onActiveFocusChanged: if (activeFocus) {
+                    selectAll();  // 点击/Tab 进入选中态，直接覆盖输入
+                }
             }
 
             CodeSeg {

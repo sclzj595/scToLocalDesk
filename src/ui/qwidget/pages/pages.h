@@ -107,7 +107,7 @@ private:
     QGridLayout* grid_{nullptr};
 };
 
-/// 连接码连接页：9 位三段输入（自动跳格）+ 最近连接列表
+/// 连接码连接页：9 位三段输入（自动跳格/粘贴分发/跨段退格）+ 最近连接列表
 class ConnectCodePage final : public QWidget {
     Q_OBJECT
 
@@ -117,8 +117,13 @@ public:
 signals:
     void connectRequested(const QString& code);
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     void tryConnect();
+    bool handleSegKey(int idx, QKeyEvent* ev);
+    void distributePaste(int idx, const QString& digits);
     QLineEdit* seg_[3]{nullptr};
     QLabel* errHint_{nullptr};
 };

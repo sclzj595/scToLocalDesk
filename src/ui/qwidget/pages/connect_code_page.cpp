@@ -2,9 +2,13 @@
 #include "pages.h"
 #include "page_kit.h"
 
+#include <QApplication>
+#include <QClipboard>
 #include <QColor>
+#include <QEvent>
 #include <QFont>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -47,6 +51,7 @@ ConnectCodePage::ConnectCodePage(QWidget* parent) : QWidget(parent) {
         seg_[i]->setValidator(new QRegularExpressionValidator(
             QRegularExpression(QStringLiteral("[0-9]{0,3}")), this));
         const int idx = i;
+        seg_[idx]->installEventFilter(this);
         connect(seg_[i], &QLineEdit::textChanged, this, [this, idx](const QString& t) {
             if (t.length() == 3 && idx < 2) {
                 seg_[idx + 1]->setFocus();
@@ -104,6 +109,96 @@ ConnectCodePage::ConnectCodePage(QWidget* parent) : QWidget(parent) {
         emit connectRequested(it->data(Qt::UserRole).toString());
     });
     lay->addWidget(list, 1);
+}
+
+bool ConnectCodePage::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::KeyPress) {
+        for (int i = 0; i < 3; ++i) {
+            if (watched == seg_[i]) {
+                return handleSegKey(i, static_cast<QKeyEvent*>(event));
+            }
+        }
+    }
+    else if (event->type() == QEvent::FocusIn) {
+        // 点击/Tab 进入选中态，直接覆盖输入（与 QML 版一致）
+        if (auto* ed = qobject_cast<QLineEdit*>(watched)) {
+            ed->selectAll();
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+bool ConnectCodePage::handleSegKey(int idx, QKeyEvent* ev) {
+    auto* ed = seg_[idx];
+    // 粘贴拦截：2 位以上走三段分发（复制整码/半码均优雅落地）
+    if (ev->matches(QKeySequence::Paste)) {
+        QString only;
+        for (const QChar c : QApplication::clipboard()->text()) {
+            if (c.isDigit()) {
+                only += c;
+            }
+        }
+        if (only.length() >= 2) {
+            distributePaste(idx, only);
+            return true;
+        }
+        return false;  // 单个数字走默认粘贴
+    }
+    if (ev->key() == Qt::Key_Backspace) {
+        if (ed->text().isEmpty() && idx > 0) {
+            seg_[idx - 1]->setFocus();
+            seg_[idx - 1]->selectAll();
+            return true;
+        }
+        // 光标在本段 0 位无选区：删上一段末位（三段视作连续串）
+        if (!ed->text().isEmpty() && ed->cursorPosition() == 0
+            && ed->selectedText().isEmpty() && idx > 0) {
+            auto* p = seg_[idx - 1];
+            QString t = p->text();
+            t.chop(1);
+            p->setText(t);
+            p->setFocus();
+            p->setCursorPosition(t.length());
+            return true;
+        }
+        return false;
+    }
+    if (ev->key() == Qt::Key_Left && ed->cursorPosition() == 0 && idx > 0) {
+        seg_[idx - 1]->setFocus();
+        seg_[idx - 1]->setCursorPosition(seg_[idx - 1]->text().length());
+        return true;
+    }
+    if (ev->key() == Qt::Key_Right && ed->cursorPosition() == ed->text().length()
+        && ed->text().length() == 3 && idx < 2) {
+        seg_[idx + 1]->setFocus();
+        seg_[idx + 1]->setCursorPosition(0);
+        return true;
+    }
+    return false;
+}
+
+void ConnectCodePage::distributePaste(int idx, const QString& digits) {
+    const QString all = seg_[0]->text() + seg_[1]->text() + seg_[2]->text();
+    const int pos = idx * 3;
+    QString merged = all.left(pos) + digits + all.mid(pos + seg_[idx]->text().length());
+    QString only;
+    for (const QChar c : merged) {
+        if (c.isDigit()) {
+            only += c;
+        }
+    }
+    merged = only.left(9);
+    seg_[0]->setText(merged.mid(0, 3));
+    seg_[1]->setText(merged.mid(3, 3));
+    seg_[2]->setText(merged.mid(6, 3));
+    const int filled = seg_[0]->text().length() + seg_[1]->text().length()
+                     + seg_[2]->text().length();
+    auto* target = filled <= 3 ? seg_[0] : filled <= 6 ? seg_[1] : seg_[2];
+    target->setFocus();
+    target->setCursorPosition(target->text().length());
+    if (filled == 9) {
+        tryConnect();
+    }
 }
 
 void ConnectCodePage::tryConnect() {

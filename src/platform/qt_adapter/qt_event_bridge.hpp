@@ -91,6 +91,8 @@ public:
     Q_INVOKABLE QString deviceIp(const QString& code) const;
     /// 按连接码反查在线设备别名（连接码页发起会话用，Doc18 §4.3）；未知返回空
     Q_INVOKABLE QString deviceAlias(const QString& code) const;
+    /// 剪贴板纯文本（连接码三段输入的粘贴分发，QML 无剪贴板访问能力）
+    Q_INVOKABLE QString clipboardText() const;
     /// 被控监听启动结果（端口占用 UI 提示，Doc18 风险清单 P1 顺带项）
     void set_listening(bool on) {
         listening_ = on;

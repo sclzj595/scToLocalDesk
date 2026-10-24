@@ -134,6 +134,11 @@ QString QtEventBridge::deviceAlias(const QString& code) const {
     return {};
 }
 
+QString QtEventBridge::clipboardText() const {
+    const QClipboard* cb = QGuiApplication::clipboard();
+    return cb != nullptr ? cb->text(QClipboard::Clipboard) : QString();
+}
+
 QString QtEventBridge::deviceIp(const QString& code) const {
     if (aliases_ == nullptr) {
         return {};
