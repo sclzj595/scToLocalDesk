@@ -44,6 +44,9 @@ public:
 
     [[nodiscard]] size_t count() const;
 
+    /// 全表快照（连接码页"最近连接"真数据源，Doc18 §3.2）
+    [[nodiscard]] std::vector<Entry> list() const;
+
 private:
     void load();
     void save();  // 调用方须持锁

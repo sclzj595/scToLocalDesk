@@ -14,23 +14,40 @@ Item {
 
     signal disconnected()
 
+    /// 会话生命周期（MainWindow 桥接 ScLocaldesk.sessionStarted/Closed）：
+    /// frameSize 在会话关闭后保持末帧，须叠加本状态才能正确回空态
+    property bool sessionActive: false
+
+    /// 会话中判定：有帧（frameSize 非 0）且会话未关闭
+    readonly property bool inSession: sessionActive && VideoPipeline.frameSize.width > 0
+
+    Connections {
+        target: ScLocaldesk
+        function onSessionStarted() {
+            root.sessionActive = true;
+        }
+        function onSessionClosed() {
+            root.sessionActive = false;
+        }
+    }
+
     Rectangle {
         id: screenArea
         anchors.fill: parent
         color: "#000000"
 
-        // 远程画面（Doc18 §4.2）：VideoPipeline.frameReady → 等比铺满；
-        // 无帧时兜底提示居中可见
+        // 远程画面（Doc18 §4.2）：VideoPipeline.frameReady → 等比铺满
         VideoSurface {
             id: surface
             anchors.fill: parent
             pipeline: VideoPipeline
         }
 
+        // 无会话空态：无帧时的占位提示（禁止无提示黑屏）
         Text {
             anchors.centerIn: parent
-            visible: surface.pipeline === null
-            text: "远程画面显示区\n（Session Running 后由此渲染 ScreenFrame）"
+            visible: !root.inSession
+            text: "暂未进行远程控制\n从设备列表或连接码页发起会话后，画面将显示在此处"
             horizontalAlignment: Text.AlignHCenter
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
@@ -42,6 +59,7 @@ Item {
         RemoteInputItem {
             id: inputCatcher
             anchors.fill: parent
+            visible: root.inSession
             videoSize: VideoPipeline.frameSize
             focus: true
             onVisibleChanged: if (visible) forceActiveFocus()
@@ -50,11 +68,13 @@ Item {
             onInputKey: (vk, scan, down) => ScLocaldesk.sendKey(vk, scan, down)
         }
 
-        // 底部悬浮工具条：半透底 + 描边（内容区禁模糊，Doc13 红线2）
+        // 底部悬浮工具条：半透底 + 描边（内容区禁模糊，Doc13 红线2）；
+        // 无会话隐藏（断开按钮在无会话时不可用）
         Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 20
+            visible: root.inSession
             width: toolRow.implicitWidth + 32
             height: 44
             radius: Theme.cardRadius

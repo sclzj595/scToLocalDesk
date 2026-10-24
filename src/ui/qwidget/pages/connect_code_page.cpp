@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QColor>
+#include <QDate>
 #include <QEvent>
 #include <QFont>
 #include <QHBoxLayout>
@@ -19,6 +20,7 @@
 #include <QVBoxLayout>
 
 #include "../glass_theme.h"
+#include "service/trust_store.hpp"
 
 namespace sc::localdesk::ui {
 
@@ -87,28 +89,69 @@ ConnectCodePage::ConnectCodePage(QWidget* parent) : QWidget(parent) {
     head->addWidget(makeHint(QStringLiteral("已信任设备免对方确认")));
     lay->addLayout(head);
 
-    auto* list = new QListWidget();
-    list->setCursor(Qt::PointingHandCursor);
-    const struct {
-        const char* name;
-        const char* code;
-        const char* time;
-    } hist[] = {
-        {"设计部-张工", "482 130 556", "今天 14:32"},
-        {"会议室-终端", "903 245 117", "昨天 09:15"},
-        {"运维室-李工", "107 662 384", "10-19 16:48"},
-    };
-    for (const auto& h : hist) {
-        auto* it = new QListWidgetItem(QString("%1    %2    %3    连接")
-                                           .arg(h.name, h.code, h.time));
-        it->setData(Qt::UserRole, QString(h.code).remove(' '));
-        it->setForeground(GlassTheme::instance().textMain());
-        list->addItem(it);
-    }
-    connect(list, &QListWidget::itemClicked, this, [this](QListWidgetItem* it) {
+    hist_list_ = new QListWidget();
+    hist_list_->setCursor(Qt::PointingHandCursor);
+    connect(hist_list_, &QListWidget::itemClicked, this, [this](QListWidgetItem* it) {
         emit connectRequested(it->data(Qt::UserRole).toString());
     });
-    lay->addWidget(list, 1);
+    lay->addWidget(hist_list_, 1);
+
+    // 空态占位（禁止假数据）：无信任记录时的提示行
+    hist_empty_ = new QLabel(QStringLiteral("暂无连接记录\n首次连接经对方确认后，将显示在此处"));
+    hist_empty_->setAlignment(Qt::AlignCenter);
+    hist_empty_->setStyleSheet(QStringLiteral(
+        "color: %1; font-size: 13px;")
+        .arg(GlassTheme::instance().textHint().name(QColor::HexRgb)));
+    lay->addWidget(hist_empty_, 1);
+    hist_empty_->hide();
+}
+
+void ConnectCodePage::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    reload_history();  // 信任变更发生在确认弹窗，切页回来即最新
+}
+
+void ConnectCodePage::reload_history() {
+    if (hist_list_ == nullptr) {
+        return;
+    }
+    hist_list_->clear();
+    // trusted_at "2026-10-25 14:32:05" → 相对时间文案（与 QML 版同规则）
+    const QDate today = QDate::currentDate();
+    if (trust_ != nullptr) {
+        for (const auto& e : trust_->list()) {
+            const QDateTime t = QDateTime::fromString(
+                QString::fromStdString(e.trusted_at), "yyyy-MM-dd HH:mm:ss");
+            QString time_text;
+            if (t.date() == today) {
+                time_text = t.toString("'今天' HH:mm");
+            } else if (t.date() == today.addDays(-1)) {
+                time_text = t.toString("'昨天' HH:mm");
+            } else if (t.date().year() == today.year()) {
+                time_text = t.toString("MM-dd HH:mm");
+            } else {
+                time_text = t.toString("yyyy-MM-dd");
+            }
+            // 9 位裸码 → "xxx xxx xxx" 三段展示
+            const QString raw = QString::fromStdString(e.code);
+            QString grouped;
+            for (int i = 0; i < raw.size(); ++i) {
+                if (i > 0 && i % 3 == 0) {
+                    grouped += QLatin1Char(' ');
+                }
+                grouped += raw.at(i);
+            }
+            auto* it = new QListWidgetItem(
+                QStringLiteral("%1    %2    %3    连接")
+                    .arg(QString::fromStdString(e.name), grouped, time_text));
+            it->setData(Qt::UserRole, raw);
+            it->setForeground(GlassTheme::instance().textMain());
+            hist_list_->addItem(it);
+        }
+    }
+    const bool empty = hist_list_->count() == 0;
+    hist_list_->setVisible(!empty);
+    hist_empty_->setVisible(empty);
 }
 
 bool ConnectCodePage::eventFilter(QObject* watched, QEvent* event) {

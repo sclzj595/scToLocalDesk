@@ -11,29 +11,9 @@ import ".."
 Item {
     id: root
 
+    // P3 文件传输闭环接入 FileService 事件流；当前仅空态（禁止假数据）
     ListModel {
         id: transfers
-        ListElement {
-            name: "巡检报告-0928.docx"
-            dir: 0   // 0 发送 1 接收
-            progress: 0.68
-            speed: "3.2 MB/s"
-            done: 0  // 0 进行中 1 完成 2 失败
-        }
-        ListElement {
-            name: "驱动包_v2.3.zip"
-            dir: 1
-            progress: 1.0
-            speed: ""
-            done: 1
-        }
-        ListElement {
-            name: "拓扑图.png"
-            dir: 0
-            progress: 0.24
-            speed: ""
-            done: 2
-        }
     }
 
     ColumnLayout {
@@ -89,6 +69,17 @@ Item {
             clip: true
             spacing: 10
             model: transfers
+
+            // 空态：无传输任务时的占位提示（禁止假数据）
+            Text {
+                anchors.centerIn: parent
+                visible: transfers.count === 0
+                text: "暂无传输任务\n连接设备后，从设备卡或\"发送文件\"发起传输"
+                horizontalAlignment: Text.AlignHCenter
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                color: Theme.textHint
+            }
 
             delegate: Rectangle {
                 width: ListView.view.width

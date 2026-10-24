@@ -26,6 +26,7 @@ namespace sc::localdesk::ui {
 class SettingsPage;
 class DeviceListPage;
 class RemoteViewPage;
+class ConnectCodePage;
 
 class MainWindow final : public FramelessWindow {
     Q_OBJECT
@@ -33,10 +34,9 @@ class MainWindow final : public FramelessWindow {
 public:
     explicit MainWindow();
 
-    /// 信任缓存注入（widgets_main 构造后调用，Doc18 §3.2）
-    void setTrustStore(TrustStore* ts) {
-        trust_ = ts;
-    }
+    /// 信任缓存注入（widgets_main 构造后调用，Doc18 §3.2）；
+    /// 转发连接码页刷新"最近连接"真数据
+    void setTrustStore(TrustStore* ts);
 
     /// 配置注入（Doc18 §3.3）：转发设置页，解锁控件真值回放与落盘
     void set_config_store(foundation::IniConfig* ini, AppConfig* cfg);
@@ -75,6 +75,7 @@ private:
     SettingsPage* settingsPage_{nullptr};
     DeviceListPage* devList_{nullptr};
     RemoteViewPage* remoteView_{nullptr};
+    ConnectCodePage* connCode_{nullptr};
 };
 
 }  // namespace sc::localdesk::ui

@@ -14,23 +14,16 @@ Item {
 
     signal connectRequested(string code)
 
-    readonly property var history: [
-        {
-            name: "设计部-张工",
-            code: "482 130 556",
-            time: "今天 14:32"
-        },
-        {
-            name: "会议室-终端",
-            code: "903 245 117",
-            time: "昨天 09:15"
-        },
-        {
-            name: "运维室-李工",
-            code: "107 662 384",
-            time: "10-19 16:48"
-        }
-    ]
+    /// 信任缓存真数据源（Doc18 §3.2）：[{name, code, time}]；
+    /// 页面显示时刷新（信任变更发生在确认弹窗，切页回来即最新）
+    property var history: []
+
+    function reloadHistory() {
+        history = ScLocaldesk.listTrusted();
+    }
+    onVisibleChanged: if (visible) {
+        root.reloadHistory();
+    }
 
     function tryConnect() {
         const code = f0.text + f1.text + f2.text;
@@ -275,6 +268,17 @@ Item {
             spacing: 10
             model: root.history
 
+            // 空态：无信任记录时的占位提示（禁止假数据）
+            Text {
+                anchors.centerIn: parent
+                visible: root.history.length === 0
+                text: "暂无连接记录\n首次连接经对方确认后，将显示在此处"
+                horizontalAlignment: Text.AlignHCenter
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                color: Theme.textHint
+            }
+
             delegate: Rectangle {
                 width: ListView.view.width
                 height: 64
@@ -335,5 +339,8 @@ Item {
         }
     }
 
-    Component.onCompleted: f0.forceActiveFocus()
+    Component.onCompleted: {
+        root.reloadHistory();
+        f0.forceActiveFocus();
+    }
 }

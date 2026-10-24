@@ -36,6 +36,7 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
     toolLay->addWidget(fullBtn);
     toolLay->addWidget(discBtn);
     connect(discBtn, &QPushButton::clicked, this, &RemoteViewPage::disconnected);
+    toolbar_->hide();  // 无会话默认隐藏（断开按钮不可用），on_frame 恢复
 
     lay->addStretch();
     auto* toolRow = new QHBoxLayout();
@@ -48,7 +49,14 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
 
 void RemoteViewPage::on_frame(const QImage& img) {
     frame_ = img;
+    toolbar_->setVisible(true);  // 有帧 = 会话中，恢复工具条
     update();  // 触发 paintEvent 重画
+}
+
+void RemoteViewPage::on_session_closed() {
+    frame_ = QImage();
+    toolbar_->hide();
+    update();
 }
 
 void RemoteViewPage::paintEvent(QPaintEvent*) {
@@ -57,7 +65,7 @@ void RemoteViewPage::paintEvent(QPaintEvent*) {
     if (frame_.isNull()) {
         p.setPen(QColor(0x66, 0x66, 0x66));
         p.drawText(rect(), Qt::AlignCenter,
-                   QStringLiteral("远程画面显示区\n（Session Running 后由此渲染 ScreenFrame）"));
+                   QStringLiteral("暂未进行远程控制\n从设备列表或连接码页发起会话后，画面将显示在此处"));
         return;
     }
     // 等比缩放铺满（与 QML VideoSurface 同观感）

@@ -31,17 +31,16 @@ FileTransferPage::FileTransferPage(QWidget* parent) : QWidget(parent) {
 
     rows_ = new QVBoxLayout();
     rows_->setSpacing(12);
-    rows_->addWidget(makeRow(QStringLiteral("↑"), QStringLiteral("巡检报告-0928.docx"),
-                             68, QStringLiteral("3.2 MB/s"),
-                             GlassTheme::instance().textSecond()));
-    rows_->addWidget(makeRow(QStringLiteral("↓"), QStringLiteral("驱动包_v2.3.zip"),
-                             100, QStringLiteral("已完成"),
-                             GlassTheme::instance().accentGreen()));
-    rows_->addWidget(makeRow(QStringLiteral("↑"), QStringLiteral("拓扑图.png"),
-                             24, QStringLiteral("失败"),
-                             GlassTheme::instance().accentRed()));
     rows_->addStretch();
     lay->addLayout(rows_, 1);
+
+    // 空态占位（禁止假数据）：P3 文件传输闭环接入 FileService 事件流
+    empty_ = new QLabel(QStringLiteral("暂无传输任务\n连接设备后，从设备卡或\"发送文件\"发起传输"));
+    empty_->setAlignment(Qt::AlignCenter);
+    empty_->setStyleSheet(QStringLiteral(
+        "color: %1; font-size: 13px;")
+        .arg(GlassTheme::instance().textHint().name(QColor::HexRgb)));
+    lay->addWidget(empty_, 1);
 }
 
 QWidget* FileTransferPage::makeRow(const QString& arrow, const QString& name,

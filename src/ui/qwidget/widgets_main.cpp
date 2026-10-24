@@ -104,6 +104,7 @@ int main(int argc, char* argv[]) {
     // 发现栈（Doc18 §3.4）：组播心跳 → AliasService 在线表 → 设备页快照对账
     auto bus = std::make_shared<sc::localdesk::foundation::EventBus>();
     auto aliases = std::make_shared<sc::localdesk::AliasService>(bus, logger);
+    aliases->set_self_alias(cfg.alias);  // 本机自滤（Doc07 §5），漏掉则回环心跳入列表
     sc::localdesk::platform::UdpDiscoveryAdapter::Options opt;
     opt.multicast_addr = cfg.multicast_addr;
     opt.self_alias = cfg.alias;
@@ -225,6 +226,11 @@ int main(int argc, char* argv[]) {
                          &sc::localdesk::platform::VideoPipeline::frameReady,
                          rv, &sc::localdesk::ui::RemoteViewPage::on_frame);
         rv->set_session(sessions.get());  // 键鼠透传出口（Doc18 §4.4）
+        // 会话关闭复位：清帧回空态、隐藏工具条（无会话不可点断开）
+        bus->subscribe<Evt_SessionClosed>([rv](const Evt_SessionClosed&) {
+            QMetaObject::invokeMethod(rv, &sc::localdesk::ui::RemoteViewPage::on_session_closed,
+                                      Qt::QueuedConnection);
+        });
     }
 
     // 单实例唤起：二次启动把首实例主窗带到前台

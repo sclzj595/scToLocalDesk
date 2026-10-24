@@ -188,4 +188,9 @@ size_t TrustStore::count() const {
     return entries_.size();
 }
 
+std::vector<TrustStore::Entry> TrustStore::list() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    return entries_;
+}
+
 }  // namespace sc::localdesk

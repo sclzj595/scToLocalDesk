@@ -114,18 +114,29 @@ class ConnectCodePage final : public QWidget {
 public:
     explicit ConnectCodePage(QWidget* parent = nullptr);
 
+    /// 信任缓存注入（MainWindow 装配后调用，Doc18 §3.2）；随后刷新列表
+    void set_trust_store(TrustStore* ts) {
+        trust_ = ts;
+        reload_history();
+    }
+
 signals:
     void connectRequested(const QString& code);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
 
 private:
     void tryConnect();
     bool handleSegKey(int idx, QKeyEvent* ev);
     void distributePaste(int idx, const QString& digits);
+    void reload_history();  ///< 信任缓存 → 最近连接列表（空表显示占位）
     QLineEdit* seg_[3]{nullptr};
     QLabel* errHint_{nullptr};
+    QListWidget* hist_list_{nullptr};
+    QLabel* hist_empty_{nullptr};
+    TrustStore* trust_{nullptr};
 };
 
 /// 远程画面页（画面区 + 底部悬浮工具条 + 键鼠透传捕获，Doc18 §4.4）
@@ -144,6 +155,9 @@ signals:
 public slots:
     /// 解码管线输出（queued 跨线程；有帧即走画面分支，无帧走占位文案）
     void on_frame(const QImage& img);
+
+    /// 会话关闭复位：清帧回空态、隐藏工具条（widgets_main 接 Evt_SessionClosed）
+    void on_session_closed();
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -173,6 +187,7 @@ private:
     QWidget* makeRow(const QString& arrow, const QString& name,
                      int progress, const QString& status, const QColor& statusColor);
     QVBoxLayout* rows_{nullptr};
+    QLabel* empty_{nullptr};
 };
 
 /// 设置页：分组卡片（Doc17 全量项：通用/外观/网络/会话/文件/安全/日志）

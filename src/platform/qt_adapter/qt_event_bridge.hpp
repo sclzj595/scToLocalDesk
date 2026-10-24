@@ -7,6 +7,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QVariant>
 
 namespace sc::localdesk {
 
@@ -78,6 +79,8 @@ public:
     Q_INVOKABLE bool isTrusted(const QString& code);
     Q_INVOKABLE void trust(const QString& code, const QString& name);
     Q_INVOKABLE void clearTrust();
+    /// 信任全表（连接码页"最近连接"真数据源）：[{code9, name, time}]
+    Q_INVOKABLE QVariantList listTrusted() const;
 
     /// 设置页接线（Doc18 §3.3）：7 组字段 ↔ AppConfig，变更即落盘 config.ini
     void set_config_store(foundation::IniConfig* ini, AppConfig* cfg);

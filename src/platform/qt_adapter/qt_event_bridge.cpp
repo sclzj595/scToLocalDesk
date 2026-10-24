@@ -9,6 +9,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QDate>
 #include <QTimer>
 
 #include <foundation/event_bus.hpp>
@@ -253,6 +254,43 @@ void QtEventBridge::clearTrust() {
     if (trust_ != nullptr) {
         trust_->clear();
     }
+}
+
+QVariantList QtEventBridge::listTrusted() const {
+    QVariantList out;
+    if (trust_ == nullptr) {
+        return out;
+    }
+    // trusted_at "2026-10-25 14:32:05" → 相对时间文案（今天/昨天/同年/更早）
+    const QDate today = QDate::currentDate();
+    for (const auto& e : trust_->list()) {
+        const QDateTime t = QDateTime::fromString(
+            QString::fromStdString(e.trusted_at), "yyyy-MM-dd HH:mm:ss");
+        QString time_text;
+        if (t.date() == today) {
+            time_text = t.toString("'今天' HH:mm");
+        } else if (t.date() == today.addDays(-1)) {
+            time_text = t.toString("'昨天' HH:mm");
+        } else if (t.date().year() == today.year()) {
+            time_text = t.toString("MM-dd HH:mm");
+        } else {
+            time_text = t.toString("yyyy-MM-dd");
+        }
+        // 9 位裸码 → "xxx xxx xxx" 三段展示
+        const QString raw = QString::fromStdString(e.code);
+        QString grouped;
+        for (int i = 0; i < raw.size(); ++i) {
+            if (i > 0 && i % 3 == 0) {
+                grouped += QLatin1Char(' ');
+            }
+            grouped += raw.at(i);
+        }
+        out.append(QVariantMap{
+            {"code", grouped},
+            {"name", QString::fromStdString(e.name)},
+            {"time", time_text}});
+    }
+    return out;
 }
 
 // ---------------- 设置页接线（Doc18 §3.3） ----------------
