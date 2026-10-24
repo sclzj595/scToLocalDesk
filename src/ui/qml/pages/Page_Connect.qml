@@ -124,6 +124,16 @@ Item {
                 }
                 // 粘贴拦截：QML TextField 无 pasted 信号，经 bridge 读剪贴板分发
                 Keys.onPressed: event => {
+                    if (event.key >= Qt.Key_0 && event.key <= Qt.Key_9
+                            && text.length === 3 && selectionStart === -1
+                            && nextSeg != null) {
+                        // 满格续输：数字直接落下一格（不依赖 textChanged 跳焦时序）
+                        nextSeg.forceActiveFocus();
+                        nextSeg.cursorPosition = nextSeg.text.length;
+                        nextSeg.text = (nextSeg.text + event.text).slice(-3);
+                        event.accepted = true;
+                        return;
+                    }
                     if (event.matches(StandardKey.Paste)) {
                         if (root.distributePaste(seg, ScLocaldesk.clipboardText())) {
                             event.accepted = true;  // 分发接管，走默认粘贴会破坏分段
@@ -169,6 +179,7 @@ Item {
             CodeSeg {
                 id: f0
                 segIndex: 0
+                nextSeg: f1
                 Layout.alignment: Qt.AlignVCenter
             }
             Text {

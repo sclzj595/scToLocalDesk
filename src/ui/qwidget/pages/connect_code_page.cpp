@@ -130,6 +130,16 @@ bool ConnectCodePage::eventFilter(QObject* watched, QEvent* event) {
 
 bool ConnectCodePage::handleSegKey(int idx, QKeyEvent* ev) {
     auto* ed = seg_[idx];
+    // 满格续输：数字直接落下一格（不依赖 textChanged 跳焦时序）
+    if (ev->key() >= Qt::Key_0 && ev->key() <= Qt::Key_9 && ed->text().length() == 3
+        && ed->selectedText().isEmpty() && idx < 2) {
+        auto* nxt = seg_[idx + 1];
+        nxt->setFocus();
+        nxt->setCursorPosition(nxt->text().length());
+        QString t = nxt->text() + ev->text();
+        nxt->setText(t.right(3));
+        return true;
+    }
     // 粘贴拦截：2 位以上走三段分发（复制整码/半码均优雅落地）
     if (ev->matches(QKeySequence::Paste)) {
         QString only;
