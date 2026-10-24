@@ -14,6 +14,7 @@
 #include "core/events.hpp"
 #include "core/protocol/tlv.hpp"
 #include "foundation/event_bus.hpp"
+#include "foundation/fs_portable.hpp"
 #include "foundation/logger/ilogger.hpp"
 #include "foundation/thread_pool.hpp"
 
@@ -156,8 +157,8 @@ void FileService::send_loop(const std::string& abs_path, const FileMeta& meta) {
     if (transport_ == nullptr) {
         return;
     }
-    FILE* fp = nullptr;
-    if (fopen_s(&fp, abs_path.c_str(), "rb") != 0 || fp == nullptr) {
+    FILE* fp = foundation::fs_open(std::filesystem::path(abs_path), "rb");
+    if (fp == nullptr) {
         SCLD_LOG(log_, LogLevel::Error, "file", "[file_id=" + meta.file_id + "] 打开失败");
         return;
     }
@@ -271,7 +272,8 @@ bool FileService::accept_file(const FileMeta& meta, const std::string& save_dir)
     t.meta = meta;
     t.save_dir = save_dir;
     const std::string part_path = save_dir + "/" + meta.file_id + ".part";
-    if (fopen_s(&t.out, part_path.c_str(), "wb") != 0 || t.out == nullptr) {
+    t.out = foundation::fs_open(std::filesystem::path(part_path), "wb");
+    if (t.out == nullptr) {
         SCLD_LOG(log_, LogLevel::Error, "file",
                  "[file_id=" + meta.file_id + "] 临时文件创建失败：" + part_path);
         return false;

@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "foundation/fs_portable.hpp"
+
 namespace sc::localdesk::foundation {
 
 class IniConfig final {
@@ -31,9 +33,8 @@ public:
         if (!std::filesystem::exists(path_, ec)) {
             return false;
         }
-        FILE* fp = nullptr;
-        // 宽字符打开：安装路径含中文/非 ASCII 时窄字符 fopen 会失败（企业环境常见）
-        if (_wfopen_s(&fp, path_.wstring().c_str(), L"rb") != 0 || fp == nullptr) {
+        FILE* fp = fs_open(path_, "rb");  // 宽字符打开见 fs_portable.hpp
+        if (fp == nullptr) {
             return false;
         }
         std::string section;
@@ -68,10 +69,11 @@ public:
     /// 原子落盘：全量重写 tmp → rename 覆盖
     [[nodiscard]] bool save() const {
         std::lock_guard<std::mutex> lk(mtx_);
-        const auto tmp = path_.wstring() + L".tmp";
+        std::filesystem::path tmp = path_;
+        tmp += L".tmp";
 
-        FILE* fp = nullptr;
-        if (_wfopen_s(&fp, tmp.c_str(), L"wb") != 0 || fp == nullptr) {
+        FILE* fp = fs_open(tmp, "wb");
+        if (fp == nullptr) {
             return false;
         }
         // 按 section 分组输出（保持插入序：用 vector 备份序）
@@ -85,7 +87,9 @@ public:
         fclose(fp);
 
         std::error_code ec;
-        std::filesystem::rename(tmp, path_, ec);  // MSVC 实现带 REPLACE_EXISTING
+        // POSIX rename 不覆盖已存在目标，先清位（MSVC rename 自带覆盖，remove 无害）
+        std::filesystem::remove(path_, ec);
+        std::filesystem::rename(tmp, path_, ec);
         if (ec) {
             std::filesystem::remove(tmp, ec);
             return false;

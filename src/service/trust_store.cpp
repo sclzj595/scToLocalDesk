@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <ctime>
 
+#include "foundation/fs_portable.hpp"
 #include "foundation/jsonx.hpp"
 #include "foundation/logger/ilogger.hpp"
 
@@ -22,15 +23,19 @@ using foundation::LogLevel;
 std::string now_timestamp() {
     std::time_t t = std::time(nullptr);
     std::tm tm {};
+#ifdef _WIN32
     localtime_s(&tm, &t);
+#else
+    localtime_r(&t, &tm);
+#endif
     char buf[32] = {};
     std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
     return buf;
 }
 
 std::string read_all(const std::filesystem::path& p) {
-    FILE* fp = nullptr;
-    if (_wfopen_s(&fp, p.wstring().c_str(), L"rb") != 0 || fp == nullptr) {
+    FILE* fp = foundation::fs_open(p, "rb");
+    if (fp == nullptr) {
         return {};
     }
     std::string out;
@@ -90,9 +95,10 @@ void TrustStore::save() {
                            {"name", e.name},
                            {"trusted_at", e.trusted_at}});
     }
-    const auto tmp = file_.wstring() + L".tmp";
-    FILE* fp = nullptr;
-    if (_wfopen_s(&fp, tmp.c_str(), L"wb") != 0 || fp == nullptr) {
+    std::filesystem::path tmp = file_;
+    tmp += L".tmp";
+    FILE* fp = foundation::fs_open(tmp, "wb");
+    if (fp == nullptr) {
         SCLD_LOG(log_, LogLevel::Error, "trust", "trust.json 临时文件写入失败");
         return;
     }
@@ -104,7 +110,9 @@ void TrustStore::save() {
         return;
     }
     std::error_code ec;
-    std::filesystem::rename(tmp, file_, ec);  // Windows 上 rename 覆盖已存在目标
+    // POSIX rename 不覆盖已存在目标，先清位（Windows rename 自带覆盖，remove 无害）
+    std::filesystem::remove(file_, ec);
+    std::filesystem::rename(tmp, file_, ec);
     if (ec) {
         SCLD_LOG(log_, LogLevel::Error, "trust",
                  "trust.json rename 失败 ec=" + std::to_string(ec.value()));
