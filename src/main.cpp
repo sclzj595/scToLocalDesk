@@ -32,10 +32,12 @@
     #include "foundation/logger/file_logger.hpp"
 #endif
     #include "foundation/thread_pool.hpp"
+#ifdef _WIN32
     #include "implement/capture/gdi_capture.hpp"
+#endif
     #include "implement/crypto/crypto_factory.hpp"
     #include "implement/encoder/raw_encoder.hpp"
-#if SCLD_HAS_FFMPEG
+#if SCLD_HAS_FFMPEG && defined(_WIN32)
     #include "implement/decoder/ffmpeg_decoder.hpp"
     #include "implement/encoder/ffmpeg_encoder.hpp"
 #endif
@@ -118,7 +120,7 @@ int main(int argc, char* argv[]) {
     }
 
     // ---------------- 配置加载（Doc17：exe 旁 config.ini，缺失则默认值落盘） ----------------
-    IniConfig ini(QApplication::applicationDirPath().toStdWString() + L"\\config.ini");
+    IniConfig ini(QApplication::applicationDirPath().toStdString() + "/config.ini");
     AppConfig cfg;
     if (!ini.load()) {
         cfg.save(ini);
@@ -152,8 +154,8 @@ int main(int argc, char* argv[]) {
                      + " magic_enum=" + std::string(foundation::enum_name(LogLevel::Info)));
     }
     // FFmpeg 编码自检：真实抓一帧桌面走 MJPEG 全程（压缩比/耗时落日志，
-    // 性能基线用；SCLD_HAS_FFMPEG 缺失时编译期整体剔除）
-#if SCLD_HAS_FFMPEG
+    // 性能基线用；SCLD_HAS_FFMPEG 缺失时编译期整体剔除；Linux 采集器 P6 落位）
+#if SCLD_HAS_FFMPEG && defined(_WIN32)
     {
         GdiCapturer cap_probe;
         if (cap_probe.init()) {
@@ -201,8 +203,8 @@ int main(int argc, char* argv[]) {
                  + " self_name=" + id_service.self_name());
 
     // 信任缓存：exe 旁 trust.json（Doc18 §3.2；构造即加载，变更即原子落盘）
-    TrustStore trust_store(QApplication::applicationDirPath().toStdWString()
-                           + L"\\trust.json",
+    TrustStore trust_store(QApplication::applicationDirPath().toStdString()
+                               + "/trust.json",
                            logger.get());
 
     auto crypto = make_default_crypto();
@@ -268,20 +270,21 @@ int main(int argc, char* argv[]) {
     sessions->set_file_service(files);
 
     // 被控端推流管线（编码器按 session.encoder 选择：ffmpeg | raw，
-    // FFmpeg 未编入时自动回落 raw 直通；MJPG/DXGI 为 V1.0 任务，Doc10 §1）
-#if SCLD_HAS_FFMPEG
+    // FFmpeg 未编入时自动回落 raw 直通；采集器 Linux 侧 P6 落位，暂不装配）
+#if defined(_WIN32)
     auto stream = std::make_shared<ScreenStreamService>(bus, logger);
+#   if SCLD_HAS_FFMPEG
     if (cfg.encoder == "raw") {
         stream->set_source(std::make_shared<GdiCapturer>(), std::make_shared<RawEncoder>());
     }
     else {
         stream->set_source(std::make_shared<GdiCapturer>(), std::make_shared<FfmpegEncoder>());
     }
-#else
-    auto stream = std::make_shared<ScreenStreamService>(bus, logger);
+#   else
     stream->set_source(std::make_shared<GdiCapturer>(), std::make_shared<RawEncoder>());
-#endif
+#   endif
     sessions->set_stream_service(stream);
+#endif
 
     // 被控端键鼠注入（SendInput，普通用户权限可用）
     auto input = std::make_shared<InputService>();

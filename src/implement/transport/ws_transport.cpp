@@ -111,9 +111,12 @@ void WsTransport::connect_client(const std::string& host, uint16_t port) {
     });
     QObject::connect(sock, &QWebSocket::pong,
                      [this](quint64, const QByteArray&) { ping_miss_ = 0; });
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    // Qt 6.2 无 errorOccurred（6.5 引入）；拨号失败由 disconnected 兜底
     QObject::connect(sock, &QWebSocket::errorOccurred, [this] {
         set_state(TransportState::Error);
     });
+#endif
     start_timers();
     // WebSocket 天然消息边界，无粘包（TLV 帧对齐消息，Doc08 §8.4）
     sock->open(QUrl(QString("ws://%1:%2").arg(QString::fromStdString(host)).arg(port)));

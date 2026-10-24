@@ -5,7 +5,7 @@
 
 #include <chrono>
 
-#if SCLD_HAS_FFMPEG
+#if SCLD_HAS_FFMPEG && defined(_WIN32)
     #include "implement/decoder/ffmpeg_decoder.hpp"
 #endif
 
@@ -31,7 +31,7 @@ VideoPipeline::VideoPipeline(std::shared_ptr<foundation::EventBus> bus,
     : QObject(parent),
       bus_(std::move(bus)),
       log_(std::move(logger)) {
-#if SCLD_HAS_FFMPEG
+#if SCLD_HAS_FFMPEG && defined(_WIN32)
     decoder_ = std::make_unique<FfmpegDecoder>();
 #endif
     if (bus_ != nullptr) {
@@ -97,7 +97,7 @@ void VideoPipeline::decode_loop() {
         const auto& px = *task.payload;
         QImage img;
         if (is_jpeg(px)) {
-#if SCLD_HAS_FFMPEG
+#if SCLD_HAS_FFMPEG && defined(_WIN32)
             std::vector<uint8_t> bgra;
             uint32_t w = 0;
             uint32_t h = 0;

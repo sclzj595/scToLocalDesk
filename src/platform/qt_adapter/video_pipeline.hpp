@@ -67,7 +67,9 @@ private:
 
     std::shared_ptr<foundation::EventBus> bus_;
     std::shared_ptr<foundation::ILogger> log_;
-    std::unique_ptr<FfmpegDecoder> decoder_;
+#if SCLD_HAS_FFMPEG && defined(_WIN32)
+    std::unique_ptr<FfmpegDecoder> decoder_;  // Linux 解码器 P6 落位（FFmpeg 同构）
+#endif
 
     struct Pending {
         std::shared_ptr<const std::vector<uint8_t>> payload;

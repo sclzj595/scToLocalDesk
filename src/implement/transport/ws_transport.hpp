@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <QObject>
+#include <QTimer>
 #include <QWebSocket>
 #include <QWebSocketServer>
 

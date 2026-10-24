@@ -27,21 +27,13 @@ Item {
     // ---------------- 模糊/阴影层：6.5+ 真效果 / 6.2 退化半透底 ----------------
     // 源必须为窗口根（shell）：面板相对根坐标恒为正；若以内容层为源，
     // 菜单栏/Dock 映射出负值 sourceRect → 越界采样输出白色垃圾纹理
+    // source 用字符串路径（非 sourceComponent）：类型解析推迟到实例化，
+    // 6.2 上 active 恒 false，GlassBlurEffect.qml（import QtQuick.Effects）
+    // 永不被解析 → 加载成功；用 sourceComponent 会在编译期连带解析失败
     Loader {
         anchors.fill: parent
         active: ScLocaldesk.hasGlassBlur && !Theme.reducedTransparency
-        sourceComponent: blurComp
-    }
-
-    Component {
-        id: blurComp
-        GlassBlurEffect {
-            glassSource: root.glassSource
-            shadowed: root.shadowed
-            blurMaxPx: Theme.glassBlur
-            dark: Theme.isDark
-            radiusPx: root.radiusPx
-        }
+        source: "GlassBlurEffect.qml"
     }
 
     // ---------------- 玻璃填充 + 1px 半透描边（红线5） ----------------

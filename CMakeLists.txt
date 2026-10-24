@@ -207,6 +207,13 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
                 src/platform/win32/input_injector.cpp
                 src/platform/win32/system_info.cpp
             )
+        else()
+            # Linux（Doc18 P6）：system_info 走 POSIX 实现；注入器/自启动为占位
+            target_sources(scToLocalDesk PRIVATE
+                src/platform/linux/system_info_linux.cpp
+                src/platform/linux/input_injector_linux.cpp
+                src/platform/linux/auto_start_linux.cpp
+            )
         endif()
         target_compile_definitions(scToLocalDesk PRIVATE
             SCLD_QT_APP=1 SCLD_HAS_MULTIEFFECT=${SCLD_HAS_MULTIEFFECT}
@@ -215,7 +222,18 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
             target_compile_options(scToLocalDesk PRIVATE /utf-8)
         endif()
         # system_info：GetAdaptersAddresses/GetUserNameW 所需系统库
-        target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS} iphlpapi advapi32)
+        if(WIN32)
+            target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS} iphlpapi advapi32)
+        else()
+            # Linux：openssl_crypto 实现检测到系统头后编入真实现，需链 OpenSSL
+            find_package(OpenSSL QUIET)
+            if(OPENSSL_FOUND)
+                target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS}
+                    OpenSSL::Crypto OpenSSL::SSL)
+            else()
+                target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS})
+            endif()
+        endif()
     else()
         message(WARNING "未找到 Qt 6.2+，跳过 QT_APP 目标（请检查 CMAKE_PREFIX_PATH 指向 Qt 安装目录）")
     endif()
