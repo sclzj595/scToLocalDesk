@@ -1,0 +1,60 @@
+// ============================================================
+// scToLocalDesk | CMakeSettings.json
+// VS2019 Open Folder 双目标下拉：本地 MSVC / 远程 Ubuntu SSH
+// Windows: 便携 VS 实例需 CMAKE_GENERATOR_INSTANCE 限定（未注册 Installer）
+// Ubuntu:  Qt 6.2.4 系统源（无需 CMAKE_PREFIX_PATH），Unix Makefiles
+// ============================================================
+{
+  "version": 3,
+  "configurations": [
+    {
+      "name": "win-x64-debug",
+      "displayName": "Windows MSVC Debug (Qt 6.5.3)",
+      "generator": "Visual Studio 16 2019",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "configurationType": "Debug",
+      "buildRoot": "${projectDir}\\build\\win-x64-debug",
+      "installRoot": "${projectDir}\\install\\win-x64-debug",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "intelliSenseMode": "windows-msvc-x64",
+      "cacheVariables": {
+        "CMAKE_GENERATOR_INSTANCE": "E:/IDE_FOR_ALL/visual studio 2019 professional,version=16.11.35706.149",
+        "CMAKE_PREFIX_PATH": "F:/Apps/QT/6.5.3/msvc2019_64",
+        "SCTOLOCALDESK_BUILD_CORE_ONLY": "OFF",
+        "SCTOLOCALDESK_BUILD_QT_APP": "ON",
+        "SCTOLOCALDESK_BUILD_WIDGETS_APP": "ON"
+      }
+    },
+    {
+      "name": "ubuntu-ssh-debug",
+      "displayName": "Ubuntu SSH GCC Debug (Qt 6.2.4)",
+      "generator": "Unix Makefiles",
+      "configurationType": "Debug",
+      "cmakeExecutable": "cmake",
+      "remoteMachineName": "sc30@192.168.168.150",
+      "remoteCMakeListsRoot": "$HOME/.vs/scToLocalDesk/src/${name}",
+      "remoteBuildRoot": "$HOME/.vs/scToLocalDesk/build/${name}",
+      "remoteInstallRoot": "$HOME/.vs/scToLocalDesk/install/${name}",
+      "remoteCopySources": true,
+      "remoteCopySourcesExclusionList": [
+        ".vs", ".git", "build*", "install*", "out", "third_party/ffmpeg"
+      ],
+      "remoteCopyBuildOutput": false,
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "intelliSenseMode": "linux-gcc-x64",
+      "inheritEnvironments": [ "linux_x64" ],
+      "cacheVariables": {
+        "SCTOLOCALDESK_BUILD_CORE_ONLY": "OFF",
+        "SCTOLOCALDESK_BUILD_QT_APP": "ON",
+        "SCTOLOCALDESK_BUILD_WIDGETS_APP": "OFF"
+      }
+    }
+  ]
+}

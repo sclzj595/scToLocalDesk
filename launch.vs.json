@@ -1,0 +1,28 @@
+// ============================================================
+// scToLocalDesk | launch.vs.json
+// Windows 配置直接启动；Ubuntu 配置经 cppgdb 远程调试，
+// DISPLAY=:0 让 Qt GUI 弹在 VM 桌面（VM 自带 X，无需 VcXsrv）
+// ============================================================
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "name": "scToLocalDesk (Windows)",
+      "project": "CMakeLists.txt",
+      "projectTarget": "scToLocalDesk.exe",
+      "currentDir": "${workspaceRoot}/build/win-x64-debug"
+    },
+    {
+      "type": "cppgdb",
+      "name": "scToLocalDesk (Ubuntu SSH)",
+      "project": "CMakeLists.txt",
+      "projectTarget": "scToLocalDesk",
+      "comment": "远程调试 Linux QML 应用；DISPLAY 指向 VM 本机 X 会话",
+      "env": {
+        "DISPLAY": ":0"
+      }
+    }
+  ]
+}
