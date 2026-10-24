@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "core/interface/idiscovery.hpp"
@@ -47,6 +48,7 @@ public:
 private:
     mutable std::mutex mtx_;
     std::unordered_map<std::string, DeviceInfo> table_;  ///< alias -> info
+    std::unordered_set<std::string> static_set_;         ///< 静态条目豁免超时（Doc07 §7）
     std::string self_alias_;
     int64_t offline_timeout_us_{15'000'000};  ///< Doc17 network.offline_timeout_s
     std::shared_ptr<foundation::EventBus> bus_;

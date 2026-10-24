@@ -44,6 +44,9 @@ void AliasService::upsert_device(const DeviceInfo& dev) {
         SCLD_LOG(log_, LogLevel::Warn, "discovery", "心跳字段非法，丢弃");
         return;
     }
+    if (!self_alias_.empty() && dev.alias == self_alias_) {
+        return;  // 收到自己的心跳（组播回环），不入列表（Doc07 §5）
+    }
     const int64_t now = now_us();
     // 事件一律锁外发布：订阅方可能同步回查本服务（DeviceListModel），
     // 持锁 publish 会造成同线程对非递归 mutex 重入加锁（UB，已踩坑）
@@ -97,7 +100,9 @@ std::optional<DeviceInfo> AliasService::resolve(const std::string& alias) const 
     if (it == table_.end()) {
         return std::nullopt;
     }
-    if (now_us() - it->second.last_seen_us > offline_timeout_us_) {
+    // 静态条目常在，不参与心跳超时
+    if (static_set_.find(alias) == static_set_.end()
+        && now_us() - it->second.last_seen_us > offline_timeout_us_) {
         return std::nullopt;  // 已超时视为离线
     }
     return it->second;
@@ -109,7 +114,8 @@ std::vector<DeviceInfo> AliasService::online_devices() const {
     std::vector<DeviceInfo> out;
     out.reserve(table_.size());
     for (const auto& [alias, info] : table_) {
-        if (now - info.last_seen_us <= offline_timeout_us_) {
+        if (static_set_.find(alias) != static_set_.end()
+            || now - info.last_seen_us <= offline_timeout_us_) {
             out.push_back(info);
         }
     }
@@ -122,6 +128,10 @@ void AliasService::cleanup_expired() {
     {
         std::lock_guard<std::mutex> lk(mtx_);
         for (auto it = table_.begin(); it != table_.end();) {
+            if (static_set_.find(it->first) != static_set_.end()) {
+                ++it;  // 静态条目常在，永不过期
+                continue;
+            }
             if (now - it->second.last_seen_us > offline_timeout_us_) {
                 expired.push_back(it->first);
                 it = table_.erase(it);
@@ -163,6 +173,7 @@ void AliasService::set_static_map(const std::vector<DeviceInfo>& table) {
         DeviceInfo info = dev;
         info.last_seen_us = now_us();  // 静态条目视为常在（Doc07 §7）
         table_.insert_or_assign(dev.alias, std::move(info));
+        static_set_.insert(dev.alias);
     }
 }
 

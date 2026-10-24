@@ -219,6 +219,39 @@ int main(int argc, char* argv[]) {
 
     auto aliases = std::make_shared<AliasService>(bus, logger);
     aliases->set_self_alias(cfg.alias);
+    // 静态映射（Doc07 §7）：alias=ip:port;... —— 组播不可达（NAT/跨段）时直连
+    if (!cfg.static_map.empty()) {
+        std::vector<DeviceInfo> statics;
+        size_t pos = 0;
+        while (pos < cfg.static_map.size()) {
+            const size_t semi = cfg.static_map.find(';', pos);
+            const size_t end = semi == std::string::npos ? cfg.static_map.size() : semi;
+            const std::string item = cfg.static_map.substr(pos, end - pos);
+            pos = semi == std::string::npos ? cfg.static_map.size() : semi + 1;
+            const auto eq = item.find('=');
+            const auto colon = item.find(':');
+            if (eq == std::string::npos || colon == std::string::npos || eq == 0
+                || colon < eq + 2 || colon + 2 > item.size()) {
+                continue;  // 畸形条目跳过
+            }
+            const std::string port_str = item.substr(colon + 1);
+            if (port_str.find_first_not_of("0123456789") != std::string::npos) {
+                continue;
+            }
+            DeviceInfo dev;
+            dev.alias = item.substr(0, eq);
+            dev.ip = item.substr(eq + 1, colon - eq - 1);
+            dev.port = static_cast<uint16_t>(std::stoi(port_str));
+            if (!dev.ip.empty() && dev.port != 0) {
+                statics.push_back(std::move(dev));
+            }
+        }
+        if (!statics.empty()) {
+            aliases->set_static_map(statics);
+            SCLD_LOG(logger, LogLevel::Info, "discovery",
+                     "静态映射已加载 n=" + std::to_string(statics.size()));
+        }
+    }
     auto transport = std::make_shared<WsTransport>(QStringLiteral("scToLocalDesk"));
     auto sessions = std::make_shared<RemoteSessionService>(
         transport, manualAuth, unattendedAuth, crypto, aliases, bus, logger);
