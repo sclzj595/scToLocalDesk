@@ -18,5 +18,6 @@
         <file>qml/pages/Page_Settings.qml</file>
         <file>qml/popups/Popup_ConnectConfirm.qml</file>
         <file>qml/popups/Popup_UnattendedPassword.qml</file>
+        <file>qml/popups/Popup_FileConfirm.qml</file>
     </qresource>
 </RCC>

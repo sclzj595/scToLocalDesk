@@ -80,25 +80,32 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
     bus->subscribe<Evt_FileProgress>([this](const Evt_FileProgress& e) {
         QMetaObject::invokeMethod(this, [this, e] {
             emit fileProgress(QString::fromStdString(e.file_id),
+                              QString::fromStdString(e.name),
                               static_cast<qint64>(e.transferred),
-                              static_cast<qint64>(e.total));
+                              static_cast<qint64>(e.total),
+                              e.dir == FileDir::Recv ? 1 : 0);
         }, Qt::QueuedConnection);
     });
     bus->subscribe<Evt_FileDone>([this](const Evt_FileDone& e) {
         QMetaObject::invokeMethod(this, [this, e] {
-            emit fileDone(QString::fromStdString(e.file_id));
+            emit fileDone(QString::fromStdString(e.file_id),
+                          QString::fromStdString(e.name),
+                          e.dir == FileDir::Recv ? 1 : 0);
         }, Qt::QueuedConnection);
     });
     bus->subscribe<Evt_FileFailed>([this](const Evt_FileFailed& e) {
         QMetaObject::invokeMethod(this, [this, e] {
-            emit fileFailed(QString::fromStdString(e.file_id));
+            emit fileFailed(QString::fromStdString(e.file_id),
+                            QString::fromStdString(e.name),
+                            e.dir == FileDir::Recv ? 1 : 0);
         }, Qt::QueuedConnection);
     });
     bus->subscribe<Evt_FileMetaReceived>([this](const Evt_FileMetaReceived& e) {
         QMetaObject::invokeMethod(this, [this, e] {
             emit fileMetaReceived(QString::fromStdString(e.file_id),
                                   QString::fromStdString(e.name),
-                                  static_cast<qint64>(e.size));
+                                  static_cast<qint64>(e.size),
+                                  QString::fromStdString(e.device_alias));
         }, Qt::QueuedConnection);
     });
     bus->subscribe<Evt_UnattendedLogin>([this](const Evt_UnattendedLogin& e) {
@@ -189,6 +196,11 @@ bool QtEventBridge::startControl(const QString& alias, bool unattended,
 
 bool QtEventBridge::sendFile(const QString& absPath) {
     return files_ != nullptr && files_->send_file(absPath.toStdString());
+}
+
+bool QtEventBridge::sessionRunning() const {
+    return sessions_ != nullptr
+        && sessions_->state() == RemoteSessionService::SessState::Running;
 }
 
 void QtEventBridge::copyText(const QString& text) {

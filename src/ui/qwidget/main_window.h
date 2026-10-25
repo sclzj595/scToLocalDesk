@@ -27,6 +27,7 @@ class SettingsPage;
 class DeviceListPage;
 class RemoteViewPage;
 class ConnectCodePage;
+class FileTransferPage;
 
 class MainWindow final : public FramelessWindow {
     Q_OBJECT
@@ -49,6 +50,11 @@ public:
     /// 远程画面页访问（widgets_main 接解码管线 frameReady，Doc18 §4.2）
     RemoteViewPage* remoteViewPage() const {
         return remoteView_;
+    }
+
+    /// 文件传输页访问（widgets_main 接 Evt_File* + 发送入口，Doc18 §5）
+    FileTransferPage* fileTransferPage() const {
+        return filePage_;
     }
 
 protected:
@@ -76,6 +82,7 @@ private:
     DeviceListPage* devList_{nullptr};
     RemoteViewPage* remoteView_{nullptr};
     ConnectCodePage* connCode_{nullptr};
+    FileTransferPage* filePage_{nullptr};
 };
 
 }  // namespace sc::localdesk::ui

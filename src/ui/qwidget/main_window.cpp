@@ -56,7 +56,9 @@ MainWindow::MainWindow() {
     stack_->addWidget(devList);                    // 0 设备列表
     stack_->addWidget(connCode);                   // 1 连接码连接
     stack_->addWidget(remoteView);                 // 2 远程画面
-    stack_->addWidget(new FileTransferPage());     // 3 文件传输
+    auto* filePage = new FileTransferPage();
+    filePage_ = filePage;
+    stack_->addWidget(filePage);                   // 3 文件传输
     stack_->addWidget(settingsPage);               // 4 设置
     // 设置页：深色开关 → 统一主题入口；清空信任缓存 → TrustStore
     connect(settingsPage, &SettingsPage::themeChanged, this, &MainWindow::applyTheme);

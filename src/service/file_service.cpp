@@ -15,6 +15,7 @@
 #include "core/protocol/tlv.hpp"
 #include "foundation/event_bus.hpp"
 #include "foundation/fs_portable.hpp"
+#include "foundation/hashx.hpp"
 #include "foundation/logger/ilogger.hpp"
 #include "foundation/thread_pool.hpp"
 
@@ -24,7 +25,11 @@ namespace {
 
 using sc::localdesk::foundation::LogLevel;
 
-constexpr size_t kChunkHeaderLen = 16 + 4 + 4 + 1 + 4;  // file_id+idx+total+last+len
+// 分片布局：file_id(16)+idx(u32BE)+total(u32BE)+last(1)+len(u32BE)+checksum(u64BE)+data
+constexpr size_t kChunkHeaderLen = 16 + 4 + 4 + 1 + 4 + 8;
+
+/// 片校验种子域隔离（"SCLD"），防与其它 xxh3 用途碰撞误判
+constexpr uint64_t kChunkSeed = 0x53434C4400000000ULL;
 
 int64_t now_us() {
     return std::chrono::duration_cast<std::chrono::microseconds>(
@@ -51,6 +56,20 @@ void append_be32(std::vector<uint8_t>& v, uint32_t x) {
     v.push_back(static_cast<uint8_t>(x >> 16));
     v.push_back(static_cast<uint8_t>(x >> 8));
     v.push_back(static_cast<uint8_t>(x));
+}
+
+void append_be64(std::vector<uint8_t>& v, uint64_t x) {
+    for (int s = 56; s >= 0; s -= 8) {
+        v.push_back(static_cast<uint8_t>((x >> s) & 0xFF));
+    }
+}
+
+uint64_t read_be64(const uint8_t* p) {
+    uint64_t x = 0;
+    for (int i = 0; i < 8; ++i) {
+        x = (x << 8) | p[i];
+    }
+    return x;
 }
 
 }  // namespace
@@ -163,6 +182,8 @@ void FileService::send_loop(const std::string& abs_path, const FileMeta& meta) {
         return;
     }
     std::vector<uint8_t> buf(chunk_size_);
+    std::vector<uint8_t> body;
+    body.reserve(kChunkHeaderLen + chunk_size_);
     uint64_t transferred = 0;
     bool aborted = false;
     for (uint32_t idx = 0; idx < meta.total_chunks; ++idx) {
@@ -178,8 +199,7 @@ void FileService::send_loop(const std::string& abs_path, const FileMeta& meta) {
         if (n == 0) {
             break;
         }
-        std::vector<uint8_t> body;
-        body.reserve(kChunkHeaderLen + n);
+        body.clear();
         // file_id hex → 16B
         for (size_t i = 0; i < 16; ++i) {
             const auto nib = [](char c) {
@@ -193,11 +213,13 @@ void FileService::send_loop(const std::string& abs_path, const FileMeta& meta) {
         append_be32(body, meta.total_chunks);
         body.push_back(idx == meta.total_chunks - 1 ? 1 : 0);
         append_be32(body, static_cast<uint32_t>(n));
+        // 片校验（Doc18 §5：xxH3 首个业务用途；接收端不符即断传）
+        append_be64(body, foundation::xxh3_64(buf.data(), n, kChunkSeed));
         body.insert(body.end(), buf.begin(), buf.begin() + static_cast<long>(n));
         transport_->send_binary(protocol::build_frame(protocol::MsgType::FileChunk, body));
 
         transferred += n;
-        publish_progress(meta.file_id, transferred, meta.size);
+        publish_progress(meta.file_id, meta.name, transferred, meta.size, FileDir::Send);
     }
     fclose(fp);
 
@@ -212,6 +234,8 @@ void FileService::send_loop(const std::string& abs_path, const FileMeta& meta) {
         e.session_id.clear();
         e.device_alias.clear();
         e.file_id = meta.file_id;
+        e.name = meta.name;
+        e.dir = FileDir::Send;
         e.timestamp_us = now_us();
         bus_->publish(e);
     }
@@ -243,11 +267,15 @@ void FileService::on_file_meta(const uint8_t* body, size_t len) {
     }
     if (need_confirm) {
         // 前置确认：挂 pending → UI 弹窗（Doc11 §4.3 / Doc13）
-        std::lock_guard<std::mutex> lk(mtx_);
-        pending_[meta.file_id] = meta;
+        std::string alias;
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            pending_[meta.file_id] = meta;
+            alias = peer_alias_;
+        }
         if (bus_ != nullptr) {
             Evt_FileMetaReceived e;
-            e.device_alias.clear();
+            e.device_alias = alias;
             e.file_id = meta.file_id;
             e.name = meta.name;
             e.size = meta.size;
@@ -271,6 +299,9 @@ bool FileService::accept_file(const FileMeta& meta, const std::string& save_dir)
     Transfer t;
     t.meta = meta;
     t.save_dir = save_dir;
+    // 保存目录自建（用户任意配置的 save_path 不保证存在，Doc11 §4.4）
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(save_dir), ec);
     const std::string part_path = save_dir + "/" + meta.file_id + ".part";
     t.out = foundation::fs_open(std::filesystem::path(part_path), "wb");
     if (t.out == nullptr) {
@@ -313,9 +344,11 @@ bool FileService::on_file_chunk(const uint8_t* body, size_t len) {
                             | (static_cast<uint32_t>(body[pos + 2]) << 8)
                             | static_cast<uint32_t>(body[pos + 3]);
     pos += 4;
-    if (pos + data_len > len) {
+    if (pos + 8 + data_len > len) {
         return false;  // 分片截断，丢弃
     }
+    const uint64_t checksum = read_be64(body + pos);
+    pos += 8;
 
     std::lock_guard<std::mutex> lk(mtx_);
     const auto it = transfers_.find(file_id);
@@ -323,13 +356,21 @@ bool FileService::on_file_chunk(const uint8_t* body, size_t len) {
         return false;
     }
     auto& t = it->second;
+    // 片校验（Doc18 §5）：不符 = 传输损坏，断传清理（Integrity）
+    if (foundation::xxh3_64(body + pos, data_len, kChunkSeed) != checksum) {
+        SCLD_LOG(log_, LogLevel::Error, "file",
+                 "[file_id=" + file_id + "] 片校验失败 idx=" + std::to_string(idx));
+        finish_receive(t, false, FileFailReason::Integrity);
+        return false;
+    }
     if (fwrite(body + pos, 1, data_len, t.out) != data_len) {
         finish_receive(t, false);  // 磁盘满 / IO 错误（Doc11 §4.5）
         return false;
     }
     t.received_chunks = idx + 1;
-    publish_progress_nolock(file_id, t.received_chunks * t.meta.size / t.meta.total_chunks,
-                            t.meta.size);
+    publish_progress_nolock(file_id, t.meta.name,
+                            t.received_chunks * t.meta.size / t.meta.total_chunks,
+                            t.meta.size, FileDir::Recv);
 
     if (is_last || t.received_chunks >= total) {
         finish_receive(t, t.received_chunks >= total);
@@ -337,7 +378,7 @@ bool FileService::on_file_chunk(const uint8_t* body, size_t len) {
     return true;
 }
 
-void FileService::finish_receive(Transfer& t, bool ok) {
+void FileService::finish_receive(Transfer& t, bool ok, FileFailReason reason) {
     if (t.out != nullptr) {
         fclose(t.out);
         t.out = nullptr;
@@ -362,13 +403,17 @@ void FileService::finish_receive(Transfer& t, bool ok) {
         if (ok) {
             Evt_FileDone e;
             e.file_id = t.meta.file_id;
+            e.name = t.meta.name;
+            e.dir = FileDir::Recv;
             e.timestamp_us = now_us();
             bus_->publish(e);
         }
         else {
             Evt_FileFailed e;
             e.file_id = t.meta.file_id;
-            e.reason = FileFailReason::IoError;
+            e.name = t.meta.name;
+            e.reason = reason;
+            e.dir = FileDir::Recv;
             e.timestamp_us = now_us();
             bus_->publish(e);
         }
@@ -420,24 +465,25 @@ void FileService::stop_all() {
     SCLD_LOG(log_, LogLevel::Info, "file", "会话回收：全部传输已中止");
 }
 
-void FileService::publish_progress(const std::string& file_id, uint64_t transferred,
-                                   uint64_t total) {
+void FileService::publish_progress(const std::string& file_id, const std::string& name,
+                                   uint64_t transferred, uint64_t total, FileDir dir) {
     std::lock_guard<std::mutex> lk(mtx_);
-    publish_progress_nolock(file_id, transferred, total);
+    publish_progress_nolock(file_id, name, transferred, total, dir);
 }
 
-void FileService::publish_progress_nolock(const std::string& file_id, uint64_t transferred,
-                                          uint64_t total) {
-    // 调用方已持有 mtx_（send_loop 无锁路径也走 publish_progress 的外层加锁）
+void FileService::publish_progress_nolock(const std::string& file_id, const std::string& name,
+                                          uint64_t transferred, uint64_t total, FileDir dir) {
+    // 调用方已持有 mtx_：本函数全程不得再加锁（nolock 语义）
     if (bus_ != nullptr) {
         Evt_FileProgress e;
         e.file_id = file_id;
+        e.name = name;
         e.transferred = transferred;
         e.total = total;
+        e.dir = dir;
         e.timestamp_us = now_us();
         bus_->publish(e);
     }
-    std::lock_guard<std::mutex> lk(mtx_);
     if (event_cb_) {
         FileEvent fe;
         fe.file_id = file_id;

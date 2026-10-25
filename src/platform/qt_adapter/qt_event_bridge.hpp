@@ -66,6 +66,8 @@ public:
     Q_INVOKABLE bool startControl(const QString& alias, bool unattended,
                                   const QString& password);
     Q_INVOKABLE bool sendFile(const QString& absPath);
+    /// 会话 Running 判定（发送文件前置：文件走会话业务帧通道）
+    Q_INVOKABLE bool sessionRunning() const;
     Q_INVOKABLE bool acceptFile(const QString& fileId);   ///< 接收确认弹窗【同意】
     Q_INVOKABLE bool rejectFile(const QString& fileId);   ///< 接收确认弹窗【拒绝】
     Q_INVOKABLE bool setUnattendedEnabled(bool enabled, const QString& password);
@@ -117,11 +119,13 @@ signals:
     void connectRequest(const QString& alias);      ///< 人工确认弹窗触发
     void sessionStarted(const QString& alias);
     void sessionClosed(const QString& reasonText);
-    // 文件
-    void fileProgress(const QString& fileId, qint64 transferred, qint64 total);
-    void fileDone(const QString& fileId);
-    void fileFailed(const QString& fileId);
-    void fileMetaReceived(const QString& fileId, const QString& name, qint64 size);  ///< 接收确认弹窗触发
+    // 文件（dir: 0 发送 1 接收；name 供 UI 首次插条目）
+    void fileProgress(const QString& fileId, const QString& name, qint64 transferred,
+                      qint64 total, int dir);
+    void fileDone(const QString& fileId, const QString& name, int dir);
+    void fileFailed(const QString& fileId, const QString& name, int dir);
+    void fileMetaReceived(const QString& fileId, const QString& name, qint64 size,
+                          const QString& alias);  ///< 接收确认弹窗触发
     // 无人值守
     void unattendedLogin(const QString& alias);     ///< Toast 触发（Doc16 §7）
     void unattendedChanged();

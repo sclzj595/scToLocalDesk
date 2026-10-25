@@ -33,6 +33,8 @@ ApplicationWindow {
     // 信任缓存走 ScLocaldesk（TrustStore 落盘，Doc18 §3.2）；此处仅暂存待确认对端
     property string pendingAlias: ""
     property string pendingCode: ""
+    // 文件接收确认（Doc11 §4.3）
+    property string pendingFileId: ""
 
     // 启动回放：主题持久化（[appearance]，Doc18 §3.3）+ 端口占用提示（Doc18 风险清单 P1）
     Component.onCompleted: {
@@ -118,6 +120,7 @@ ApplicationWindow {
                 }
 
                 Page_FileTransfer {
+                    onRequestToast: text => toast.show(text)
                 }
 
                 Page_Settings {
@@ -212,6 +215,20 @@ ApplicationWindow {
         }
     }
 
+    // 文件接收确认弹窗（confirm_before_transfer，Doc11 §4.3）
+    Popup_FileConfirm {
+        id: fileConfirmPopup
+        glassSource: shell
+        onAccepted: {
+            ScLocaldesk.acceptFile(pendingFileId);
+            toast.show("已同意接收，保存至 设置→文件 指定目录");
+        }
+        onRejected: {
+            ScLocaldesk.rejectFile(pendingFileId);
+            toast.show("已拒绝接收");
+        }
+    }
+
     // ---------------- Toast ----------------
     Toast {
         id: toast
@@ -274,6 +291,13 @@ ApplicationWindow {
                 dockBar.currentIndex = 0;    // 断开回设备列表
             }
             toast.show("会话已结束：" + reason);
+        }
+        function onFileMetaReceived(fileId, name, size, alias) {
+            pendingFileId = fileId;
+            fileConfirmPopup.peerAlias = alias === "" ? "对方" : alias;
+            fileConfirmPopup.fileName = name;
+            fileConfirmPopup.fileSize = size;
+            fileConfirmPopup.open();
         }
     }
 }

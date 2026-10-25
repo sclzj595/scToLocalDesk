@@ -176,18 +176,43 @@ private:
     RemoteSessionService* sessions_{nullptr};
 };
 
-/// 文件传输列表页：行卡 + 主色进度条 + 状态色（完成绿/失败红）
+/// 每行控件引用（QHash 值需完整类型）
+struct FileRow {
+    QProgressBar* bar{nullptr};
+    QLabel* status{nullptr};
+    QLabel* size{nullptr};
+};
+
+/// 文件传输列表页：真事件流动态行卡 + 主色进度条（完成绿/失败红）+
+/// 发送入口（按钮选文件 / 拖拽入区，Doc18 §5）
 class FileTransferPage final : public QWidget {
     Q_OBJECT
 
 public:
     explicit FileTransferPage(QWidget* parent = nullptr);
 
+signals:
+    /// 选中/拖入的本地文件列表（widgets_main 转桥 sendFile）
+    void filesPicked(const QStringList& paths);
+
+public slots:
+    /// Evt_File* → 桥接信号（dir: 0 发送 1 接收）
+    void on_file_progress(const QString& file_id, const QString& name,
+                          qint64 transferred, qint64 total, int dir);
+    void on_file_done(const QString& file_id, const QString& name, int dir);
+    void on_file_failed(const QString& file_id, const QString& name, int dir);
+
+protected:
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
+
 private:
-    QWidget* makeRow(const QString& arrow, const QString& name,
-                     int progress, const QString& status, const QColor& statusColor);
-    QVBoxLayout* rows_{nullptr};
+    FileRow& upsert_row(const QString& file_id, const QString& name, int dir);
+
+    QWidget* host_{nullptr};
     QLabel* empty_{nullptr};
+    QLabel* drag_hint_{nullptr};
+    QHash<QString, FileRow> rows_;  ///< fileId → 行控件引用
 };
 
 /// 设置页：分组卡片（Doc17 全量项：通用/外观/网络/会话/文件/安全/日志）

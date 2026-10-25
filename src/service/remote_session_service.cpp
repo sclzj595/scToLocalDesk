@@ -591,6 +591,10 @@ void RemoteSessionService::handle_auth_proof(const uint8_t* body, size_t len) {
 void RemoteSessionService::enter_running(bool unattended) {
     // 前置：调用方已持锁且 state_ 已迁移
     state_ = SessState::Running;
+    // 文件事件来源名（Evt_FileMetaReceived.device_alias 弹窗展示，Doc18 §5）
+    if (files_ != nullptr) {
+        files_->set_peer_alias(peer_alias_);
+    }
     // 被控端 Running 即开推流（Doc09 §3.1 鉴权红线：APPROVED 之后才推）
     // start 非阻塞（内部起线程），持锁调用安全
     if (role_ == Role::Controlled && stream_ != nullptr) {
@@ -629,6 +633,7 @@ void RemoteSessionService::reset_to_idle() {
     }
     if (files_ != nullptr) {
         files_->stop_all();
+        files_->set_peer_alias("");  // 清来源名，防下次会话前残留
     }
     state_ = SessState::Idle;
     pending_challenge_.clear();

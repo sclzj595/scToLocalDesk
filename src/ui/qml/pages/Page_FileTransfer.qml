@@ -1,19 +1,82 @@
 // ============================================================
 // scToLocalDesk | src/ui/qml/pages/Page_FileTransfer.qml
 // 双向文件传输列表页（Doc13 §四.4）：纯色内容区
-// 进度条主色圆角；完成/失败状态色（Doc13 §2.1 辅助色）
+// P3（Doc18 §5）：接 FileService 真事件流（进度/完成/失败），
+// 发送入口 = 按钮选文件 + 拖拽入区；进度条主色圆角
 // ============================================================
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import ".."
 
 Item {
     id: root
 
-    // P3 文件传输闭环接入 FileService 事件流；当前仅空态（禁止假数据）
+    signal requestToast(string text)
+
+    // 真数据源（Evt_File* → bridge 信号）：fileId 唯一索引
     ListModel {
         id: transfers
+    }
+
+    function upsert(fileId, name, dir) {
+        for (let i = 0; i < transfers.count; ++i) {
+            if (transfers.get(i).fileId === fileId) {
+                return i;
+            }
+        }
+        transfers.append({fileId: fileId, name: name, dir: dir,
+                          progress: 0, done: 0});
+        return transfers.count - 1;
+    }
+
+    function setDone(fileId, failed) {
+        for (let i = 0; i < transfers.count; ++i) {
+            if (transfers.get(i).fileId === fileId) {
+                transfers.setProperty(i, "done", failed ? 2 : 1);
+                transfers.setProperty(i, "progress", failed ? transfers.get(i).progress : 1);
+                return;
+            }
+        }
+    }
+
+    // Url（file:///G:/a/b.txt）→ 本地绝对路径
+    function toLocalPath(url) {
+        return decodeURIComponent(url.toString().replace(/^file:\/\/\//, ""));
+    }
+
+    function sendFiles(urls) {
+        if (!ScLocaldesk.sessionRunning()) {
+            requestToast("当前无进行中的会话，请先连接设备");
+            return;
+        }
+        for (let i = 0; i < urls.length; ++i) {
+            if (!ScLocaldesk.sendFile(toLocalPath(urls[i]))) {
+                requestToast("发送失败：" + toLocalPath(urls[i]));
+            }
+        }
+    }
+
+    FileDialog {
+        id: fileDialog
+        fileMode: FileDialog.OpenFiles
+        title: "选择要发送的文件"
+        onAccepted: root.sendFiles(selectedFiles)
+    }
+
+    Connections {
+        target: ScLocaldesk
+        function onFileProgress(fileId, name, transferred, total, dir) {
+            const i = root.upsert(fileId, name, dir);
+            transfers.setProperty(i, "progress", total > 0 ? transferred / total : 0);
+        }
+        function onFileDone(fileId, name, dir) {
+            root.setDone(fileId, false);
+        }
+        function onFileFailed(fileId, name, dir) {
+            root.setDone(fileId, true);
+        }
     }
 
     ColumnLayout {
@@ -37,7 +100,7 @@ Item {
                 text: "发送文件…"
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
-                onClicked: console.log("TODO(V1.0): QFileDialog 选文件 → files.send_file")
+                onClicked: fileDialog.open()
                 contentItem: Text {
                     text: parent.text
                     font: parent.font
@@ -63,87 +126,108 @@ Item {
             }
         }
 
-        ListView {
+        // 拖拽入区（Doc18 §5 发送入口二）：整页接收文件拖放
+        DropArea {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            spacing: 10
-            model: transfers
-
-            // 空态：无传输任务时的占位提示（禁止假数据）
-            Text {
-                anchors.centerIn: parent
-                visible: transfers.count === 0
-                text: "暂无传输任务\n连接设备后，从设备卡或\"发送文件\"发起传输"
-                horizontalAlignment: Text.AlignHCenter
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                color: Theme.textHint
+            keys: ["text/uri-list"]
+            onDropped: drop => {
+                if (drop.hasUrls) {
+                    root.sendFiles(drop.urls);
+                }
             }
 
-            delegate: Rectangle {
-                width: ListView.view.width
-                height: 64
+            Rectangle {
+                anchors.fill: parent
                 radius: Theme.cardRadius
-                color: Theme.cardBg
-                border.color: Theme.cardBorder
+                border.color: parent.containsDrag ? Theme.primary : Theme.cardBorder
                 border.width: 1
+                color: "transparent"
+            }
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 14
+            ListView {
+                id: listView
+                anchors.fill: parent
+                anchors.margins: 1
+                clip: true
+                spacing: 10
+                model: transfers
 
-                    Text {
-                        text: model.dir === 0 ? "↑" : "↓"
-                        font.pixelSize: 18
-                        color: model.dir === 0 ? Theme.primary : Theme.accentBlue
-                    }
+                // 空态：无传输任务时的占位提示（禁止假数据）
+                Text {
+                    anchors.centerIn: parent
+                    visible: transfers.count === 0
+                    text: "暂无传输任务\n连接设备后，点击\"发送文件\"或将文件拖入本区"
+                    horizontalAlignment: Text.AlignHCenter
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontBody
+                    color: Theme.textHint
+                }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 6
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Text {
-                                text: model.name
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontBody
-                                color: Theme.textMain
-                                elide: Text.ElideRight
-                                Layout.maximumWidth: 320
-                            }
-                            Item {
-                                Layout.fillWidth: true
-                            }
-                            Text {
-                                text: model.done === 1 ? "已完成"
-                                      : model.done === 2 ? "失败"
-                                      : model.speed
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontHint
-                                color: model.done === 1 ? Theme.accentGreen
-                                       : model.done === 2 ? Theme.accentRed
-                                       : Theme.textSecond
-                            }
+                delegate: Rectangle {
+                    width: ListView.view.width
+                    height: 64
+                    radius: Theme.cardRadius
+                    color: Theme.cardBg
+                    border.color: Theme.cardBorder
+                    border.width: 1
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 14
+                        spacing: 14
+
+                        Text {
+                            text: model.dir === 0 ? "↑" : "↓"
+                            font.pixelSize: 18
+                            color: model.dir === 0 ? Theme.primary : Theme.accentBlue
                         }
-                        ProgressBar {
+
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            from: 0
-                            to: 1
-                            value: model.progress
-                            background: Rectangle {
-                                implicitHeight: 6
-                                radius: 3
-                                color: Theme.divider
+                            spacing: 6
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text {
+                                    text: model.name
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontBody
+                                    color: Theme.textMain
+                                    elide: Text.ElideRight
+                                    Layout.maximumWidth: 320
+                                }
+                                Item {
+                                    Layout.fillWidth: true
+                                }
+                                Text {
+                                    text: model.done === 1 ? "已完成"
+                                          : model.done === 2 ? "失败"
+                                          : Math.round(model.progress * 100) + "%"
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontHint
+                                    color: model.done === 1 ? Theme.accentGreen
+                                           : model.done === 2 ? Theme.accentRed
+                                           : Theme.textSecond
+                                }
                             }
-                            contentItem: Item {
-                                implicitHeight: 6
-                                Rectangle {
-                                    width: parent.width * model.progress
-                                    height: 6
+                            ProgressBar {
+                                Layout.fillWidth: true
+                                from: 0
+                                to: 1
+                                value: model.progress
+                                background: Rectangle {
+                                    implicitHeight: 6
                                     radius: 3
-                                    color: model.done === 2 ? Theme.accentRed : Theme.primary
+                                    color: Theme.divider
+                                }
+                                contentItem: Item {
+                                    implicitHeight: 6
+                                    Rectangle {
+                                        width: parent.width * model.progress
+                                        height: 6
+                                        radius: 3
+                                        color: model.done === 2 ? Theme.accentRed : Theme.primary
+                                    }
                                 }
                             }
                         }

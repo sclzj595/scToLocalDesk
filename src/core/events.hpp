@@ -91,20 +91,29 @@ enum class FileFailReason {
     Unauthed,
 };
 
+/// 传输方向（UI ↑/↓ 标识；发送=本机推给对端）
+enum class FileDir { Send = 0, Recv = 1 };
+
 struct Evt_FileProgress final : IEvent {
     std::string file_id;
+    std::string name;  ///< 文件名（UI 首次插条目用）
     uint64_t transferred{0};
     uint64_t total{0};
+    FileDir dir{FileDir::Send};
 };
 
 struct Evt_FileDone final : IEvent {
     std::string file_id;
+    std::string name;
+    FileDir dir{FileDir::Send};
 };
 
 struct Evt_FileFailed final : IEvent
 {
     std::string file_id;
+    std::string name;
     FileFailReason reason{FileFailReason::None};
+    FileDir dir{FileDir::Send};
 };
 
 /// 对端请求发文件（confirm_before_transfer=true 时替代自动接收，Doc11 §4.3）
@@ -113,6 +122,7 @@ struct Evt_FileMetaReceived final : IEvent
     std::string file_id;
     std::string name;
     uint64_t size{0};
+    std::string device_alias;  ///< 发送方连接名（会话层注入，弹窗展示）
 };
 
 // ---------------- 无人值守（Doc16 §2.5） ----------------

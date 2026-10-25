@@ -8,12 +8,14 @@
 #ifdef SCLD_QT_APP
 
     #include <QApplication>
+    #include <QFile>
     #include <QFileInfo>
     #include <QQmlApplicationEngine>
     #include <QQmlContext>
     #include <QQuickItem>
     #include <QQuickStyle>
     #include <QQuickWindow>
+    #include <QRandomGenerator>
     #include <QStandardPaths>
     #include <QTimer>
 
@@ -363,6 +365,50 @@ int main(int argc, char* argv[]) {
                              });
                          });
     }
+    // 冒烟钩子 3（默认关）：SCLD_SMOKE_FILE=1 时 Running 后 3s 自动生成
+    // 8MB 随机文件发送 + 收到接收请求自动同意（Doc18 §5 E2E 回环）
+    if (qEnvironmentVariable("SCLD_SMOKE_FILE") == "1") {
+        QObject::connect(
+            &bridge, &platform::QtEventBridge::sessionStarted, &bridge,
+            [&bridge, &logger] {
+                QTimer::singleShot(3000, &bridge, [&bridge, &logger] {
+                    const QString path = QStandardPaths::writableLocation(
+                                             QStandardPaths::TempLocation)
+                                         + "/scld_smoke_file.bin";
+                    QFile f(path);
+                    if (f.open(QIODevice::WriteOnly)) {
+                        constexpr qint64 kSize = 8 * 1024 * 1024;
+                        QByteArray blk(65536, 0);
+                        for (qint64 off = 0; off < kSize; off += blk.size()) {
+                            for (int i = 0; i < blk.size(); ++i) {
+                                blk[i] = static_cast<char>(
+                                    QRandomGenerator::global()->generate());
+                            }
+                            f.write(blk);
+                        }
+                        f.close();
+                    }
+                    if (bridge.sendFile(path)) {
+                        SCLD_LOG(logger, LogLevel::Info, "smoke",
+                                 "smoke file send begin " + path.toStdString());
+                    } else {
+                        SCLD_LOG(logger, LogLevel::Error, "smoke",
+                                 "smoke sendFile 失败");
+                    }
+                });
+            });
+        QObject::connect(
+            &bridge, &platform::QtEventBridge::fileMetaReceived, &bridge,
+            [&bridge, &logger](const QString& fileId, const QString& name, qint64 size,
+                               const QString& alias) {
+                bridge.acceptFile(fileId);
+                SCLD_LOG(logger, LogLevel::Info, "smoke",
+                         "auto accept file_id=" + fileId.toStdString() + " name="
+                             + name.toStdString() + " size=" + std::to_string(size)
+                             + " alias=" + alias.toStdString());
+            });
+    }
+
     if (engine.rootObjects().isEmpty()) {
         fprintf(stderr, "[main] QML 加载失败 rootObjects 为空\n");
         fflush(stderr);

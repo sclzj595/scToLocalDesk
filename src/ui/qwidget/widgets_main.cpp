@@ -8,12 +8,16 @@
 
         #include <QApplication>
         #include <QCoreApplication>
+        #include <QFile>
         #include <QFileInfo>
+        #include <QMessageBox>
+        #include <QRandomGenerator>
         #include <QTimer>
 
         #include "foundation/config_parser.hpp"
         #include "foundation/event_bus.hpp"
         #include "foundation/logger/file_logger.hpp"
+        #include "foundation/thread_pool.hpp"
         #include "core/auth/manual_confirm_authenticator.hpp"
         #include "core/auth/unattended_authenticator.hpp"
         #include "core/events.hpp"
@@ -30,6 +34,7 @@
         #include "platform/win32/system_info.hpp"
         #include "service/alias_service.hpp"
         #include "service/app_config.hpp"
+        #include "service/file_service.hpp"
         #include "service/id_service.hpp"
         #include "service/input_service.hpp"
         #include "service/remote_session_service.hpp"
@@ -46,10 +51,10 @@ namespace {
 sc::localdesk::foundation::LogLevel parse_log_level(const std::string& s) {
     using sc::localdesk::foundation::LogLevel;
     if (s == "debug") return LogLevel::Debug;
-    if (s == "warn") return LogLevel::Warn;
+    if (s == "warn") return sc::localdesk::foundation::LogLevel::Warn;
     if (s == "error") return LogLevel::Error;
     if (s == "trace") return LogLevel::Trace;
-    return LogLevel::Info;  // 缺省/非法回退（与 QML 版 main 同口径）
+    return sc::localdesk::foundation::LogLevel::Info;  // 缺省/非法回退（与 QML 版 main 同口径）
 }
 }  // namespace
 
@@ -146,6 +151,17 @@ int main(int argc, char* argv[]) {
     input->set_injector(make_input_injector());
     sessions->set_stream_service(stream);
     sessions->set_input_service(input);
+    // 文件传输栈（Doc18 §5）：分片收发 + 前置确认 + 线程池
+    auto pool = std::make_shared<sc::localdesk::foundation::ThreadPool>(4);
+    auto files = std::make_shared<FileService>(transport, bus, logger);
+    files->set_thread_pool(pool);
+    files->set_chunk_size(static_cast<uint32_t>(cfg.chunk_size_kb));
+    files->set_confirm_enabled(cfg.confirm_before_transfer);
+    files->set_save_dir(cfg.save_path.empty()
+                            ? (QCoreApplication::applicationDirPath().toStdString()
+                               + "/received")
+                            : cfg.save_path);
+    sessions->set_file_service(files);
     const bool listening = sessions->start_listening(static_cast<uint16_t>(cfg.ws_port));
     if (!listening) {
         SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn, "session",
@@ -230,6 +246,107 @@ int main(int argc, char* argv[]) {
         bus->subscribe<Evt_SessionClosed>([rv](const Evt_SessionClosed&) {
             QMetaObject::invokeMethod(rv, &sc::localdesk::ui::RemoteViewPage::on_session_closed,
                                       Qt::QueuedConnection);
+        });
+    }
+
+    // 文件传输接线（Doc18 §5）：Evt_File* → 行卡 + 发送入口 + 接收确认
+    if (auto* fp = win.fileTransferPage()) {
+        QObject::connect(fp, &sc::localdesk::ui::FileTransferPage::filesPicked, fp,
+                         [files, fp, &logger](const QStringList& paths) {
+                             for (const QString& p : paths) {
+                                 if (!files->send_file(p.toStdString())) {
+                                     SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn, "file",
+                                              "send_file 失败 " + p.toStdString());
+                                 }
+                             }
+                         });
+        bus->subscribe<Evt_FileProgress>([fp](const Evt_FileProgress& e) {
+            QMetaObject::invokeMethod(fp, [fp, e] {
+                fp->on_file_progress(QString::fromStdString(e.file_id),
+                                     QString::fromStdString(e.name),
+                                     static_cast<qint64>(e.transferred),
+                                     static_cast<qint64>(e.total),
+                                     e.dir == FileDir::Recv ? 1 : 0);
+            }, Qt::QueuedConnection);
+        });
+        bus->subscribe<Evt_FileDone>([fp](const Evt_FileDone& e) {
+            QMetaObject::invokeMethod(fp, [fp, e] {
+                fp->on_file_done(QString::fromStdString(e.file_id),
+                                 QString::fromStdString(e.name),
+                                 e.dir == FileDir::Recv ? 1 : 0);
+            }, Qt::QueuedConnection);
+        });
+        bus->subscribe<Evt_FileFailed>([fp](const Evt_FileFailed& e) {
+            QMetaObject::invokeMethod(fp, [fp, e] {
+                fp->on_file_failed(QString::fromStdString(e.file_id),
+                                   QString::fromStdString(e.name),
+                                   e.dir == FileDir::Recv ? 1 : 0);
+            }, Qt::QueuedConnection);
+        });
+        // 接收前置确认（Doc11 §4.3）：QMessageBox 问询（玻璃化随 P4 专项）；
+        // SCLD_SMOKE_FILE=1 冒烟钩子自动同意（E2E 回环收发）
+        const bool smoke_file = qEnvironmentVariable("SCLD_SMOKE_FILE") == "1";
+        bus->subscribe<Evt_FileMetaReceived>([&win, files, &logger,
+                                              smoke_file](const Evt_FileMetaReceived& e) {
+            QMetaObject::invokeMethod(
+                &win,
+                [files, &logger, smoke_file, e] {
+                    if (smoke_file) {
+                        files->accept_pending(e.file_id);
+                        SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "smoke",
+                                 "auto accept file_id=" + e.file_id);
+                        return;
+                    }
+                    const QString alias = QString::fromStdString(e.device_alias);
+                    const QString name = QString::fromStdString(e.name);
+                    auto ret = QMessageBox::question(
+                        nullptr, QStringLiteral("文件接收请求"),
+                        QStringLiteral("%1 向本机发送文件：\n%2（%3 字节）\n是否接收？")
+                            .arg(alias.isEmpty() ? QStringLiteral("对方") : alias, name)
+                            .arg(e.size),
+                        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+                    if (ret == QMessageBox::Yes) {
+                        files->accept_pending(e.file_id);
+                        SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "file",
+                                 "接收确认 file_id=" + e.file_id);
+                    } else {
+                        files->reject_pending(e.file_id);
+                        SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "file",
+                                 "接收拒绝 file_id=" + e.file_id);
+                    }
+                },
+                Qt::QueuedConnection);
+        });
+    }
+
+    // 冒烟钩子（Doc18 §5 E2E）：SCLD_SMOKE_FILE=1 时 Running 后 3s 自动生成
+    // 8MB 随机文件发送（接收端 confirm 钩子自动同意），收发哈希对账用
+    if (qEnvironmentVariable("SCLD_SMOKE_FILE") == "1") {
+        bus->subscribe<Evt_SessionStart>([files, &logger](const Evt_SessionStart&) {
+            QTimer::singleShot(3000, [files, &logger] {
+                const QString path =
+                    QCoreApplication::applicationDirPath() + "/smoke_file.bin";
+                QFile f(path);
+                if (f.open(QIODevice::WriteOnly)) {
+                    // 8MB 伪随机（qrand 逐字节太慢，用块随机）
+                    constexpr qint64 kSize = 8 * 1024 * 1024;
+                    QByteArray blk(65536, 0);
+                    for (qint64 off = 0; off < kSize; off += blk.size()) {
+                        for (int i = 0; i < blk.size(); ++i) {
+                            blk[i] = static_cast<char>(QRandomGenerator::global()->generate());
+                        }
+                        f.write(blk);
+                    }
+                    f.close();
+                }
+                if (files->send_file(path.toStdString())) {
+                    SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "smoke",
+                             "smoke file send begin " + path.toStdString());
+                } else {
+                    SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Error,
+                             "smoke", "smoke send_file 失败");
+                }
+            });
         });
     }
 
