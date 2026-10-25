@@ -52,6 +52,7 @@
     #include "platform/qt_adapter/qt_event_bridge.hpp"
     #include "platform/qt_adapter/device_list_model.hpp"
     #include "platform/qt_adapter/qt_tray.hpp"
+        #include "platform/qt_adapter/watermark_painter.hpp"
     #include "platform/qt_adapter/qt_udp_discovery.hpp"
     #include "platform/qt_adapter/single_instance_guard.hpp"
     #include "platform/qt_adapter/video_pipeline.hpp"
@@ -466,6 +467,68 @@ int main(int argc, char* argv[]) {
     // 托盘（显示窗口 / 停止服务 / 退出，Doc02 §5.4）
     platform::TrayController tray;
     tray.show();
+
+    // 被控端知情权（PRD P4）：会话中托盘状态项 + 一键断开 + 推流水印
+    //（"访客别名 · 时间"，60s 刷新；水印渲染在主线程，混合在采集线程）
+    {
+        auto current_peer = std::make_shared<QString>();
+        auto wm_timer = new QTimer(&tray);
+        wm_timer->setInterval(60 * 1000);
+        QObject::connect(wm_timer, &QTimer::timeout, [&tray, &stream, current_peer] {
+            if (current_peer->isEmpty()) {
+                return;
+            }
+            const QImage wm = platform::render_session_watermark(*current_peer);
+            if (!wm.isNull()) {
+                auto buf = std::make_shared<std::vector<uint8_t>>(
+                    wm.bits(), wm.bits() + static_cast<size_t>(wm.sizeInBytes()));
+                stream->set_watermark(std::move(buf), wm.width(), wm.height());
+            }
+        });
+        QObject::connect(&tray, &platform::TrayController::disconnectRequested,
+                         [&sessions, &logger] {
+                             SCLD_LOG(logger, LogLevel::Warn, "tray", "托盘一键断开会话");
+                             sessions->close_session(protocol::CloseReason::Normal);
+                         });
+        bus->subscribe<Evt_SessionStart>(
+            [&tray, &stream, wm_timer, current_peer, &logger](const Evt_SessionStart& e) {
+                QMetaObject::invokeMethod(
+                    &tray,
+                    [&tray, &stream, wm_timer, current_peer, e] {
+                        *current_peer = QString::fromStdString(e.device_alias);
+                        tray.set_session_active(true, *current_peer);
+#if defined(_WIN32)
+                        const QImage wm =
+                            platform::render_session_watermark(*current_peer);
+                        if (!wm.isNull()) {
+                            // 深拷贝为自持缓冲（QImage 析构后混合线程仍引用）
+                            auto buf = std::make_shared<std::vector<uint8_t>>(
+                                wm.bits(),
+                                wm.bits() + static_cast<size_t>(wm.sizeInBytes()));
+                            stream->set_watermark(std::move(buf), wm.width(),
+                                                  wm.height());
+                        }
+#endif
+                        wm_timer->start();
+                    },
+                    Qt::QueuedConnection);
+                (void)logger;
+            });
+        bus->subscribe<Evt_SessionClosed>(
+            [&tray, &stream, wm_timer, current_peer](const Evt_SessionClosed&) {
+                QMetaObject::invokeMethod(
+                    &tray,
+                    [&tray, &stream, wm_timer, current_peer] {
+                        current_peer->clear();
+                        wm_timer->stop();
+                        tray.set_session_active(false, {});
+#if defined(_WIN32)
+                        stream->set_watermark(nullptr, 0, 0);
+#endif
+                    },
+                    Qt::QueuedConnection);
+            });
+    }
 
     (void)discovery.start();
     const int rc = app.exec();

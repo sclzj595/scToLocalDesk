@@ -11,7 +11,9 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <thread>
+#include <vector>
 
 #include "foundation/bounded_queue.hpp"
 
@@ -48,6 +50,11 @@ public:
     /// 停止（非阻塞；线程自行退出）
     void stop();
 
+    /// 会话水印贴片（PRD P4 被控端知情权）：BGRA 缓冲（QImage::Format_ARGB32
+    /// 内存布局直出），右下角 alpha 混合进每帧；传 nullptr 清除。采集线程读、
+    /// 主线程换，mutex 保护
+    void set_watermark(std::shared_ptr<std::vector<uint8_t>> bgra, int w, int h);
+
     bool running() const { return running_.load(std::memory_order_acquire); }
     uint64_t total_dropped() const {
         return dropped_total_.load(std::memory_order_relaxed);
@@ -67,6 +74,12 @@ private:
     std::atomic<uint64_t> dropped_total_{0};
     std::thread capture_thread_;
     std::thread send_thread_;
+
+    // 水印贴片（wm_mtx_ 保护；空尺寸=未启用）
+    std::mutex wm_mtx_;
+    std::shared_ptr<std::vector<uint8_t>> wm_;
+    int wm_w_{0};
+    int wm_h_{0};
 };
 
 }  // namespace sc::localdesk

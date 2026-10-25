@@ -79,6 +79,18 @@ void ScreenStreamService::stop() {
     queue_.close();  // 唤醒发送线程；非阻塞（可持会话锁调用）
 }
 
+void ScreenStreamService::set_watermark(std::shared_ptr<std::vector<uint8_t>> bgra,
+                                        int w, int h) {
+    std::lock_guard<std::mutex> lk(wm_mtx_);
+    wm_ = std::move(bgra);
+    wm_w_ = w;
+    wm_h_ = h;
+    SCLD_LOG(log_, LogLevel::Info, "stream",
+             wm_ != nullptr
+                 ? "会话水印已启用 " + std::to_string(w) + "x" + std::to_string(h)
+                 : "会话水印已清除");
+}
+
 void ScreenStreamService::capture_loop(SendFn send, Options opt) {
     (void)send;
     if (!capturer_->init()) {
@@ -109,6 +121,55 @@ void ScreenStreamService::capture_loop(SendFn send, Options opt) {
         {
             foundation::ScopedPerf sp(frame_perf);   // grab+encode 全程计时
             if (capturer_->grab(frame)) {
+                // 会话水印（PRD P4）：grab 返回的 DIB 缓冲归本管线所有，encode
+                // 前可就地写入；右下角 alpha 混合（1080p 贴片 ~60k 像素/帧）
+                std::shared_ptr<std::vector<uint8_t>> wm;
+                int wm_w = 0, wm_h = 0;
+                {
+                    std::lock_guard<std::mutex> lk(wm_mtx_);
+                    wm = wm_;
+                    wm_w = wm_w_;
+                    wm_h = wm_h_;
+                }
+                if (wm != nullptr && wm_w > 0 && wm_h > 0
+                    && frame.width >= static_cast<uint32_t>(wm_w)
+                    && frame.height >= static_cast<uint32_t>(wm_h)) {
+                    const int margin = 16;
+                    const size_t stride =
+                        static_cast<size_t>(frame.width) * 4;
+                    uint8_t* base = const_cast<uint8_t*>(frame.data)
+                                    + static_cast<size_t>(frame.height - wm_h - margin)
+                                          * stride
+                                    + static_cast<size_t>(frame.width - wm_w - margin) * 4;
+                    const uint8_t* src = wm->data();
+                    for (int row = 0; row < wm_h; ++row) {
+                        uint8_t* dst = base + static_cast<size_t>(row) * stride;
+                        const uint8_t* srow = src + static_cast<size_t>(row) * wm_w * 4;
+                        for (int col = 0; col < wm_w; ++col) {
+                            const uint8_t a = srow[col * 4 + 3];
+                            if (a == 0) {
+                                dst += 4;
+                                continue;
+                            }
+                            // BGRA 直混（QImage ARGB32 小端布局同序）
+                            if (a == 255) {
+                                dst[0] = srow[col * 4];
+                                dst[1] = srow[col * 4 + 1];
+                                dst[2] = srow[col * 4 + 2];
+                            }
+                            else {
+                                const uint32_t ia = 255 - a;
+                                dst[0] = static_cast<uint8_t>(
+                                    (srow[col * 4] * a + dst[0] * ia) / 255);
+                                dst[1] = static_cast<uint8_t>(
+                                    (srow[col * 4 + 1] * a + dst[1] * ia) / 255);
+                                dst[2] = static_cast<uint8_t>(
+                                    (srow[col * 4 + 2] * a + dst[2] * ia) / 255);
+                            }
+                            dst += 4;
+                        }
+                    }
+                }
                 std::vector<uint8_t> encoded;
                 if (encoder_->encode(frame, encoded) && !encoded.empty()) {
                     protocol::ScreenFrameHeader hdr;

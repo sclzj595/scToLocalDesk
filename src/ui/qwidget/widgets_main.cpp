@@ -42,6 +42,9 @@
         #include "service/remote_session_service.hpp"
         #include "service/screen_stream_service.hpp"
         #include "service/trust_store.hpp"
+
+        #include "platform/qt_adapter/qt_tray.hpp"
+        #include "platform/qt_adapter/watermark_painter.hpp"
         #include "ui/qwidget/glass_theme.h"
         #include "ui/qwidget/main_window.h"
         #include "ui/qwidget/pages/pages.h"
@@ -289,6 +292,72 @@ int main(int argc, char* argv[]) {
     win.setTrustStore(&trust_store);
     win.set_config_store(&ini, &cfg);
     win.show();
+
+    // 被控端知情权（PRD P4）：Widgets 端补托盘——会话状态项 + 一键断开 +
+    // 推流水印（"访客别名 · 时间"，60s 刷新；渲染主线程、混合采集线程）
+    sc::localdesk::platform::TrayController tray;
+    tray.show();
+    {
+        auto current_peer = std::make_shared<QString>();
+        auto wm_timer = new QTimer(&tray);
+        wm_timer->setInterval(60 * 1000);
+        QObject::connect(wm_timer, &QTimer::timeout,
+                         [&stream, current_peer] {
+                             if (current_peer->isEmpty()) {
+                                 return;
+                             }
+                             const QImage wm = sc::localdesk::platform::
+                                 render_session_watermark(*current_peer);
+                             if (!wm.isNull()) {
+                                 auto buf = std::make_shared<std::vector<uint8_t>>(
+                                     wm.bits(), wm.bits()
+                                                    + static_cast<size_t>(
+                                                        wm.sizeInBytes()));
+                                 stream->set_watermark(std::move(buf), wm.width(),
+                                                       wm.height());
+                             }
+                         });
+        QObject::connect(
+            &tray, &sc::localdesk::platform::TrayController::disconnectRequested,
+            [&sessions, &logger] {
+                SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn, "tray",
+                         "托盘一键断开会话");
+                sessions->close_session(sc::localdesk::protocol::CloseReason::Normal);
+            });
+        bus->subscribe<Evt_SessionStart>(
+            [&tray, &stream, wm_timer, current_peer](const Evt_SessionStart& e) {
+                QMetaObject::invokeMethod(
+                    &tray,
+                    [&tray, &stream, wm_timer, current_peer, e] {
+                        *current_peer = QString::fromStdString(e.device_alias);
+                        tray.set_session_active(true, *current_peer);
+                        const QImage wm = sc::localdesk::platform::
+                            render_session_watermark(*current_peer);
+                        if (!wm.isNull()) {
+                            // 深拷贝自持缓冲（QImage 析构后混合线程仍引用）
+                            auto buf = std::make_shared<std::vector<uint8_t>>(
+                                wm.bits(),
+                                wm.bits() + static_cast<size_t>(wm.sizeInBytes()));
+                            stream->set_watermark(std::move(buf), wm.width(),
+                                                  wm.height());
+                        }
+                        wm_timer->start();
+                    },
+                    Qt::QueuedConnection);
+            });
+        bus->subscribe<Evt_SessionClosed>(
+            [&tray, &stream, wm_timer, current_peer](const Evt_SessionClosed&) {
+                QMetaObject::invokeMethod(
+                    &tray,
+                    [&tray, &stream, wm_timer, current_peer] {
+                        current_peer->clear();
+                        wm_timer->stop();
+                        tray.set_session_active(false, {});
+                        stream->set_watermark(nullptr, 0, 0);
+                    },
+                    Qt::QueuedConnection);
+            });
+    }
 
     // 设备页接真数据：本机卡真值 + 1s 快照对账（增量刷新，Doc18 §3.4）
     if (auto* dev_page = win.devicePage()) {
