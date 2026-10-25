@@ -9,10 +9,12 @@
 #include <QEvent>
 #include <QFont>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
@@ -94,6 +96,38 @@ ConnectCodePage::ConnectCodePage(QWidget* parent) : QWidget(parent) {
     connect(hist_list_, &QListWidget::itemClicked, this, [this](QListWidgetItem* it) {
         emit connectRequested(it->data(Qt::UserRole).toString());
     });
+    // 条目级操作（PRD P6）：右键删除/备注——单击仍是连接，右键出菜单
+    hist_list_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(hist_list_, &QListWidget::customContextMenuRequested, this,
+            [this](const QPoint& pos) {
+                QListWidgetItem* it = hist_list_->itemAt(pos);
+                if (it == nullptr || trust_ == nullptr) {
+                    return;
+                }
+                const QString code = it->data(Qt::UserRole).toString();
+                QMenu menu(hist_list_);
+                QAction* act_note =
+                    menu.addAction(QStringLiteral("修改备注"));
+                QAction* act_del = menu.addAction(QStringLiteral("删除此记录"));
+                QAction* picked =
+                    menu.exec(hist_list_->mapToGlobal(pos));
+                if (picked == act_del) {
+                    trust_->untrust(code.toStdString());
+                    reload_history();
+                }
+                else if (picked == act_note) {
+                    bool ok = false;
+                    const QString note = QInputDialog::getText(
+                        this, QStringLiteral("设备备注"),
+                        QStringLiteral("标注对方是谁（可空）："),
+                        QLineEdit::Normal,
+                        it->data(Qt::UserRole + 1).toString(), &ok);
+                    if (ok) {
+                        trust_->set_note(code.toStdString(), note.toStdString());
+                        reload_history();
+                    }
+                }
+            });
     lay->addWidget(hist_list_, 1);
 
     // 空态占位（禁止假数据）：无信任记录时的提示行
@@ -141,10 +175,15 @@ void ConnectCodePage::reload_history() {
                 }
                 grouped += raw.at(i);
             }
+            // 备注展示（PRD P6）：有备注附在名称后
+            const QString note = QString::fromStdString(e.note);
             auto* it = new QListWidgetItem(
-                QStringLiteral("%1    %2    %3    连接")
-                    .arg(QString::fromStdString(e.name), grouped, time_text));
+                QStringLiteral("%1%2    %3    %4    连接")
+                    .arg(QString::fromStdString(e.name),
+                         note.isEmpty() ? QString() : QStringLiteral("（%1）").arg(note),
+                         grouped, time_text));
             it->setData(Qt::UserRole, raw);
+            it->setData(Qt::UserRole + 1, note);  // 备注编辑回填
             it->setForeground(GlassTheme::instance().textMain());
             hist_list_->addItem(it);
         }

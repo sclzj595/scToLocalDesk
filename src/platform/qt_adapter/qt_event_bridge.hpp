@@ -85,6 +85,10 @@ public:
     void set_trust_store(TrustStore* ts);
     Q_INVOKABLE bool isTrusted(const QString& code);
     Q_INVOKABLE void trust(const QString& code, const QString& name);
+    /// 单条删除信任（PRD P6）：信任列表条目级删除，trust.json 即时重写
+    Q_INVOKABLE void untrust(const QString& code);
+    /// 设置设备备注（PRD P6）：条目存在返回 true
+    Q_INVOKABLE bool setTrustNote(const QString& code, const QString& note);
     Q_INVOKABLE void clearTrust();
     /// 信任全表（连接码页"最近连接"真数据源）：[{code9, name, time}]
     Q_INVOKABLE QVariantList listTrusted() const;

@@ -96,6 +96,9 @@ void TrustStore::load() {
         if (item.contains("name") && item.at("name").is_string()) {
             e.name = item.at("name").get<std::string>();
         }
+        if (item.contains("note") && item.at("note").is_string()) {
+            e.note = item.at("note").get<std::string>();
+        }
         if (item.contains("trusted_at") && item.at("trusted_at").is_string()) {
             e.trusted_at = item.at("trusted_at").get<std::string>();
         }
@@ -110,6 +113,7 @@ void TrustStore::save() {
     for (const auto& e : entries_) {
         arr.push_back(json{{"code", e.code},
                            {"name", e.name},
+                           {"note", e.note},
                            {"trusted_at", e.trusted_at}});
     }
     std::filesystem::path tmp = file_;
@@ -160,6 +164,22 @@ void TrustStore::trust(const std::string& code, const std::string& name) {
     }
     entries_.push_back(Entry{norm, name, now_timestamp()});
     save();
+}
+
+bool TrustStore::set_note(const std::string& code, const std::string& note) {
+    const std::string norm = normalize_code(code);
+    std::lock_guard<std::mutex> lk(mtx_);
+    for (auto& e : entries_) {
+        if (e.code == norm) {
+            if (e.note == note) {
+                return true;  // 无变化不落盘
+            }
+            e.note = note;
+            save();
+            return true;
+        }
+    }
+    return false;
 }
 
 void TrustStore::untrust(const std::string& code) {

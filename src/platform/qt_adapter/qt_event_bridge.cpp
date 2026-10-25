@@ -389,9 +389,32 @@ QVariantList QtEventBridge::listTrusted() const {
         out.append(QVariantMap{
             {"code", grouped},
             {"name", QString::fromStdString(e.name)},
+            {"note", QString::fromStdString(e.note)},
             {"time", time_text}});
     }
     return out;
+}
+
+void QtEventBridge::untrust(const QString& code) {
+    if (trust_ == nullptr) {
+        return;
+    }
+    // UI 传三段展示码，TrustStore 归一化去空格
+    trust_->untrust(code.toStdString());
+    SCLD_LOG(log_, foundation::LogLevel::Warn, "trust",
+             "删除信任 code=" + code.toStdString());  // 审计：Warn 即时落盘
+}
+
+bool QtEventBridge::setTrustNote(const QString& code, const QString& note) {
+    if (trust_ == nullptr) {
+        return false;
+    }
+    const bool ok = trust_->set_note(code.toStdString(), note.toStdString());
+    if (ok) {
+        SCLD_LOG(log_, foundation::LogLevel::Info, "trust",
+                 "设置备注 code=" + code.toStdString());
+    }
+    return ok;
 }
 
 // ---------------- 设置页接线（Doc18 §3.3） ----------------

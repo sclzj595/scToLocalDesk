@@ -24,6 +24,7 @@ public:
     struct Entry {
         std::string code;
         std::string name;
+        std::string note;        ///< 设备备注（PRD P6：标注对方是谁，可空）
         std::string trusted_at;
     };
 
@@ -34,8 +35,11 @@ public:
 
     bool is_trusted(const std::string& code) const;
 
-    /// 已存在则刷新 name/trusted_at，否则追加；变更即落盘
+    /// 已存在则刷新 name/trusted_at（保留原 note），否则追加；变更即落盘
     void trust(const std::string& code, const std::string& name);
+
+    /// 设置备注（PRD P6）：条目存在才改并落盘；返回 false=无此码
+    bool set_note(const std::string& code, const std::string& note);
 
     /// 无此码为空操作（不触发落盘）
     void untrust(const std::string& code);

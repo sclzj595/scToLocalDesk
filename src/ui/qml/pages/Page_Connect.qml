@@ -14,8 +14,8 @@ Item {
 
     signal connectRequested(string code)
 
-    /// 信任缓存真数据源（Doc18 §3.2）：[{name, code, time}]；
-    /// 页面显示时刷新（信任变更发生在确认弹窗，切页回来即最新）
+    /// 信任缓存真数据源（Doc18 §3.2）：[{name, code, note, time}]；
+    /// 页面显示时刷新（信任变更发生在确认弹窗/删除备注操作，切页回来即最新）
     property var history: []
 
     function reloadHistory() {
@@ -280,6 +280,7 @@ Item {
             }
 
             delegate: Rectangle {
+                id: histCard
                 width: ListView.view.width
                 height: 64
                 radius: Theme.cardRadius
@@ -292,39 +293,95 @@ Item {
                     }
                 }
 
-                RowLayout {
+                ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 14
+                    anchors.margins: 10
+                    spacing: 2
 
-                    Text {
-                        text: modelData.name
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontCard
-                        font.weight: Font.Medium
-                        color: Theme.textMain
-                    }
-                    Text {
-                        text: modelData.code
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontBody
-                        font.letterSpacing: 1
-                        color: Theme.primary
-                    }
-                    Item {
+                    RowLayout {
                         Layout.fillWidth: true
+                        spacing: 14
+                        Text {
+                            text: modelData.name
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontCard
+                            font.weight: Font.Medium
+                            color: Theme.textMain
+                        }
+                        Text {
+                            text: modelData.code
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontBody
+                            font.letterSpacing: 1
+                            color: Theme.primary
+                        }
+                        Item {
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            text: modelData.time
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontHint
+                            color: Theme.textHint
+                        }
+                        Text {
+                            text: "连接"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontBody
+                            color: Theme.primary
+                        }
                     }
-                    Text {
-                        text: modelData.time
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontHint
-                        color: Theme.textHint
-                    }
-                    Text {
-                        text: "连接"
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontBody
-                        color: Theme.primary
+
+                    // 第二行：备注（PRD P6）+ hover 操作按钮
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        // 备注显示/编辑双态：淡字提示"添加备注"，可点进编辑
+                        TextInput {
+                            id: noteEdit
+                            Layout.fillWidth: true
+                            text: modelData.note
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontHint
+                            color: modelData.note !== "" ? Theme.textSecond : Theme.textHint
+                            clip: true
+                            verticalAlignment: TextInput.AlignVCenter
+                            Text {  // 占位提示（TextInput 无 placeholderText）
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: noteEdit.text === "" && !noteEdit.activeFocus
+                                text: "添加备注（标注对方是谁）"
+                                font: noteEdit.font
+                                color: Theme.textHint
+                            }
+                            onEditingFinished: {
+                                if (text !== modelData.note) {
+                                    ScLocaldesk.setTrustNote(modelData.code, text);
+                                    root.reloadHistory();
+                                }
+                            }
+                        }
+
+                        Text {
+                            visible: hma.containsMouse
+                            text: "删除"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontHint
+                            color: Theme.accentRed
+                            opacity: delMa.containsMouse ? 1.0 : 0.75
+
+                            MouseArea {
+                                id: delMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    ScLocaldesk.untrust(modelData.code);
+                                    root.reloadHistory();
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -333,6 +390,7 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
+                    // 点击卡片非备注/删除区 → 连接；按钮区自吞事件不上抛
                     onClicked: root.connectRequested(modelData.code)
                 }
             }
