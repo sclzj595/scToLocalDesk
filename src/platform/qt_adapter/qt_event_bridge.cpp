@@ -60,6 +60,13 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
             emit deviceOffline(QString::fromStdString(e.device_alias));
         }, Qt::QueuedConnection);
     });
+    bus->subscribe<Evt_AliasConflict>([this](const Evt_AliasConflict& e) {
+        // PRD P5 别名治理：断头信号接通——UI 引导用户改名
+        QMetaObject::invokeMethod(this, [this, e] {
+            emit aliasConflict(QString::fromStdString(e.device_alias),
+                               QString::fromStdString(e.conflict_ip));
+        }, Qt::QueuedConnection);
+    });
     bus->subscribe<Evt_ConnectRequest>([this](const Evt_ConnectRequest& e) {
         QMetaObject::invokeMethod(this, [this, e] {
             if (!e.auto_approved) {
@@ -215,10 +222,45 @@ void QtEventBridge::disconnectSession() {
     }
 }
 
+bool QtEventBridge::validAlias(const QString& alias) const {
+    // PRD P5 别名治理：trim 后 3~20 字符（QString::length 按字符计，中文占 1）
+    const QString t = alias.trimmed();
+    return t.length() >= 3 && t.length() <= 20;
+}
+
 bool QtEventBridge::startControl(const QString& alias, bool unattended,
                                  const QString& password) {
-    return sessions_ != nullptr
-        && sessions_->connect_to_peer(alias.toStdString(), unattended,
+    if (sessions_ == nullptr) {
+        SCLD_LOG(log_, foundation::LogLevel::Warn, "session",
+                 "发起协助失败：服务未就绪");
+        emit controlStartFailed(QStringLiteral("服务未就绪"));
+        return false;
+    }
+    // 寻址失败细分文案（PRD P5）：connect_to_peer 返回 bool 无原因，桥层
+    // 按可查状态预判——自连/会话占用/设备不在线三态
+    const QString self = selfAlias();
+    if (!self.isEmpty() && alias == self) {
+        SCLD_LOG(log_, foundation::LogLevel::Warn, "session",
+                 "发起协助失败：目标为本机 [alias=" + alias.toStdString() + "]");
+        emit controlStartFailed(QStringLiteral("不能发起对本机的协助"));
+        return false;
+    }
+    using SessState = RemoteSessionService::SessState;
+    if (sessions_->state() != SessState::Idle) {
+        SCLD_LOG(log_, foundation::LogLevel::Warn, "session",
+                 "发起协助失败：会话占用 state=" + std::to_string(
+                     static_cast<int>(sessions_->state())));
+        emit controlStartFailed(QStringLiteral("当前会话尚未结束，请先断开"));
+        return false;
+    }
+    if (aliases_ == nullptr || !aliases_->resolve(alias.toStdString()).has_value()) {
+        SCLD_LOG(log_, foundation::LogLevel::Warn, "session",
+                 "发起协助失败：未发现设备 [alias=" + alias.toStdString() + "]");
+        emit controlStartFailed(QStringLiteral("未发现设备 [%1]，对方可能已下线")
+                                    .arg(alias));
+        return false;
+    }
+    return sessions_->connect_to_peer(alias.toStdString(), unattended,
                                       password.toStdString());
 }
 
@@ -475,8 +517,11 @@ void QtEventBridge::settingsSetValue(const QString& key, const QString& value) {
     bool num_ok = false;
 
     if (k == "general.alias") {
-        if (v.empty()) {
-            warn_invalid("不能为空");
+        if (!validAlias(value)) {
+            // PRD P5 别名治理：3~20 字符，拒绝不落盘，UI 经 settingsRejected 提示
+            emit settingsRejected(key, QStringLiteral("连接名需 3~20 个字符"));
+            SCLD_LOG(log_, foundation::LogLevel::Warn, "settings",
+                     "连接名非法已拒绝 alias=" + v);
             return;
         }
         cfg_->alias = v;

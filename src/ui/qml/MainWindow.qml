@@ -8,6 +8,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import "."
 import "menu"
 import "dock"
@@ -234,6 +235,8 @@ ApplicationWindow {
     // ---------------- Toast ----------------
     Toast {
         id: toast
+        x: 400   // 保守固定位（DPI 下动态锚定不可靠，见 Toast.qml 注 2）
+        y: 520
     }
 
     // 菜单动作分发（对接 bridge / 页面栈）
@@ -294,6 +297,18 @@ ApplicationWindow {
         }
         function onConnectDenied(alias, reason) {
             toast.show((alias === "" ? "" : alias + "：") + reason);
+        }
+        function onControlStartFailed(reason) {
+            // PRD P5 寻址失败细分：自连 / 会话占用 / 设备不在线
+            toast.show(reason);
+        }
+        function onAliasConflict(alias, conflictIp) {
+            // PRD P5 别名冲突：引导改名（设置 → 本机连接名）
+            toast.show("检测到别名冲突：" + alias + "（" + conflictIp
+                       + "），请在设置中修改本机连接名");
+        }
+        function onSettingsRejected(key, why) {
+            toast.show("保存被拒绝：" + why);
         }
         function onSessionStarted(alias) {
             dockBar.currentIndex = 2;        // 切远程画面页（管线已在跑）

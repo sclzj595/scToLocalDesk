@@ -289,6 +289,24 @@ int main(int argc, char* argv[]) {
                 },
                 Qt::QueuedConnection);
         });
+    // 别名冲突（PRD P5）：组播发现同别名异 IP 时引导改名
+    bus->subscribe<Evt_AliasConflict>(
+        [&win, &logger](const Evt_AliasConflict& e) {
+            QMetaObject::invokeMethod(
+                &win,
+                [&win, &logger, e] {
+                    SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn,
+                             "alias", "别名冲突 alias=" + e.device_alias
+                                          + " ip=" + e.conflict_ip);
+                    QMessageBox::warning(
+                        &win, QStringLiteral("别名冲突"),
+                        QStringLiteral("检测到其他设备使用别名「%1」（%2），"
+                                       "请在设置中修改本机连接名")
+                            .arg(QString::fromStdString(e.device_alias),
+                                 QString::fromStdString(e.conflict_ip)));
+                },
+                Qt::QueuedConnection);
+        });
     win.setTrustStore(&trust_store);
     win.set_config_store(&ini, &cfg);
     win.show();

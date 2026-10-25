@@ -72,6 +72,8 @@ public:
     Q_INVOKABLE bool rejectFile(const QString& fileId);   ///< 接收确认弹窗【拒绝】
     Q_INVOKABLE bool setUnattendedEnabled(bool enabled, const QString& password);
     Q_INVOKABLE void copyText(const QString& text);       ///< 连接码复制进剪贴板
+    /// 连接名校验（PRD P5 别名治理）：trim 后 3~20 字符；设置页/发起前共用
+    Q_INVOKABLE bool validAlias(const QString& alias) const;
     /// 确认弹窗系统级置顶（PRD 确认三件套）：Win32 SetWindowPos TOPMOST，
     /// 弹窗关闭时调 off 恢复；非 Windows 平台降级 raise+activate
     Q_INVOKABLE void setSelfWindowTopMost(bool on);
@@ -119,11 +121,14 @@ signals:
     // 发现
     void deviceOnline(const QString& alias, const QString& ip);
     void deviceOffline(const QString& alias);
-    void aliasConflict(const QString& alias, const QString& conflictIp);
+    void aliasConflict(const QString& alias, const QString& conflictIp);  ///< 别名冲突（PRD P5：UI 引导改名）
+    // 设置
+    void settingsRejected(const QString& key, const QString& why);  ///< 校验拒绝（PRD P5：QML toast）
     // 会话
     void connectRequest(const QString& alias, const QString& peerIp);  ///< 人工确认弹窗触发（含请求方 IP）
     void connectRequestTimedOut();  ///< 确认弹窗 30s 未响应已自动拒，UI 关弹窗
     void connectDenied(const QString& alias, const QString& reason);  ///< 本地拦截提示
+    void controlStartFailed(const QString& reason);  ///< 发起协助失败细分文案（PRD P5）
     void sessionStarted(const QString& alias);
     void sessionClosed(const QString& reasonText);
     // 文件（dir: 0 发送 1 接收；name 供 UI 首次插条目）

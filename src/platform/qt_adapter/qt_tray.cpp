@@ -7,6 +7,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QIcon>
+#include <QStyle>
 
 namespace sc::localdesk::platform {
 
@@ -26,8 +27,17 @@ TrayController::TrayController(QObject* parent)
 
     tray_.setContextMenu(&menu_);
     tray_.setToolTip(QStringLiteral("SC 邻桌"));
-    tray_.setIcon(QIcon::fromTheme(QStringLiteral("computer"),
-                                   QApplication::windowIcon()));
+    // Windows 无 freedesktop 图标主题，fromTheme 恒失败；应用未设 windowIcon
+    // 时回退仍为空（"No Icon set" 警告+托盘空白）——SP_ComputerIcon 系统兜底
+    const QIcon fallback =
+        QApplication::style() != nullptr
+            ? QApplication::style()->standardIcon(QStyle::SP_ComputerIcon)
+            : QIcon();
+    QIcon icon = QIcon::fromTheme(QStringLiteral("computer"), fallback);
+    if (icon.isNull()) {
+        icon = fallback;
+    }
+    tray_.setIcon(icon);
 
     connect(show_action_, &QAction::triggered, this,
             &TrayController::showMainRequested);
