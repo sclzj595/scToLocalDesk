@@ -18,7 +18,7 @@ namespace sc::localdesk::foundation {
 using json = nlohmann::json;
 
 /// 解析（noexcept 包装）：非法输入返回 nullopt，不抛异常打断业务流
-[[nodiscard]] inline std::optional<json> json_parse(std::string_view text) noexcept {
+inline std::optional<json> json_parse(std::string_view text) noexcept {
     try {
         return json::parse(text);
     }
@@ -29,7 +29,7 @@ using json = nlohmann::json;
 
 /// 紧凑序列化：中文保持 UTF-8 明文（ensure_ascii=false，协议可读），
 /// 非法 UTF-8 替换而非抛异常（error_handler=replace）
-[[nodiscard]] inline std::string json_dump(const json& j) {
+inline std::string json_dump(const json& j) {
     return j.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 

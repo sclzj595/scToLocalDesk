@@ -31,10 +31,10 @@ public:
     void upsert_device(const DeviceInfo& dev);
 
     /// 别名解析（控制端发起协助前调用，Doc07 §1）
-    [[nodiscard]] std::optional<DeviceInfo> resolve(const std::string& alias) const;
+    std::optional<DeviceInfo> resolve(const std::string& alias) const;
 
     /// IT 视图在线列表
-    [[nodiscard]] std::vector<DeviceInfo> online_devices() const;
+    std::vector<DeviceInfo> online_devices() const;
 
     /// 周期清理超时设备并发布离线事件（心跳线程调用）
     void cleanup_expired();
@@ -43,7 +43,7 @@ public:
     void set_offline_timeout(int64_t timeout_us);
     void set_static_map(const std::vector<DeviceInfo>& table);
 
-    [[nodiscard]] const std::string& self_alias() const;
+    const std::string& self_alias() const;
 
 private:
     mutable std::mutex mtx_;

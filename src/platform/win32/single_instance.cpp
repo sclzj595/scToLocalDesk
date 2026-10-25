@@ -23,7 +23,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool already_running() const { return already_running_; }
+    bool already_running() const { return already_running_; }
 
     /// 唤起已运行实例的主窗口（广播自定义消息）
     void activate_existing() const {

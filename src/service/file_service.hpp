@@ -35,15 +35,15 @@ public:
     // ---------------- IFileTransfer ----------------
 
     /// 发起发送：读文件 → 建 Transfer → 线程池分片发送
-    [[nodiscard]] bool send_file(const std::string& abs_path) override;
-    [[nodiscard]] bool accept_file(const FileMeta& meta, const std::string& save_dir) override;
+    bool send_file(const std::string& abs_path) override;
+    bool accept_file(const FileMeta& meta, const std::string& save_dir) override;
     bool reject_file(const std::string& file_id) override;
     void cancel(const std::string& file_id) override;
     void set_event_callback(FileEventCb cb) override;
 
     /// 会话服务 Running 态分派入口（session → file）
     void on_file_meta(const uint8_t* body, size_t len);
-    [[nodiscard]] bool on_file_chunk(const uint8_t* body, size_t len);
+    bool on_file_chunk(const uint8_t* body, size_t len);
 
     /// 设置分片大小（config.ini file.chunk_size_kb，Doc17 §3.5，64~1024）
     void set_chunk_size(uint32_t chunk_size_kb);
@@ -55,7 +55,7 @@ public:
     /// 开启时对端文件先挂 pending 并发 Evt_FileMetaReceived，等 UI accept/reject
     void set_confirm_enabled(bool enabled);
     /// UI 确认后落盘接收（pending 中查找）
-    [[nodiscard]] bool accept_pending(const std::string& file_id);
+    bool accept_pending(const std::string& file_id);
     /// UI 拒绝
     bool reject_pending(const std::string& file_id);
     /// 会话结束资源回收：中止全部收发 + 清空待确认（Doc09 §5）

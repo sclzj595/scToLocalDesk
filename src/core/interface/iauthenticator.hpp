@@ -15,11 +15,11 @@ public:
     virtual ~IAuthenticator() = default;
 
     /// 连接请求鉴权路由决策（PendingApprove 入口）
-    [[nodiscard]] virtual AuthResult decide(const AuthRequest& req) = 0;
+    virtual AuthResult decide(const AuthRequest& req) = 0;
 
     /// 无人值守挑战应答校验：proof = HMAC-SHA256(challenge, K)（Doc05 §6）
     /// 实现必须使用常数时间比较，防时序侧信道（Doc16 §2.8）
-    [[nodiscard]] virtual bool verify_proof(std::string_view challenge,
+    virtual bool verify_proof(std::string_view challenge,
                                             std::string_view proof) = 0;
 };
 

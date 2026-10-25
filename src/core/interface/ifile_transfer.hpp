@@ -32,10 +32,10 @@ public:
     using FileEventCb = std::function<void(const FileEvent&)>;
 
     /// 发起发送（读取本地 abs_path，按 chunk_size_kb 分片入队）
-    [[nodiscard]] virtual bool send_file(const std::string& abs_path) = 0;
+    virtual bool send_file(const std::string& abs_path) = 0;
 
     /// 接收端：确认接收并指定保存目录（前置确认开关由 service 层裁决）
-    [[nodiscard]] virtual bool accept_file(const FileMeta& meta, const std::string& save_dir) = 0;
+    virtual bool accept_file(const FileMeta& meta, const std::string& save_dir) = 0;
 
     virtual bool reject_file(const std::string& file_id) = 0;
 

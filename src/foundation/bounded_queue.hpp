@@ -111,17 +111,17 @@ public:
         closed_ = false;
     }
 
-    [[nodiscard]] size_t size() const {
+    size_t size() const {
         std::lock_guard<std::mutex> lk(mtx_);
         return queue_.size();
     }
 
-    [[nodiscard]] bool closed() const {
+    bool closed() const {
         std::lock_guard<std::mutex> lk(mtx_);
         return closed_;
     }
 
-    [[nodiscard]] bool empty() const {
+    bool empty() const {
         std::lock_guard<std::mutex> lk(mtx_);
         return queue_.empty();
     }

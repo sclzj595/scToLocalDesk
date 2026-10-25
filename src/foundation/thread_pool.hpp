@@ -38,7 +38,7 @@ public:
 
     /// 提交任务，返回 future（任务抛异常则在 future.get() 重抛）
     template <typename F, typename... Args>
-    [[nodiscard]] auto submit(F&& f, Args&&... args)
+    auto submit(F&& f, Args&&... args)
         -> std::future<std::invoke_result_t<std::decay_t<F>, std::decay_t<Args>...>>
     {
         using R = std::invoke_result_t<std::decay_t<F>, std::decay_t<Args>...>;
@@ -79,7 +79,7 @@ public:
         workers_.clear();
     }
 
-    [[nodiscard]] size_t pending_count() const {
+    size_t pending_count() const {
         std::lock_guard<std::mutex> lk(mtx_);
         return queue_.size();
     }

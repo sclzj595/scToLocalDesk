@@ -22,7 +22,7 @@ public:
 
     void setPeer(const QString& alias, const QString& ip, const QString& code);
     /// 用户是否勾选了"记住此设备，下次免确认"（V1.0 TODO 写入 TrustStore）
-    [[nodiscard]] bool rememberChecked() const;
+    bool rememberChecked() const;
 
 protected:
     void paintEvent(QPaintEvent* event) override;

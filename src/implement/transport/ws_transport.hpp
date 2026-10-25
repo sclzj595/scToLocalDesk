@@ -27,7 +27,7 @@ public:
 
     // ---------------- ITransport ----------------
 
-    [[nodiscard]] bool start_server(uint16_t port) override;
+    bool start_server(uint16_t port) override;
     void connect_client(const std::string& host, uint16_t port) override;
     void send_binary(const std::vector<uint8_t>& data) override;
     void close() override;
@@ -35,7 +35,7 @@ public:
     void set_state_callback(OnStateCb cb) override;
 
     /// start_server/connect_client 失败原因（Qt errorString，诊断端口占用类问题）
-    [[nodiscard]] std::string last_error() const override {
+    std::string last_error() const override {
         return last_error_.toStdString();
     }
 

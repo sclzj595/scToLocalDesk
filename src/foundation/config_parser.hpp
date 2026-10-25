@@ -26,7 +26,7 @@ public:
     }
 
     /// 加载 ini；文件不存在返回 false（调用方用默认值初始化后 save）
-    [[nodiscard]] bool load() {
+    bool load() {
         std::lock_guard<std::mutex> lk(mtx_);
         data_.clear();
         std::error_code ec;
@@ -67,7 +67,7 @@ public:
     }
 
     /// 原子落盘：全量重写 tmp → rename 覆盖
-    [[nodiscard]] bool save() const {
+    bool save() const {
         std::lock_guard<std::mutex> lk(mtx_);
         std::filesystem::path tmp = path_;
         tmp += L".tmp";
@@ -100,7 +100,7 @@ public:
 
     // ---------------- 读取（缺失/非法返回默认值，Doc12 §5） ----------------
 
-    [[nodiscard]] std::string get_str(std::string_view sec, std::string_view key,
+    std::string get_str(std::string_view sec, std::string_view key,
                                       std::string def) const {
         std::lock_guard<std::mutex> lk(mtx_);
         const auto s = data_.find(to_lower(sec));
@@ -111,7 +111,7 @@ public:
         return k == s->second.end() ? def : k->second;
     }
 
-    [[nodiscard]] int get_int(std::string_view sec, std::string_view key, int def) const {
+    int get_int(std::string_view sec, std::string_view key, int def) const {
         const auto s = get_str(sec, key, "");
         if (s.empty()) {
             return def;
@@ -121,7 +121,7 @@ public:
         return (end == s.c_str() || *end != '\0') ? def : static_cast<int>(v);
     }
 
-    [[nodiscard]] bool get_bool(std::string_view sec, std::string_view key, bool def) const {
+    bool get_bool(std::string_view sec, std::string_view key, bool def) const {
         const auto s = to_lower(get_str(sec, key, ""));
         if (s == "true" || s == "1" || s == "yes" || s == "on") {
             return true;
@@ -148,13 +148,13 @@ public:
         set_str(sec, key, val ? "true" : "false");
     }
 
-    [[nodiscard]] bool dirty() const {
+    bool dirty() const {
         std::lock_guard<std::mutex> lk(mtx_);
         return dirty_;
     }
 
     void set_path(std::filesystem::path p) { path_ = std::move(p); }
-    [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+    const std::filesystem::path& path() const noexcept { return path_; }
 
 private:
     static std::string trim(const char* s) {

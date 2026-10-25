@@ -75,14 +75,14 @@ public:
     // ---------------- 被控端 ----------------
 
     /// 启动 WebSocket 监听并接管 Transport 回调（Doc09 §2）
-    [[nodiscard]] bool start_listening(uint16_t port);
+    bool start_listening(uint16_t port);
     void stop_listening();
 
     // ---------------- 控制端 ----------------
 
     /// 发起协助：解析别名 → 连接 → 发 REQUEST_CONNECT
     /// unattended=true 时 password 为设置页输入的访问密码（瞬态，proof 发送后即清）
-    [[nodiscard]] bool connect_to_peer(const std::string& alias, bool unattended,
+    bool connect_to_peer(const std::string& alias, bool unattended,
                                        const std::string& password = "");
 
     // ---------------- UI 回调（人工确认弹窗，Doc13 §3.1） ----------------
@@ -96,10 +96,10 @@ public:
     void close_session(CloseReason reason = CloseReason::Normal);
 
     /// 会话中发送业务帧（画面/键鼠/文件），Running 前全部拒绝（Doc09 §3.1）
-    [[nodiscard]] bool send_business_frame(const std::vector<uint8_t>& frame);
+    bool send_business_frame(const std::vector<uint8_t>& frame);
 
     /// 控制端键鼠事件出口（Doc18 §4.4）：MouseKeyBody → MOUSE_KEY 帧，Running 红线内
-    [[nodiscard]] bool send_input_event(const protocol::MouseKeyBody& mk);
+    bool send_input_event(const protocol::MouseKeyBody& mk);
 
     void set_file_service(std::shared_ptr<FileService> files);
     void set_stream_service(std::shared_ptr<ScreenStreamService> stream);
@@ -113,8 +113,8 @@ public:
     /// 应用设置页推流参数（Doc17 session.fps / session.jpeg_quality）
     void set_stream_params(int fps, int quality);
 
-    [[nodiscard]] SessState state() const;
-    [[nodiscard]] std::string session_id() const;
+    SessState state() const;
+    std::string session_id() const;
 
     // ---------------- Transport 回调（IO 线程触发） ----------------
 

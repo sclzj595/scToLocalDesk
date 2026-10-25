@@ -33,6 +33,6 @@ public:
 };
 
 /// 工厂：平台注入器（win32 = SendInput；仅 WIN32 目标链接实现）
-[[nodiscard]] std::shared_ptr<IInputInjector> make_input_injector();
+std::shared_ptr<IInputInjector> make_input_injector();
 
 }  // namespace sc::localdesk

@@ -44,7 +44,7 @@ public:
                         QObject* parent = nullptr);
 
     /// 启动：join 组播组 + 周期心跳；返回 false = 组播加入失败（上层切静态映射）
-    [[nodiscard]] bool start();
+    bool start();
     void stop();
 
     void update_self(const std::string& alias, uint16_t ws_port);
@@ -57,7 +57,7 @@ private slots:
     void on_ready_read();
 
 private:
-    [[nodiscard]] QByteArray build_heartbeat() const;
+    QByteArray build_heartbeat() const;
 
     Options opt_;
     AliasService* aliases_;

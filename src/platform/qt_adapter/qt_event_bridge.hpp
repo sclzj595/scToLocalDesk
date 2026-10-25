@@ -48,9 +48,9 @@ public:
 
     // ---------------- QML 绑定 ----------------
 
-    [[nodiscard]] QString selfAlias() const;
-    [[nodiscard]] bool unattendedEnabled() const;
-    [[nodiscard]] static bool hasGlassBlur() {
+    QString selfAlias() const;
+    bool unattendedEnabled() const;
+    static bool hasGlassBlur() {
 #ifdef SCLD_HAS_MULTIEFFECT
         return SCLD_HAS_MULTIEFFECT != 0;
 #else
@@ -91,7 +91,7 @@ public:
     void set_self_code(uint32_t code) {
         self_code_ = code;
     }
-    [[nodiscard]] QString selfCode() const;
+    QString selfCode() const;
     /// 按连接码反查在线设备 IP（确认弹窗 peerIp 真值，Doc18 §3.4）；未知返回空
     Q_INVOKABLE QString deviceIp(const QString& code) const;
     /// 按连接码反查在线设备别名（连接码页发起会话用，Doc18 §4.3）；未知返回空
@@ -102,7 +102,7 @@ public:
     void set_listening(bool on) {
         listening_ = on;
     }
-    [[nodiscard]] bool listening() const {
+    bool listening() const {
         return listening_;
     }
     /// 读配置值（key 契约同 AppConfig section.key，未知返回空串）

@@ -103,7 +103,7 @@ public:
     }
 
     void set_level(LogLevel lv) override { level_.store(lv, std::memory_order_relaxed); }
-    [[nodiscard]] LogLevel level() const override {
+    LogLevel level() const override {
         return level_.load(std::memory_order_relaxed);
     }
 
@@ -152,7 +152,7 @@ private:
     }
 
     /// 第 n 代归档路径：scToLocalDesk.log → scToLocalDesk.log.1（ASCII 后缀拼接跨平台安全）
-    [[nodiscard]] std::filesystem::path archive_path(int n) const {
+    std::filesystem::path archive_path(int n) const {
         std::filesystem::path p = file_;
         p += "." + std::to_string(n);
         return p;

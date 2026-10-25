@@ -21,7 +21,7 @@
 namespace sc::localdesk::foundation {
 
 template <typename E>
-[[nodiscard]] constexpr std::string_view enum_name(E value) noexcept {
+constexpr std::string_view enum_name(E value) noexcept {
 #if SCLD_HAS_MAGIC_ENUM
     return magic_enum::enum_name(value);
 #else
@@ -31,7 +31,7 @@ template <typename E>
 }
 
 template <typename E>
-[[nodiscard]] constexpr std::optional<E> enum_cast(std::string_view name) noexcept {
+constexpr std::optional<E> enum_cast(std::string_view name) noexcept {
 #if SCLD_HAS_MAGIC_ENUM
     const auto v = magic_enum::enum_cast<E>(name, magic_enum::case_insensitive);
     if (v.has_value()) {

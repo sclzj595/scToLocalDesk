@@ -24,7 +24,7 @@ public:
     SingleInstanceGuard& operator=(const SingleInstanceGuard&) = delete;
 
     /// true = 首实例（已开始监听）；false = 已有实例在跑（已投递唤起请求，调用方应退出）
-    [[nodiscard]] bool acquire(const QString& key);
+    bool acquire(const QString& key);
 
     /// 二次启动到达时唤起主窗口（首实例内、主线程事件循环中回调）
     void set_raise_callback(std::function<void()> cb);

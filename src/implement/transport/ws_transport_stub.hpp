@@ -21,7 +21,7 @@ public:
     explicit WsTransport(const QString&) {
     }
 
-    [[nodiscard]] bool start_server(uint16_t) override {
+    bool start_server(uint16_t) override {
         return false;
     }
     void connect_client(const std::string&, uint16_t) override {

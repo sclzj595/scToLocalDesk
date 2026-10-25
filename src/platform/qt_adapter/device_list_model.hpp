@@ -43,10 +43,10 @@ public:
                     foundation::ILogger* logger, QObject* parent = nullptr);
     ~DeviceListModel() override;
 
-    [[nodiscard]] int rowCount(const QModelIndex& parent) const override;
-    [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;
-    [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
-    [[nodiscard]] int count() const;
+    int rowCount(const QModelIndex& parent) const override;
+    QVariant data(const QModelIndex& index, int role) const override;
+    QHash<int, QByteArray> roleNames() const override;
+    int count() const;
 
     /// 供 Widgets 复用的增量接口：上线/离线/变化时调用
     void on_device_online(const std::string& alias);

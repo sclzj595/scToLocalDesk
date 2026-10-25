@@ -32,7 +32,7 @@ public:
     explicit TrustStore(std::filesystem::path file,
                         foundation::ILogger* logger = nullptr);
 
-    [[nodiscard]] bool is_trusted(const std::string& code) const;
+    bool is_trusted(const std::string& code) const;
 
     /// 已存在则刷新 name/trusted_at，否则追加；变更即落盘
     void trust(const std::string& code, const std::string& name);
@@ -42,10 +42,10 @@ public:
 
     void clear();
 
-    [[nodiscard]] size_t count() const;
+    size_t count() const;
 
     /// 全表快照（连接码页"最近连接"真数据源，Doc18 §3.2）
-    [[nodiscard]] std::vector<Entry> list() const;
+    std::vector<Entry> list() const;
 
 private:
     void load();

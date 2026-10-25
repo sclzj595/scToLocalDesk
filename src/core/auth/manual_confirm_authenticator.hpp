@@ -14,12 +14,12 @@ public:
     ManualConfirmAuthenticator() = default;
 
     /// 人工模式：任何请求都交给 UI 确认（Doc09 §3 红线：握手成功 ≠ 会话可用）
-    [[nodiscard]] AuthResult decide(const AuthRequest& /*req*/) override {
+    AuthResult decide(const AuthRequest& /*req*/) override {
         return AuthResult::NeedManualConfirm;
     }
 
     /// 人工模式无挑战应答：恒 false（调用方不应到达此处）
-    [[nodiscard]] bool verify_proof(std::string_view /*challenge*/,
+    bool verify_proof(std::string_view /*challenge*/,
                                     std::string_view /*proof*/) override {
         return false;
     }

@@ -20,10 +20,10 @@ public:
     virtual void stop() = 0;
 
     /// 别名解析：alias -> ip:port；未命中返回 nullopt（Doc07 §1）
-    [[nodiscard]] virtual std::optional<DeviceInfo> resolve(const std::string& alias) = 0;
+    virtual std::optional<DeviceInfo> resolve(const std::string& alias) = 0;
 
     /// IT 视图在线列表（已过滤超时）
-    [[nodiscard]] virtual std::vector<DeviceInfo> online_devices() const = 0;
+    virtual std::vector<DeviceInfo> online_devices() const = 0;
 
     /// 静态映射模式（multicast_enabled=false）：加载配置表（Doc07 §7）
     virtual void set_static_map(const std::vector<DeviceInfo>& table) = 0;

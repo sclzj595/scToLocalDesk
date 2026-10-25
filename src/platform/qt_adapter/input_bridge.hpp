@@ -23,7 +23,7 @@ struct InputBridge final {
     /// 局部坐标 → 归一化（黑边区 clamp 进画面，主流远程桌面行为）。
     /// action 为 MouseAction 底层值；wheel 仅 Wheel 动作使用（120 = 一格）。
     /// 无帧（video 空）或显示区为空返回 nullopt，调用方不发帧。
-    [[nodiscard]] static std::optional<protocol::MouseKeyBody> map_mouse(
+    static std::optional<protocol::MouseKeyBody> map_mouse(
         int action, const QPointF& local, const QSizeF& view,
         const QSizeF& video, int wheel = 0) {
         if (video.isEmpty() || view.isEmpty()) {
@@ -51,7 +51,7 @@ struct InputBridge final {
 
     /// Qt::Key → Windows VK（scan 填 0 走 VK 路径注入）。
     /// ASCII 区标点的 Qt 值与 VK 不一致（OEM 码），一律查表；表外丢弃。
-    [[nodiscard]] static std::optional<protocol::MouseKeyBody> map_key(
+    static std::optional<protocol::MouseKeyBody> map_key(
         int qt_key, bool down) {
         uint16_t vk = 0;
         bool hit = false;

@@ -29,7 +29,7 @@ public:
     TempJson(const TempJson&) = delete;
     TempJson& operator=(const TempJson&) = delete;
 
-    [[nodiscard]] const std::filesystem::path& path() const { return path_; }
+    const std::filesystem::path& path() const { return path_; }
 
 private:
     std::filesystem::path path_;

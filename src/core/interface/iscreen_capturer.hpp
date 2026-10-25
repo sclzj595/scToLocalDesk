@@ -13,7 +13,7 @@ public:
     virtual ~IScreenCapturer() = default;
 
     /// 初始化采集后端；失败时上层自动降级到下一候选（Doc10 §1）
-    [[nodiscard]] virtual bool init() = 0;
+    virtual bool init() = 0;
 
     /// 抓取一帧；无新帧返回 false，不阻塞（采集线程专用）
     virtual bool grab(VideoFrame& out) = 0;

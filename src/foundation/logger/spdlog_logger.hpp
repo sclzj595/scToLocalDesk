@@ -83,7 +83,7 @@ public:
         }
     }
 
-    [[nodiscard]] LogLevel level() const override {
+    LogLevel level() const override {
         return logger_ != nullptr ? from_spd(logger_->level()) : LogLevel::Info;
     }
 

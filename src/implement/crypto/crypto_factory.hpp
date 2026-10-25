@@ -11,6 +11,6 @@
 namespace sc::localdesk {
 
 /// V1.0：make_default_crypto() 定义于 openssl_crypto.cpp
-[[nodiscard]] std::shared_ptr<ICrypto> make_default_crypto();
+std::shared_ptr<ICrypto> make_default_crypto();
 
 }  // namespace sc::localdesk

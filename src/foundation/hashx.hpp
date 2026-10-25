@@ -16,13 +16,13 @@
 namespace sc::localdesk::foundation {
 
 /// xxH3-64：缓冲区指纹/校验（seed 隔离不同用途域防碰撞误判）
-[[nodiscard]] inline uint64_t xxh3_64(const void* data, size_t len,
+inline uint64_t xxh3_64(const void* data, size_t len,
                                       uint64_t seed = 0) noexcept {
     return XXH3_64bits_withSeed(data, len, seed);
 }
 
 /// string_view 便捷重载
-[[nodiscard]] inline uint64_t xxh3_64(std::string_view data,
+inline uint64_t xxh3_64(std::string_view data,
                                       uint64_t seed = 0) noexcept {
     return xxh3_64(data.data(), data.size(), seed);
 }

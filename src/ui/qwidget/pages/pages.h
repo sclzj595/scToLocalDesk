@@ -79,7 +79,7 @@ public:
     void apply_snapshot();
 
     /// 按连接码反查在线设备 IP（确认弹窗真值，Doc18 §3.4）；未知返回空
-    [[nodiscard]] QString deviceIp(const QString& code) const;
+    QString deviceIp(const QString& code) const;
 
 signals:
     /// trusted=false 时由主窗口弹确认弹窗

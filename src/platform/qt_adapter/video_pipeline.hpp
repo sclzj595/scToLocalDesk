@@ -44,11 +44,11 @@ public:
     void stop();
 
     /// 解码 FPS（稳态值，设置页/诊断用）
-    [[nodiscard]] double fps() const { return fps_.load(std::memory_order_relaxed); }
+    double fps() const { return fps_.load(std::memory_order_relaxed); }
 
     /// 最近一帧分辨率（键鼠归一化数据源，Doc18 §4.4）；无帧为 (0,0)
     Q_PROPERTY(QSize frameSize READ frameSize NOTIFY frameSizeChanged)
-    [[nodiscard]] QSize frameSize() const {
+    QSize frameSize() const {
         return {static_cast<int>(frame_w_.load(std::memory_order_relaxed)),
                 static_cast<int>(frame_h_.load(std::memory_order_relaxed))};
     }

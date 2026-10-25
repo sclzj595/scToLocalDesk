@@ -85,8 +85,8 @@ public:
         }
     }
 
-    [[nodiscard]] uint32_t width() const noexcept { return width_; }
-    [[nodiscard]] uint32_t height() const noexcept { return height_; }
+    uint32_t width() const noexcept { return width_; }
+    uint32_t height() const noexcept { return height_; }
 
 private:
     HDC screen_dc_{nullptr};

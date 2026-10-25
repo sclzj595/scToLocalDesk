@@ -29,7 +29,7 @@ public:
     TempIni(const TempIni&) = delete;
     TempIni& operator=(const TempIni&) = delete;
 
-    [[nodiscard]] const std::filesystem::path& path() const { return path_; }
+    const std::filesystem::path& path() const { return path_; }
 
 private:
     std::filesystem::path path_;

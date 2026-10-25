@@ -19,7 +19,7 @@ public:
     virtual ~ITransport() = default;
 
     /// 被控端：启动监听。端口占用返回 false（Doc08 §2）
-    [[nodiscard]] virtual bool start_server(uint16_t port) = 0;
+    virtual bool start_server(uint16_t port) = 0;
 
     /// 控制端：向对端发起连接（异步，结果经状态回调上抛）
     virtual void connect_client(const std::string& host, uint16_t port) = 0;
@@ -39,7 +39,7 @@ public:
     virtual void set_state_callback(OnStateCb cb) = 0;
 
     /// start_server/connect_client 最近一次失败原因（可观测性；无失败为空）
-    [[nodiscard]] virtual std::string last_error() const {
+    virtual std::string last_error() const {
         return {};
     }
 };

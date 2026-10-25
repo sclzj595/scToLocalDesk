@@ -41,14 +41,14 @@ public:
         last_ms_ = 0.0;
     }
 
-    [[nodiscard]] uint64_t count() const { return count_; }
-    [[nodiscard]] double last_ms() const { return last_ms_; }
-    [[nodiscard]] double max_ms() const { return max_ms_; }
+    uint64_t count() const { return count_; }
+    double last_ms() const { return last_ms_; }
+    double max_ms() const { return max_ms_; }
     /// 平均耗时（毫秒）；无样本返回 0
-    [[nodiscard]] double avg_ms() const {
+    double avg_ms() const {
         return count_ > 0 ? total_ms_ / static_cast<double>(count_) : 0.0;
     }
-    [[nodiscard]] double total_ms() const { return total_ms_; }
+    double total_ms() const { return total_ms_; }
 
 private:
     using clock = std::chrono::steady_clock;

@@ -30,7 +30,7 @@ public:
 
     virtual void set_level(LogLevel lv) = 0;
 
-    [[nodiscard]] virtual LogLevel level() const = 0;
+    virtual LogLevel level() const = 0;
 };
 
 /// 统一入口宏：日志调用点统一走此路径，便于全局降噪

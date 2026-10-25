@@ -22,22 +22,22 @@ public:
               std::string mac, std::string install_dir);
 
     /// 9 位连接码展示格式 "xxx xxx xxx"
-    [[nodiscard]] const std::string& self_code() const;
+    const std::string& self_code() const;
 
     /// 纯数字码 0~999999999（心跳扩展/落盘用，P1.4 接线点）
-    [[nodiscard]] uint32_t code_number() const;
+    uint32_t code_number() const;
 
     /// 连接名 username@hostname（用户名缺失时退化为 hostname）
-    [[nodiscard]] const std::string& self_name() const;
+    const std::string& self_name() const;
 
     /// 指纹串（诊断日志用）
-    [[nodiscard]] const std::string& fingerprint() const;
+    const std::string& fingerprint() const;
 
     /// 指纹派生（测试挂点）：xxH3 → 折叠 3×3 位
-    [[nodiscard]] static uint32_t derive_code(std::string_view fingerprint);
+    static uint32_t derive_code(std::string_view fingerprint);
 
     /// 数字码 → "xxx xxx xxx"（不足 9 位左补零）
-    [[nodiscard]] static std::string format_code(uint32_t code);
+    static std::string format_code(uint32_t code);
 
 private:
     std::string fingerprint_;

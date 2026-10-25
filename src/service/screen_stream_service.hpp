@@ -48,8 +48,8 @@ public:
     /// 停止（非阻塞；线程自行退出）
     void stop();
 
-    [[nodiscard]] bool running() const { return running_.load(std::memory_order_acquire); }
-    [[nodiscard]] uint64_t total_dropped() const {
+    bool running() const { return running_.load(std::memory_order_acquire); }
+    uint64_t total_dropped() const {
         return dropped_total_.load(std::memory_order_relaxed);
     }
 

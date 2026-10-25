@@ -30,7 +30,7 @@ public:
     }
 
     void set_level(LogLevel lv) override { level_.store(lv, std::memory_order_relaxed); }
-    [[nodiscard]] LogLevel level() const override {
+    LogLevel level() const override {
         return level_.load(std::memory_order_relaxed);
     }
 

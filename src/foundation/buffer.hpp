@@ -65,7 +65,7 @@ public:
 
     // ---------------- 读（游标语义，失败不移动游标） ----------------
 
-    [[nodiscard]] bool read_u8(uint8_t& out) {
+    bool read_u8(uint8_t& out) {
         if (read_pos_ + 1 > data_.size()) {
             return false;
         }
@@ -73,7 +73,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool read_u16be(uint16_t& out) {
+    bool read_u16be(uint16_t& out) {
         if (read_pos_ + 2 > data_.size()) {
             return false;
         }
@@ -82,7 +82,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool read_u32be(uint32_t& out) {
+    bool read_u32be(uint32_t& out) {
         if (read_pos_ + 4 > data_.size()) {
             return false;
         }
@@ -95,7 +95,7 @@ public:
     }
 
     /// 读取 n 字节拷贝到 out（越界返回 false）
-    [[nodiscard]] bool read_bytes(size_t n, std::vector<uint8_t>& out) {
+    bool read_bytes(size_t n, std::vector<uint8_t>& out) {
         if (read_pos_ + n > data_.size()) {
             return false;
         }
@@ -106,7 +106,7 @@ public:
     }
 
     /// 零拷贝视图读取（调用方不得持有引用越过下次读操作）
-    [[nodiscard]] bool read_string_view(size_t n, std::string_view& out) {
+    bool read_string_view(size_t n, std::string_view& out) {
         if (read_pos_ + n > data_.size()) {
             return false;
         }
@@ -115,7 +115,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool read_string8(std::string& out) {
+    bool read_string8(std::string& out) {
         uint8_t len = 0;
         if (!read_u8(len)) {
             return false;
@@ -130,10 +130,10 @@ public:
 
     // ---------------- 状态 ----------------
 
-    [[nodiscard]] const uint8_t* data() const noexcept { return data_.data(); }
-    [[nodiscard]] size_t size() const noexcept { return data_.size(); }
-    [[nodiscard]] size_t readable() const noexcept { return data_.size() - read_pos_; }
-    [[nodiscard]] bool empty() const noexcept { return data_.empty(); }
+    const uint8_t* data() const noexcept { return data_.data(); }
+    size_t size() const noexcept { return data_.size(); }
+    size_t readable() const noexcept { return data_.size() - read_pos_; }
+    bool empty() const noexcept { return data_.empty(); }
 
     void clear() noexcept {
         data_.clear();
@@ -150,7 +150,7 @@ public:
     }
 
     /// 取出全部字节（移交所有权）
-    [[nodiscard]] std::vector<uint8_t> take() {
+    std::vector<uint8_t> take() {
         read_pos_ = 0;
         std::vector<uint8_t> out;
         out.swap(data_);

@@ -21,7 +21,7 @@ class IEncoder {
 public:
     virtual ~IEncoder() = default;
 
-    [[nodiscard]] virtual bool open(const EncoderConfig& cfg) = 0;
+    virtual bool open(const EncoderConfig& cfg) = 0;
 
     /// 输入一帧原始图，输出编码字节流（编码线程专用）
     virtual bool encode(const VideoFrame& in, std::vector<uint8_t>& out) = 0;

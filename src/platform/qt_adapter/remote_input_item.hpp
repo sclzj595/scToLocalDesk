@@ -21,7 +21,7 @@ class RemoteInputItem : public QQuickItem {  // 不标 final：QQmlElement 需�
 public:
     explicit RemoteInputItem(QQuickItem* parent = nullptr);
 
-    [[nodiscard]] QSizeF videoSize() const { return video_size_; }
+    QSizeF videoSize() const { return video_size_; }
     void setVideoSize(QSizeF s) {
         if (video_size_ != s) {
             video_size_ = s;

@@ -45,36 +45,36 @@ public:
     /// 开关关闭 + unattended 请求 → Rejected（协议层补 REJECT 0x03）
     /// 开关开启 + unattended 请求 → StartChallenge
     /// 非 unattended 请求 → NeedManualConfirm（回退人工模式）
-    [[nodiscard]] AuthResult decide(const AuthRequest& req) override;
+    AuthResult decide(const AuthRequest& req) override;
 
     /// 校验 AUTH_PROOF：challenge 有效性 + HMAC 常数时间比较
-    [[nodiscard]] bool verify_proof(std::string_view challenge,
+    bool verify_proof(std::string_view challenge,
                                     std::string_view proof) override;
 
     // ---------------- 服务层专用 ----------------
 
     /// 生成一次性挑战并登记（hex 字符串；内部记录过期时间）
-    [[nodiscard]] std::string issue_challenge();
+    std::string issue_challenge();
 
     /// 用口令校验 hash 校验设置页输入（sha256(PBKDF2(pwd,salt)) == verify_hash）
-    [[nodiscard]] bool check_password(const std::string& password) const;
+    bool check_password(const std::string& password) const;
 
     /// 设置新密码：生成盐 → 派生 K → 计算校验 hash → 返回新凭据（调用方落盘）
-    [[nodiscard]] bool set_password(const std::string& password, UnattendedSecret& out_secret);
+    bool set_password(const std::string& password, UnattendedSecret& out_secret);
 
     void update_secret(UnattendedSecret secret, bool enabled);
 
-    [[nodiscard]] bool enabled() const;
-    [[nodiscard]] const UnattendedSecret& secret() const;
+    bool enabled() const;
+    const UnattendedSecret& secret() const;
 
     /// 清理过期挑战（会话服务周期调用；返回清理条数）
     size_t purge_expired();
 
 private:
     /// 常数时间比较，防时序侧信道（Doc16 §2.8）
-    [[nodiscard]] static bool constant_time_equal(std::string_view a, std::string_view b);
+    static bool constant_time_equal(std::string_view a, std::string_view b);
 
-    [[nodiscard]] bool compute_proof(std::string_view challenge_hex,
+    bool compute_proof(std::string_view challenge_hex,
                                      std::vector<uint8_t>& proof) const;
 
     mutable std::mutex mtx_;
