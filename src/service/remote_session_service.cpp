@@ -93,6 +93,15 @@ RemoteSessionService::RemoteSessionService(
 
 RemoteSessionService::~RemoteSessionService() {
     close_session(CloseReason::Normal);
+    // 看门狗收尾（PRD 确认三件套）：代次失效 → 唤醒 → 回收线程（不持锁 join）
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        ++confirm_seq_;
+    }
+    confirm_cv_.notify_all();
+    if (confirm_watchdog_.joinable()) {
+        confirm_watchdog_.join();
+    }
 }
 
 void RemoteSessionService::set_file_service(std::shared_ptr<FileService> files) {
@@ -207,7 +216,11 @@ void RemoteSessionService::send_request_connect() {
     }
     peer_alias_ = pc.alias;
     const uint8_t flags = pc.unattended ? protocol::connect_flags::kUnattended : 0x00;
-    transport_->send_binary(protocol::build_request_connect(pc.alias, flags));
+    // 协议语义：REQUEST_CONNECT.body.alias = 发起方（本机）别名——被控端弹窗
+    // 展示"谁在请求"与信任反查 peer_code 都依赖它；发目标别名会让被控端
+    // 把自己当请求方（弹窗显示错名 + 信任直连永远反查失败）
+    transport_->send_binary(
+        protocol::build_request_connect(aliases_->self_alias(), flags));
     // 密码暂存到连接上下文：AUTH_CHALLENGE 到达时派生 proof 后立即清除
     if (pc.unattended && !pc.password.empty()) {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -221,6 +234,8 @@ void RemoteSessionService::approve() {
     if (state_ != SessState::WaitForUser) {
         return;
     }
+    ++confirm_seq_;            // 弹窗被消费，看门狗失效（PRD 确认三件套）
+    confirm_cv_.notify_all();
     if (transport_ != nullptr) {
         transport_->send_binary(protocol::build_ctrl(protocol::CtrlSubType::Approved));
     }
@@ -232,6 +247,8 @@ void RemoteSessionService::reject(RejectReason reason) {
     if (state_ != SessState::WaitForUser && state_ != SessState::WaitForUnattended) {
         return;
     }
+    ++confirm_seq_;
+    confirm_cv_.notify_all();
     if (transport_ != nullptr) {
         transport_->send_binary(protocol::build_reject(reason));
     }
@@ -413,8 +430,8 @@ void RemoteSessionService::handle_session_ctrl(const uint8_t* body, size_t len) 
         break;
     }
     case protocol::CtrlSubType::Reject:
-        // 控制端收到拒绝：按 reason 提示（Doc13 §3.3）
-        SCLD_LOG(log_, LogLevel::Info, "session",
+        // 控制端收到拒绝：按 reason 提示（Doc13 §3.3）；拒绝属审计日志（Warn 即时落盘）
+        SCLD_LOG(log_, LogLevel::Warn, "session",
                  "对端拒绝 reason=" + std::to_string(static_cast<int>(len > 1 ? body[1] : 0)));
         {
             std::lock_guard<std::mutex> lk(mtx_);
@@ -485,12 +502,17 @@ void RemoteSessionService::handle_request_connect(const protocol::RequestConnect
 
     switch (result) {
     case AuthResult::NeedManualConfirm: {
-        std::lock_guard<std::mutex> lk(mtx_);
-        state_ = SessState::WaitForUser;
-        publish_request_event(req.alias, false);
-        SCLD_LOG(log_, LogLevel::Info, "session",
-                 "[session_id=" + session_id_ + "][alias=" + req.alias
-                     + "] 连接请求，等待人工确认");
+        uint64_t my_seq = 0;
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            state_ = SessState::WaitForUser;
+            my_seq = ++confirm_seq_;  // 新弹窗代次（PRD 确认三件套）
+            publish_request_event(req.alias, false);
+            SCLD_LOG(log_, LogLevel::Info, "session",
+                     "[session_id=" + session_id_ + "][alias=" + req.alias
+                         + "] 连接请求，等待人工确认");
+        }
+        arm_confirm_watchdog(my_seq);  // 30s 无响应自动拒（锁外武装，内部 join）
         break;
     }
     case AuthResult::StartChallenge: {
@@ -662,8 +684,42 @@ void RemoteSessionService::publish_request_event(const std::string& peer, bool a
     e.session_id = session_id_;
     e.device_alias = peer;
     e.auto_approved = auto_approved;
+    // 请求方 IP（PRD 确认三件套）：REQUEST_CONNECT 到达时的对端 TCP 地址
+    e.peer_ip = transport_ != nullptr ? transport_->peer_address() : "";
     e.timestamp_us = now_us();
     bus_->publish(e);
+}
+
+void RemoteSessionService::arm_confirm_watchdog(uint64_t my_seq) {
+    // 前置：调用方不持锁。旧代次线程 pred 已因 seq 变更不成立，唤醒即退
+    confirm_cv_.notify_all();
+    if (confirm_watchdog_.joinable()) {
+        confirm_watchdog_.join();
+    }
+    confirm_watchdog_ = std::thread([this, my_seq] {
+        std::unique_lock<std::mutex> lk(mtx_);
+        // 等待期间弹窗被消费（同意/拒绝/断开/新请求）→ pred 为真提前醒
+        const bool consumed = confirm_cv_.wait_for(
+            lk, std::chrono::seconds(kConfirmTimeoutSec),
+            [this, my_seq] { return confirm_seq_ != my_seq; });
+        if (consumed || state_ != SessState::WaitForUser) {
+            return;
+        }
+        // PRD 确认三件套：30s 无响应自动拒绝，对端收 REJECT(Timeout)
+        if (transport_ != nullptr) {
+            transport_->send_binary(
+                protocol::build_reject(protocol::RejectReason::Timeout));
+        }
+        reset_to_idle();  // 持锁调用安全（stop 均非阻塞）
+        SCLD_LOG(log_, LogLevel::Info, "session",
+                 "确认弹窗 " + std::to_string(kConfirmTimeoutSec)
+                     + "s 未响应，已自动拒绝");
+        if (bus_ != nullptr) {
+            Evt_ConnectRequestTimeout e;
+            e.timestamp_us = now_us();
+            bus_->publish(e);  // UI 关弹窗 + 提示
+        }
+    });
 }
 
 }  // namespace sc::localdesk

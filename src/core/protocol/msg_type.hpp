@@ -36,6 +36,7 @@ enum class RejectReason : uint8_t {
     PasswordWrong = 0x01,  ///< 无人值守密码校验失败
     SessionBusy   = 0x02,  ///< 会话占用（单会话红线）
     Other         = 0x03,  ///< 其他（含无人值守开关关闭）
+    Timeout       = 0x04,  ///< 确认弹窗 30s 未响应，自动拒绝（PRD 确认三件套）
 };
 
 /// CLOSE reason

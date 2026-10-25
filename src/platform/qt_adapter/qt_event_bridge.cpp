@@ -11,6 +11,11 @@
 #include <QClipboard>
 #include <QDate>
 #include <QTimer>
+#include <QWindow>
+
+#ifdef Q_OS_WIN
+    #include <windows.h>
+#endif
 
 #include <foundation/event_bus.hpp>
 #include <foundation/logger/ilogger.hpp>
@@ -58,8 +63,14 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
     bus->subscribe<Evt_ConnectRequest>([this](const Evt_ConnectRequest& e) {
         QMetaObject::invokeMethod(this, [this, e] {
             if (!e.auto_approved) {
-                emit connectRequest(QString::fromStdString(e.device_alias));
+                emit connectRequest(QString::fromStdString(e.device_alias),
+                                    QString::fromStdString(e.peer_ip));
             }
+        }, Qt::QueuedConnection);
+    });
+    bus->subscribe<Evt_ConnectRequestTimeout>([this](const Evt_ConnectRequestTimeout&) {
+        QMetaObject::invokeMethod(this, [this] {
+            emit connectRequestTimedOut();
         }, Qt::QueuedConnection);
     });
     bus->subscribe<Evt_ConnectDenied>([this](const Evt_ConnectDenied& e) {
@@ -153,8 +164,7 @@ QString QtEventBridge::clipboardText() const {
     return cb != nullptr ? cb->text(QClipboard::Clipboard) : QString();
 }
 
-QString QtEventBridge::deviceIp(const QString& code) const {
-    if (aliases_ == nullptr) {
+QString QtEventBridge::deviceIp(const QString& code) const {    if (aliases_ == nullptr) {
         return {};
     }
     bool ok = false;
@@ -166,6 +176,18 @@ QString QtEventBridge::deviceIp(const QString& code) const {
     for (const auto& dev : aliases_->online_devices()) {
         if (dev.code == c) {
             return QString::fromStdString(dev.ip);
+        }
+    }
+    return {};
+}
+
+QString QtEventBridge::deviceCode(const QString& alias) const {
+    if (aliases_ == nullptr) {
+        return {};
+    }
+    for (const auto& dev : aliases_->online_devices()) {
+        if (QString::fromStdString(dev.alias) == alias) {
+            return QString::fromStdString(IdService::format_code(dev.code));
         }
     }
     return {};
@@ -211,6 +233,25 @@ bool QtEventBridge::sessionRunning() const {
 
 void QtEventBridge::copyText(const QString& text) {
     QApplication::clipboard()->setText(text);
+}
+
+void QtEventBridge::setSelfWindowTopMost(bool on) {
+    // PRD 确认三件套：确认弹窗依附窗口层，窗口不置顶弹窗必被盖。
+    // Win32 系统级 TOPMOST（不动 flags 不重建原生窗口）；其余平台降级激活
+    for (QWindow* w : QGuiApplication::topLevelWindows()) {
+        if (!w->isVisible() || w->type() != Qt::Window) {
+            continue;
+        }
+#ifdef Q_OS_WIN
+        HWND hwnd = reinterpret_cast<HWND>(w->winId());
+        SetWindowPos(hwnd, on ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE);
+#endif
+        if (on) {
+            w->raise();
+            w->requestActivate();
+        }
+    }
 }
 
 void QtEventBridge::sendMouse(int action, int x, int y, int wheel) {

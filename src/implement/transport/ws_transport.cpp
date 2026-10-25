@@ -57,6 +57,12 @@ bool WsTransport::start_server(uint16_t port) {
                          ping_miss_ = 0;
                          tx_.clear();
                          tx_.reopen();
+                         {
+                             std::lock_guard<std::mutex> lk(cb_mtx_);
+                             peer_addr_ = sock->peerAddress()
+                                              .toString()
+                                              .toStdString();
+                         }
                          QObject::connect(sock, &QWebSocket::binaryMessageReceived,
                                           [this](const QByteArray& msg) {
                                               // asio 模式：锁内只拷回调，锁外分发——
@@ -74,6 +80,10 @@ bool WsTransport::start_server(uint16_t port) {
                                           });
                          QObject::connect(sock, &QWebSocket::disconnected, [this] {
                              peer_ = nullptr;
+                             {
+                                 std::lock_guard<std::mutex> lk(cb_mtx_);
+                                 peer_addr_.clear();
+                             }
                              set_state(TransportState::Idle);
                          });
                          // 写缓冲排空信号：背压停写后的续排驱动（防重原子合并）
@@ -97,6 +107,10 @@ void WsTransport::connect_client(const std::string& host, uint16_t port) {
     ping_miss_ = 0;
     tx_.clear();
     tx_.reopen();
+    {
+        std::lock_guard<std::mutex> lk(cb_mtx_);
+        peer_addr_ = host;  // client 模式：对端即拨号目标
+    }
     QObject::connect(sock, &QWebSocket::connected, [this] {
         set_state(TransportState::Connected);
     });

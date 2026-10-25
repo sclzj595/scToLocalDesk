@@ -42,6 +42,12 @@ public:
     virtual std::string last_error() const {
         return {};
     }
+
+    /// 对端地址：server 模式=请求方 IP（确认弹窗展示用），client 模式=拨号目标；
+    /// 未连接/未知返回空。默认实现恒空（RawTcp 预留实现后续补）
+    virtual std::string peer_address() const {
+        return {};
+    }
 };
 
 }  // namespace sc::localdesk

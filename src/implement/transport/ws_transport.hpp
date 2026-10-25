@@ -39,6 +39,12 @@ public:
         return last_error_.toStdString();
     }
 
+    /// 对端地址：server 模式=请求方 IP（确认弹窗展示），client 模式=拨号目标
+    std::string peer_address() const override {
+        std::lock_guard<std::mutex> lk(cb_mtx_);
+        return peer_addr_;
+    }
+
 private:
     void set_state(TransportState st);
     void start_timers();   ///< KEEPALIVE（创建线程 = socket 所在线程）
@@ -72,9 +78,10 @@ private:
     QTimer* ping_timer_{nullptr};
     int ping_miss_{0};  ///< 连续无 pong 计数（仅 socket 线程访问）
 
-    std::mutex cb_mtx_;
+    mutable std::mutex cb_mtx_;  ///< peer_address() const 亦加锁
     OnMessageCb on_message_;
     OnStateCb on_state_;
+    std::string peer_addr_;  ///< 对端地址（cb_mtx_ 保护；断开即清）
 };
 
 }  // namespace sc::localdesk

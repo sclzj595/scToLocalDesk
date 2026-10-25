@@ -33,6 +33,7 @@ ApplicationWindow {
     // 信任缓存走 ScLocaldesk（TrustStore 落盘，Doc18 §3.2）；此处仅暂存待确认对端
     property string pendingAlias: ""
     property string pendingCode: ""
+    property string pendingIp: ""     // 入站请求方 IP（transport 对端地址直出）
     // 文件接收确认（Doc11 §4.3）
     property string pendingFileId: ""
 
@@ -178,7 +179,8 @@ ApplicationWindow {
         glassSource: shell
         peerAlias: pendingAlias
         peerCode: pendingCode
-        peerIp: pendingCode === "" ? "" : ScLocaldesk.deviceIp(pendingCode)
+        peerIp: pendingIp
+        onClosed: ScLocaldesk.setSelfWindowTopMost(false)  // 同意/拒绝/超时关闭统一释放置顶
 
         onAccepted: remember => {
             if (confirmPopup.outgoing) {
@@ -276,11 +278,19 @@ ApplicationWindow {
     // 被控端连接请求（bridge 信号 → 置顶弹窗，Doc13 交互红线）
     Connections {
         target: ScLocaldesk
-        function onConnectRequest(alias) {
+        function onConnectRequest(alias, ip) {
             pendingAlias = alias;
-            pendingCode = "";
+            pendingCode = ScLocaldesk.deviceCode(alias);  // 对方连接码核对行（在线表反查）
+            pendingIp = ip;
             confirmPopup.outgoing = false;   // 入站申请：同意即 approve
+            // PRD 确认三件套：系统级置顶（弹窗依附窗口层，窗口不置顶必被盖）
+            ScLocaldesk.setSelfWindowTopMost(true);
             confirmPopup.open();
+        }
+        function onConnectRequestTimedOut() {
+            // PRD 确认三件套：30s 未响应服务端已自动拒，收尾弹窗
+            confirmPopup.close();
+            toast.show("30 秒未响应，已自动拒绝");
         }
         function onConnectDenied(alias, reason) {
             toast.show((alias === "" ? "" : alias + "：") + reason);

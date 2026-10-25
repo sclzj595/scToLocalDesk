@@ -72,6 +72,9 @@ public:
     Q_INVOKABLE bool rejectFile(const QString& fileId);   ///< 接收确认弹窗【拒绝】
     Q_INVOKABLE bool setUnattendedEnabled(bool enabled, const QString& password);
     Q_INVOKABLE void copyText(const QString& text);       ///< 连接码复制进剪贴板
+    /// 确认弹窗系统级置顶（PRD 确认三件套）：Win32 SetWindowPos TOPMOST，
+    /// 弹窗关闭时调 off 恢复；非 Windows 平台降级 raise+activate
+    Q_INVOKABLE void setSelfWindowTopMost(bool on);
     /// 键鼠透传发送（Doc18 §4.4）：RemoteInputItem 已归一化数据直发会话层
     Q_INVOKABLE void sendMouse(int action, int x, int y, int wheel);
     Q_INVOKABLE void sendKey(int vk, int scan, bool down);
@@ -96,6 +99,8 @@ public:
     Q_INVOKABLE QString deviceIp(const QString& code) const;
     /// 按连接码反查在线设备别名（连接码页发起会话用，Doc18 §4.3）；未知返回空
     Q_INVOKABLE QString deviceAlias(const QString& code) const;
+    /// 按别名反查在线设备连接码（确认弹窗"对方连接码"核对行，三段格式）；未知返回空
+    Q_INVOKABLE QString deviceCode(const QString& alias) const;
     /// 剪贴板纯文本（连接码三段输入的粘贴分发，QML 无剪贴板访问能力）
     Q_INVOKABLE QString clipboardText() const;
     /// 被控监听启动结果（端口占用 UI 提示，Doc18 风险清单 P1 顺带项）
@@ -116,7 +121,8 @@ signals:
     void deviceOffline(const QString& alias);
     void aliasConflict(const QString& alias, const QString& conflictIp);
     // 会话
-    void connectRequest(const QString& alias);      ///< 人工确认弹窗触发
+    void connectRequest(const QString& alias, const QString& peerIp);  ///< 人工确认弹窗触发（含请求方 IP）
+    void connectRequestTimedOut();  ///< 确认弹窗 30s 未响应已自动拒，UI 关弹窗
     void connectDenied(const QString& alias, const QString& reason);  ///< 本地拦截提示
     void sessionStarted(const QString& alias);
     void sessionClosed(const QString& reasonText);

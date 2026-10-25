@@ -9,11 +9,13 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "core/interface/icrypto.hpp"
@@ -39,6 +41,9 @@ namespace protocol {
 struct RequestConnectBody;
 struct MouseKeyBody;
 }
+
+/// 人工确认弹窗超时（PRD 确认三件套）：超时自动拒绝，对端收 REJECT(Timeout)
+inline constexpr int kConfirmTimeoutSec = 30;
 
 // 协议枚举直接以短名暴露给服务层
 using protocol::CloseReason;
@@ -139,6 +144,9 @@ private:
     void enter_running(bool unattended);
     void reset_to_idle();
     void publish_request_event(const std::string& peer_alias, bool auto_approved);
+    /// 武装确认看门狗（PRD 确认三件套）：kConfirmTimeoutSec 内弹窗未消费
+    /// 则自动拒绝。前置：调用方不持锁（内部 join 旧线程需让路）
+    void arm_confirm_watchdog(uint64_t my_seq);
 
     std::shared_ptr<ITransport> transport_;
     std::shared_ptr<IAuthenticator> manual_auth_;
@@ -173,6 +181,13 @@ private:
     bool listening_{false};
     std::atomic<int64_t> session_seq_{0};
     std::function<bool(const std::string&, uint16_t)> self_ip_checker_;  ///< 自连拦截判定（空=不拦）
+
+    // 确认看门狗（PRD 确认三件套）：WaitForUser 期间 30s 无响应自动拒。
+    // 代次模型：每次进入 WaitForUser 分配新 seq；approve/reject/析构使旧代次
+    // 失效（seq 变化），看门狗醒来即退——同机双实例/复用连接均无串话窗口
+    std::condition_variable confirm_cv_;
+    uint64_t confirm_seq_{0};       ///< 当前弹窗代次（持锁变更）
+    std::thread confirm_watchdog_;  ///< 仅在 arm/析构处 join（不持锁）
 };
 
 }  // namespace sc::localdesk

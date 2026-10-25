@@ -87,7 +87,7 @@ Popup {
             text: "IP：" + root.peerIp
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontHint
-            color: Theme.textHint
+            color: Theme.textBody  // IP 是安全核对要素，hint 色在毛玻璃底上难辨认
         }
 
         // 信任记忆复选框（确认后才有记忆缓存）

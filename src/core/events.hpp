@@ -56,6 +56,11 @@ enum class SessionEndReason {
 
 struct Evt_ConnectRequest final : IEvent {
     bool auto_approved{false};  ///< 无人值守鉴权通过，UI 只 Toast 不弹窗
+    std::string peer_ip;        ///< 请求方 IP（确认弹窗展示，PRD 确认三件套）
+};
+
+/// 确认弹窗 30s 未响应自动拒（PRD 确认三件套）：UI 收到后关闭弹窗并提示
+struct Evt_ConnectRequestTimeout final : IEvent {
 };
 
 /// 控制端发起被本地拦截（自连等）：不发网络包，UI 弹提示

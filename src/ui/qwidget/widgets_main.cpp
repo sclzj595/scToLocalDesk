@@ -11,6 +11,7 @@
         #include <QFile>
         #include <QFileInfo>
         #include <QMessageBox>
+        #include <QPointer>
         #include <QRandomGenerator>
         #include <QTimer>
 
@@ -211,14 +212,17 @@ int main(int argc, char* argv[]) {
 
     // 入站连接申请 → 主线程确认（暂用 QMessageBox，玻璃化随 P4 UI 专项；
     // SCLD_SMOKE_APPROVE=1 冒烟钩子：自动放行，双实例 E2E 用）
+    // PRD 确认三件套：非模态置顶（模态 exec 无法被 30s 超时回调关闭）+
+    // 请求方 IP 文案 + 超时信号远程关弹窗
     const bool smoke_approve = qEnvironmentVariable("SCLD_SMOKE_APPROVE") == "1";
+    QPointer<QMessageBox> active_confirm;  // 当前确认弹窗（超时自动拒时关闭）
     bus->subscribe<Evt_ConnectRequest>(
         [&win, sessions, smoke_approve, &trust_store, aliases,
-         &logger](const Evt_ConnectRequest& e) {
+         &logger, &active_confirm](const Evt_ConnectRequest& e) {
             QMetaObject::invokeMethod(
                 &win,
                 [&win, sessions, smoke_approve, &trust_store, aliases, &logger,
-                 e] {
+                 e, &active_confirm] {
                     if (e.auto_approved) {
                         return;  // 无人值守已放行，无需确认
                     }
@@ -242,14 +246,42 @@ int main(int argc, char* argv[]) {
                         sessions->approve();
                         return;
                     }
-                    const auto r = QMessageBox::question(
-                        &win, QStringLiteral("连接请求"),
-                        QStringLiteral("对方请求远程协助本机，是否同意？"));
-                    if (r == QMessageBox::Yes) {
-                        sessions->approve();
-                    }
-                    else {
-                        sessions->reject();
+                    auto* box = new QMessageBox(&win);
+                    box->setAttribute(Qt::WA_DeleteOnClose);
+                    box->setWindowTitle(QStringLiteral("连接请求"));
+                    box->setText(e.peer_ip.empty()
+                                     ? QStringLiteral("对方请求远程协助本机，是否同意？")
+                                     : QStringLiteral("对方（%1）请求远程协助本机，是否同意？")
+                                           .arg(QString::fromStdString(e.peer_ip)));
+                    box->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+                    box->setWindowFlag(Qt::WindowStaysOnTopHint, true);  // PRD 确认三件套：置顶
+                    active_confirm = box;
+                    QObject::connect(box, &QMessageBox::finished, box,
+                                     [sessions, box](int r) {
+                                         if (box == nullptr) {
+                                             return;
+                                         }
+                                         if (r == QMessageBox::Yes) {
+                                             sessions->approve();
+                                         }
+                                         else {
+                                             // 含超时自动拒后的收尾 close()：
+                                             // state 已被看门狗迁移，reject() 幂等
+                                             sessions->reject();
+                                         }
+                                     });
+                    box->show();
+                    QApplication::alert(box);  // 任务栏闪烁（被控端可能无人盯屏幕）
+                },
+                Qt::QueuedConnection);
+        });
+    bus->subscribe<Evt_ConnectRequestTimeout>(
+        [&win, &active_confirm](const Evt_ConnectRequestTimeout&) {
+            QMetaObject::invokeMethod(
+                &win,
+                [&win, &active_confirm] {
+                    if (active_confirm != nullptr) {
+                        active_confirm->close();  // finished(非Yes) → reject() 兜底
                     }
                 },
                 Qt::QueuedConnection);
