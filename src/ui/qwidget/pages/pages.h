@@ -81,6 +81,9 @@ public:
     /// 按连接码反查在线设备 IP（确认弹窗真值，Doc18 §3.4）；未知返回空
     QString deviceIp(const QString& code) const;
 
+    /// 按连接码反查在线设备别名（连接码页发起会话用，PRD P7）；未知返回空
+    QString deviceAlias(const QString& code) const;
+
 signals:
     /// trusted=false 时由主窗口弹确认弹窗
     void connectRequested(const QString& aliasName, const QString& code, bool trusted);

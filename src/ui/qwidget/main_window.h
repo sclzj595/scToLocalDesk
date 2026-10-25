@@ -15,6 +15,7 @@ class QTimer;
 
 namespace sc::localdesk {
 class TrustStore;
+class RemoteSessionService;
 struct AppConfig;  // 定义处为 struct，声明须一致
 namespace foundation {
 class IniConfig;
@@ -41,6 +42,11 @@ public:
 
     /// 配置注入（Doc18 §3.3）：转发设置页，解锁控件真值回放与落盘
     void set_config_store(foundation::IniConfig* ini, AppConfig* cfg);
+
+    /// 会话服务注入（PRD P7）：确认弹窗 Accepted 后真正发起 connect_to_peer
+    void setSessionService(RemoteSessionService* s) {
+        sessions_ = s;
+    }
 
     /// 设备列表页访问（widgets_main 装配发现栈后接真数据，Doc18 §3.4）
     DeviceListPage* devicePage() const {
@@ -78,6 +84,7 @@ private:
     QLabel* toastLbl_{nullptr};
     QTimer* toastTimer_{nullptr};
     TrustStore* trust_{nullptr};
+    RemoteSessionService* sessions_{nullptr};
     SettingsPage* settingsPage_{nullptr};
     DeviceListPage* devList_{nullptr};
     RemoteViewPage* remoteView_{nullptr};

@@ -148,6 +148,16 @@ private:
     /// 则自动拒绝。前置：调用方不持锁（内部 join 旧线程需让路）
     void arm_confirm_watchdog(uint64_t my_seq);
 
+public:
+    /// 控制端取消连接（PRD P7）：拨号/等确认期可取消；Running 不响应
+    void cancel_connect();
+    /// 最近一次成功发起的目标别名（重连按钮数据源）；无则空
+    std::string last_peer() const {
+        return last_peer_;
+    }
+    /// 是否可发起新会话（PRD P7 防重复）：单会话红线，Idle 才可发起
+    bool can_start_control() const;
+
     std::shared_ptr<ITransport> transport_;
     std::shared_ptr<IAuthenticator> manual_auth_;
     std::shared_ptr<UnattendedPasswordAuthenticator> unattended_auth_;
@@ -181,6 +191,7 @@ private:
     bool listening_{false};
     std::atomic<int64_t> session_seq_{0};
     std::function<bool(const std::string&, uint16_t)> self_ip_checker_;  ///< 自连拦截判定（空=不拦）
+    std::string last_peer_;  ///< 最近发起目标（重连用；连接期赋值）
 
     // 确认看门狗（PRD 确认三件套）：WaitForUser 期间 30s 无响应自动拒。
     // 代次模型：每次进入 WaitForUser 分配新 seq；approve/reject/析构使旧代次

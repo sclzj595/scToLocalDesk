@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // scToLocalDesk | src/ui/qwidget/main_window.cpp
 // 布局：32px 玻璃标题栏（可拖拽）+ 72px 玻璃 Dock + 纯色内容栈
 // ============================================================
@@ -19,6 +19,7 @@
 #include "pages/pages.h"
 #include "popups/connect_confirm_dialog.h"
 #include "service/trust_store.hpp"
+#include "service/remote_session_service.hpp"
 
 namespace sc::localdesk::ui {
 
@@ -89,9 +90,17 @@ MainWindow::MainWindow() {
     auto* confirm = new ConnectConfirmDialog(this);
     connect(devList, &DeviceListPage::connectRequested, this,
             [this, confirm](const QString& alias, const QString& code, bool trusted) {
+                // PRD P7 防重复：会话占用拦截（与 QML 端同文案）
+                if (sessions_ != nullptr && !sessions_->can_start_control()) {
+                    showToast(QStringLiteral("当前有会话进行中，请先断开"));
+                    return;
+                }
                 if (trusted || (trust_ != nullptr
                                 && trust_->is_trusted(code.toStdString()))) {
                     showToast(QStringLiteral("正在直连 %1（已信任）…").arg(alias));
+                    if (sessions_ != nullptr) {
+                        sessions_->connect_to_peer(alias.toStdString(), false, "");  // 断头补全
+                    }
                     return;
                 }
                 confirm->setPeer(alias, devList_->deviceIp(code), code);
@@ -100,15 +109,28 @@ MainWindow::MainWindow() {
                         trust_->trust(code.toStdString(), alias.toStdString());
                     }
                     showToast(confirm->rememberChecked()
-                            ? QStringLiteral("已同意，%1 已加入信任缓存").arg(alias)
-                            : QStringLiteral("已同意，会话建立中…"));
+                            ? QStringLiteral("已确认，正在连接 %1 …").arg(alias)
+                            : QStringLiteral("正在连接 %1 …").arg(alias));
+                    if (sessions_ != nullptr) {
+                        sessions_->connect_to_peer(alias.toStdString(), false, "");  // 断头补全
+                    }
                 }
                 else {
-                    showToast(QStringLiteral("已拒绝连接"));
+                    showToast(QStringLiteral("已取消发起"));
                 }
             });
     connect(connCode, &ConnectCodePage::connectRequested, this,
             [this, confirm](const QString& code) {
+                // PRD P7 防重复 + code→alias 反查（connect_to_peer 按 alias 寻址）
+                if (sessions_ != nullptr && !sessions_->can_start_control()) {
+                    showToast(QStringLiteral("当前有会话进行中，请先断开"));
+                    return;
+                }
+                const QString alias = devList_->deviceAlias(code);
+                if (alias.isEmpty()) {
+                    showToast(QStringLiteral("设备不在线：%1").arg(code));
+                    return;
+                }
                 // 三段化显示：482130556 → 482 130 556
                 QString pretty;
                 for (int i = 0; i < code.size(); i += 3) {
@@ -116,22 +138,27 @@ MainWindow::MainWindow() {
                             + code.mid(i, 3);
                 }
                 confirm->setPeer(QStringLiteral("设备 %1").arg(pretty),
-                                 QStringLiteral("—"), pretty);
+                                 devList_->deviceIp(code), pretty);
                 if (trust_ != nullptr && trust_->is_trusted(code.toStdString())) {
                     showToast(QStringLiteral("正在直连（已信任）…"));
+                    if (sessions_ != nullptr) {
+                        sessions_->connect_to_peer(alias.toStdString(), false, "");  // 断头补全
+                    }
                     return;
                 }
                 if (confirm->exec() == QDialog::Accepted) {
                     if (confirm->rememberChecked() && trust_ != nullptr) {
-                        trust_->trust(code.toStdString(),
-                                      QStringLiteral("设备 %1").arg(code).toStdString());
+                        trust_->trust(code.toStdString(), alias.toStdString());
                     }
                     showToast(confirm->rememberChecked()
-                            ? QStringLiteral("已同意，设备已加入信任缓存")
-                            : QStringLiteral("已同意，会话建立中…"));
+                            ? QStringLiteral("已确认，正在连接 %1 …").arg(alias)
+                            : QStringLiteral("正在连接 %1 …").arg(alias));
+                    if (sessions_ != nullptr) {
+                        sessions_->connect_to_peer(alias.toStdString(), false, "");  // 断头补全
+                    }
                 }
                 else {
-                    showToast(QStringLiteral("已拒绝连接"));
+                    showToast(QStringLiteral("已取消发起"));
                 }
             });
 

@@ -35,6 +35,9 @@ ApplicationWindow {
     property string pendingAlias: ""
     property string pendingCode: ""
     property string pendingIp: ""     // 入站请求方 IP（transport 对端地址直出）
+    // PRD P7 控制端状态条：connecting/wait_confirm/rejected 三态
+    property string connectStage: ""
+    property string connectAlias: ""
     // 文件接收确认（Doc11 §4.3）
     property string pendingFileId: ""
 
@@ -81,6 +84,10 @@ ApplicationWindow {
 
                 Page_DeviceList {
                     onConnectRequested: (aliasName, code, trusted) => {
+                        if (ScLocaldesk.sessionBusy) {
+                            toast.show("当前有会话进行中，请先断开");  // PRD P7 防重复
+                            return;
+                        }
                         if (trusted || ScLocaldesk.isTrusted(code)) {
                             toast.show("正在直连 " + aliasName + "（已信任）…");
                             ScLocaldesk.startControl(aliasName, false, "");
@@ -96,6 +103,10 @@ ApplicationWindow {
 
                 Page_Connect {
                     onConnectRequested: code => {
+                        if (ScLocaldesk.sessionBusy) {
+                            toast.show("当前有会话进行中，请先断开");  // PRD P7 防重复
+                            return;
+                        }
                         const aliasName = ScLocaldesk.deviceAlias(code);
                         if (aliasName === "") {
                             toast.show("设备不在线：" + code);
@@ -138,6 +149,72 @@ ApplicationWindow {
             anchors.right: parent.right
             height: Theme.menuBarHeight
             color: "transparent"
+        }
+
+        // 控制端连接状态条（PRD P7）：菜单栏下方悬浮，细分文案+取消/重连
+        Rectangle {
+            id: connectBar
+            visible: connectStage !== ""
+            anchors.top: parent.top
+            anchors.topMargin: Theme.menuBarHeight + 6
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: row.implicitWidth + 32
+            height: 40
+            radius: Theme.cardRadius
+            color: Qt.rgba(0.13, 0.13, 0.15, 0.9)
+            border.color: Qt.rgba(1, 1, 1, 0.14)
+            z: 50
+
+            Row {
+                id: row
+                anchors.centerIn: parent
+                spacing: 14
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: connectStage === "connecting"
+                              ? "正在连接 " + connectAlias + " …"
+                              : connectStage === "wait_confirm"
+                                  ? "等待 " + connectAlias + " 确认…"
+                                  : connectAlias + " 拒绝了本次协助"
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontBody
+                    color: connectStage === "rejected" ? Theme.accentRed : "#FFFFFF"
+                }
+
+                // 取消（拨号/等确认期）/ 重连（被拒后）
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: connectStage === "rejected" ? "重新连接" : "取消"
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontBody
+                    color: Theme.primary
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (connectStage === "rejected") {
+                                if (ScLocaldesk.lastPeerAlias() !== "") {
+                                    connectStage = "";
+                                    ScLocaldesk.startControl(
+                                        ScLocaldesk.lastPeerAlias(), false, "");
+                                }
+                            }
+                            else {
+                                ScLocaldesk.cancelConnect();  // PRD P7 取消
+                                connectStage = "";
+                                toast.show("已取消连接");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Timer {
+            id: connectHideTimer
+            interval: 4000
+            onTriggered: connectStage = ""
         }
 
         GlobalGlass {
@@ -301,6 +378,26 @@ ApplicationWindow {
         function onControlStartFailed(reason) {
             // PRD P5 寻址失败细分：自连 / 会话占用 / 设备不在线
             toast.show(reason);
+            connectStage = "";
+        }
+        function onConnectStateChanged(stage, alias) {
+            // PRD P7 状态流转：connecting/wait_confirm/rejected → 顶部状态条
+            connectAlias = alias;
+            if (stage === "connecting" || stage === "wait_confirm") {
+                connectStage = stage;
+                connectHideTimer.stop();
+            }
+            else {
+                // rejected：状态条转失败文案（带重连按钮），4s 后自动收
+                connectStage = "rejected";
+                if (stage === "rejected") {
+                    toast.show(alias + " 拒绝了本次协助");
+                }
+                connectHideTimer.restart();
+            }
+        }
+        function onSessionStarted(alias) {
+            connectStage = "";  // 会话建立：连接条收起（PRD P7）
         }
         function onAliasConflict(alias, conflictIp) {
             // PRD P5 别名冲突：引导改名（设置 → 本机连接名）

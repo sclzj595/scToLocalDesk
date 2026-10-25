@@ -34,6 +34,8 @@ class QtEventBridge final : public QObject {
     Q_PROPERTY(QString selfCode READ selfCode CONSTANT)
     Q_PROPERTY(bool unattendedEnabled READ unattendedEnabled NOTIFY unattendedChanged)
     Q_PROPERTY(bool listening READ listening CONSTANT)
+    /// 会话占用中（PRD P7 防重复发起）：连接/会话期 true，设备卡点击拦截
+    Q_PROPERTY(bool sessionBusy READ sessionBusy NOTIFY sessionBusyChanged)
     /// Qt 6.5+ 才有 MultiEffect 真模糊（SCLD_HAS_MULTIEFFECT 编译期注入）；
     /// Qt 6.2（远程 Linux）QML 据此退化为半透底玻璃
     Q_PROPERTY(bool hasGlassBlur READ hasGlassBlur CONSTANT)
@@ -63,6 +65,11 @@ public:
     Q_INVOKABLE void approve();                    ///< 确认弹窗【同意】
     Q_INVOKABLE void reject();                     ///< 确认弹窗【拒绝】
     Q_INVOKABLE void disconnectSession();          ///< 一键断开（悬浮按钮）
+    /// 控制端取消连接（PRD P7）：拨号/等确认期取消；Running 不响应
+    Q_INVOKABLE void cancelConnect();
+    /// 最近一次成功发起的别名（重连按钮数据源）；无则空
+    Q_INVOKABLE QString lastPeerAlias() const;
+    bool sessionBusy() const;
     Q_INVOKABLE bool startControl(const QString& alias, bool unattended,
                                   const QString& password);
     Q_INVOKABLE bool sendFile(const QString& absPath);
@@ -133,6 +140,9 @@ signals:
     void connectRequestTimedOut();  ///< 确认弹窗 30s 未响应已自动拒，UI 关弹窗
     void connectDenied(const QString& alias, const QString& reason);  ///< 本地拦截提示
     void controlStartFailed(const QString& reason);  ///< 发起协助失败细分文案（PRD P5）
+    /// 控制端连接过程状态（PRD P7）：connecting/wait_confirm/rejected
+    void connectStateChanged(QString stage, QString alias);
+    void sessionBusyChanged();
     void sessionStarted(const QString& alias);
     void sessionClosed(const QString& reasonText);
     // 文件（dir: 0 发送 1 接收；name 供 UI 首次插条目）

@@ -161,6 +161,19 @@ void RemoteSessionService::stop_listening() {
     reset_to_idle();
 }
 
+void RemoteSessionService::cancel_connect() {
+    // PRD P7 取消按钮：拨号/等确认期用户主动放弃（Running 会话走断开不走此）
+    if (state() == SessState::Running) {
+        return;
+    }
+    SCLD_LOG(log_, LogLevel::Info, "session", "控制端取消连接");
+    close_session(CloseReason::Normal);
+}
+
+bool RemoteSessionService::can_start_control() const {
+    return state() == SessState::Idle;  // 单会话红线（Doc09 §3.4）
+}
+
 bool RemoteSessionService::connect_to_peer(const std::string& alias, bool unattended,
                                            const std::string& password) {
     if (aliases_ == nullptr || transport_ == nullptr) {
@@ -198,9 +211,17 @@ bool RemoteSessionService::connect_to_peer(const std::string& alias, bool unatte
     }
     transport_->connect_client(peer->ip, peer->port);
     session_id_ = make_session_id();
+    last_peer_ = alias;  // 重连按钮数据源（PRD P7）
     SCLD_LOG(log_, LogLevel::Info, "session",
              "[session_id=" + session_id_ + "][alias=" + alias + "] 发起协助 unattended="
                  + (unattended ? "1" : "0"));
+    if (bus_ != nullptr) {
+        Evt_ConnectStateChanged e;
+        e.stage = "connecting";
+        e.alias = alias;
+        e.timestamp_us = now_us();
+        bus_->publish(e);
+    }
     return true;
 }
 
@@ -216,6 +237,14 @@ void RemoteSessionService::send_request_connect() {
     }
     peer_alias_ = pc.alias;
     const uint8_t flags = pc.unattended ? protocol::connect_flags::kUnattended : 0x00;
+    // PRD P7 状态流转：REQUEST_CONNECT 已发 → 控制端"等待对方确认"（取消可退出）
+    if (role_ == Role::Controller && bus_ != nullptr) {
+        Evt_ConnectStateChanged e;
+        e.stage = "wait_confirm";
+        e.alias = pc.alias;
+        e.timestamp_us = now_us();
+        bus_->publish(e);
+    }
     // 协议语义：REQUEST_CONNECT.body.alias = 发起方（本机）别名——被控端弹窗
     // 展示"谁在请求"与信任反查 peer_code 都依赖它；发目标别名会让被控端
     // 把自己当请求方（弹窗显示错名 + 信任直连永远反查失败）
@@ -433,6 +462,13 @@ void RemoteSessionService::handle_session_ctrl(const uint8_t* body, size_t len) 
         // 控制端收到拒绝：按 reason 提示（Doc13 §3.3）；拒绝属审计日志（Warn 即时落盘）
         SCLD_LOG(log_, LogLevel::Warn, "session",
                  "对端拒绝 reason=" + std::to_string(static_cast<int>(len > 1 ? body[1] : 0)));
+        if (bus_ != nullptr) {
+            Evt_ConnectStateChanged e;
+            e.stage = "rejected";
+            e.alias = peer_alias_;
+            e.timestamp_us = now_us();
+            bus_->publish(e);
+        }
         {
             std::lock_guard<std::mutex> lk(mtx_);
             reset_to_idle();

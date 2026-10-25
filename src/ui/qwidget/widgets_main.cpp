@@ -309,6 +309,7 @@ int main(int argc, char* argv[]) {
         });
     win.setTrustStore(&trust_store);
     win.set_config_store(&ini, &cfg);
+    win.setSessionService(sessions.get());  // PRD P7：确认后真正发起拨号
     win.show();
 
     // 被控端知情权（PRD P4）：Widgets 端补托盘——会话状态项 + 一键断开 +

@@ -233,6 +233,20 @@ QString DeviceListPage::deviceIp(const QString& code) const {
     return {};
 }
 
+QString DeviceListPage::deviceAlias(const QString& code) const {
+    bool ok = false;
+    const uint32_t c = code.toUInt(&ok);
+    if (!ok || c == 0) {
+        return {};
+    }
+    for (const auto& [alias, card] : cards_) {
+        if (card.code == c) {
+            return QString::fromStdString(alias);  // cards_ key 即别名
+        }
+    }
+    return {};
+}
+
 void DeviceListPage::reflow() {
     int i = 0;
     for (auto& [alias, c] : cards_) {

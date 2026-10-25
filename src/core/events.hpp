@@ -73,6 +73,12 @@ struct Evt_SessionStart final : IEvent {
     bool unattended{false};
 };
 
+/// 控制端连接过程状态（PRD P7 状态流转）：UI 据此展示细分文案/取消按钮
+struct Evt_ConnectStateChanged final : IEvent {
+    std::string stage;  ///< connecting=拨号中 / wait_confirm=等对方确认 / rejected=对方拒绝
+    std::string alias;  ///< 目标别名
+};
+
 struct Evt_SessionClosed final : IEvent {
     SessionEndReason reason{SessionEndReason::Normal};
     int64_t duration_us{0};

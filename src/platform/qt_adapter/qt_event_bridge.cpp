@@ -67,6 +67,25 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
                                QString::fromStdString(e.conflict_ip));
         }, Qt::QueuedConnection);
     });
+    // 控制端状态流转（PRD P7）：stage 直传 + busy 属性联动（防重复发起置灰）
+    bus->subscribe<Evt_ConnectStateChanged>([this](const Evt_ConnectStateChanged& e) {
+        QMetaObject::invokeMethod(this, [this, e] {
+            emit connectStateChanged(QString::fromStdString(e.stage),
+                                     QString::fromStdString(e.alias));
+            emit sessionBusyChanged();  // connecting/rejected 均changed
+        }, Qt::QueuedConnection);
+    });
+    bus->subscribe<Evt_SessionStart>([this](const Evt_SessionStart& e) {
+        QMetaObject::invokeMethod(this, [this, e] {
+            emit sessionBusyChanged();
+            emit sessionStarted(QString::fromStdString(e.device_alias));
+        }, Qt::QueuedConnection);
+    });
+    bus->subscribe<Evt_SessionClosed>([this](const Evt_SessionClosed&) {
+        QMetaObject::invokeMethod(this, [this] {
+            emit sessionBusyChanged();
+        }, Qt::QueuedConnection);
+    });
     bus->subscribe<Evt_ConnectRequest>([this](const Evt_ConnectRequest& e) {
         QMetaObject::invokeMethod(this, [this, e] {
             if (!e.auto_approved) {
@@ -220,6 +239,22 @@ void QtEventBridge::disconnectSession() {
     if (sessions_ != nullptr) {
         sessions_->close_session();  // 一键断开，任何模式可用（Doc16 §2.6）
     }
+}
+
+void QtEventBridge::cancelConnect() {
+    if (sessions_ != nullptr) {
+        sessions_->cancel_connect();  // PRD P7：拨号/等确认期取消
+    }
+}
+
+QString QtEventBridge::lastPeerAlias() const {
+    return sessions_ != nullptr ? QString::fromStdString(sessions_->last_peer())
+                                : QString();
+}
+
+bool QtEventBridge::sessionBusy() const {
+    using SessState = RemoteSessionService::SessState;
+    return sessions_ != nullptr && sessions_->state() != SessState::Idle;
 }
 
 bool QtEventBridge::validAlias(const QString& alias) const {

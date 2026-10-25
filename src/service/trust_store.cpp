@@ -162,7 +162,7 @@ void TrustStore::trust(const std::string& code, const std::string& name) {
             return;
         }
     }
-    entries_.push_back(Entry{norm, name, now_timestamp()});
+    entries_.push_back(Entry{norm, name, "", now_timestamp()});
     save();
 }
 
