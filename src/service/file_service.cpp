@@ -114,13 +114,25 @@ bool FileService::accept_pending(const std::string& file_id) {
         meta = it->second;
         dir = save_dir_;
         pending_.erase(it);
+        // meta 已预建接收（confirm 窗口防丢片）：仅转正，勿重复打开 .part
+        const auto t = transfers_.find(file_id);
+        if (t != transfers_.end() && t->second.awaiting_confirm) {
+            t->second.awaiting_confirm = false;
+            return true;
+        }
     }
     return accept_file(meta, dir);
 }
 
 bool FileService::reject_pending(const std::string& file_id) {
     std::lock_guard<std::mutex> lk(mtx_);
-    return pending_.erase(file_id) > 0;
+    const bool had = pending_.erase(file_id) > 0;
+    // 预建接收清理：关句柄 + 删 .part + 回收条目（用户拒绝，窗口内已写数据不转正）
+    const auto it = transfers_.find(file_id);
+    if (it != transfers_.end() && it->second.awaiting_confirm) {
+        finish_receive(it->second, false);
+    }
+    return had;
 }
 
 void FileService::set_event_callback(FileEventCb cb) {
@@ -266,12 +278,25 @@ void FileService::on_file_meta(const uint8_t* body, size_t len) {
         dir = save_dir_;
     }
     if (need_confirm) {
-        // 前置确认：挂 pending → UI 弹窗（Doc11 §4.3 / Doc13）
+        // 前置确认：挂 pending → UI 弹窗（Doc11 §4.3 / Doc13）。
+        // 同时预建接收（打开 .part）：confirm 走 UI Queued 异步，窗口内到达的片
+        // 若无 Transfer 即丢，1GB 压测实测首片丢致跳号失败——预建后片照收，拒绝即清理
         std::string alias;
         {
             std::lock_guard<std::mutex> lk(mtx_);
             pending_[meta.file_id] = meta;
             alias = peer_alias_;
+        }
+        if (!accept_file(meta, dir)) {
+            SCLD_LOG(log_, LogLevel::Warn, "file",
+                     "[file_id=" + m.file_id + "] 预建接收失败");
+        }
+        else {
+            std::lock_guard<std::mutex> lk(mtx_);
+            const auto it = transfers_.find(meta.file_id);
+            if (it != transfers_.end()) {
+                it->second.awaiting_confirm = true;
+            }
         }
         if (bus_ != nullptr) {
             Evt_FileMetaReceived e;
@@ -345,6 +370,8 @@ bool FileService::on_file_chunk(const uint8_t* body, size_t len) {
                             | static_cast<uint32_t>(body[pos + 3]);
     pos += 4;
     if (pos + 8 + data_len > len) {
+        SCLD_LOG(log_, LogLevel::Warn, "file",
+                 "[file_id=" + file_id + "] 分片截断 idx=" + std::to_string(idx));
         return false;  // 分片截断，丢弃
     }
     const uint64_t checksum = read_be64(body + pos);
@@ -353,6 +380,8 @@ bool FileService::on_file_chunk(const uint8_t* body, size_t len) {
     std::lock_guard<std::mutex> lk(mtx_);
     const auto it = transfers_.find(file_id);
     if (it == transfers_.end() || it->second.aborted) {
+        SCLD_LOG(log_, LogLevel::Warn, "file",
+                 "[file_id=" + file_id + "] 片无归属 idx=" + std::to_string(idx));
         return false;
     }
     auto& t = it->second;
@@ -364,7 +393,18 @@ bool FileService::on_file_chunk(const uint8_t* body, size_t len) {
         return false;
     }
     if (fwrite(body + pos, 1, data_len, t.out) != data_len) {
+        SCLD_LOG(log_, LogLevel::Error, "file",
+                 "[file_id=" + file_id + "] 片写入失败 idx=" + std::to_string(idx)
+                     + " errno=" + std::to_string(errno));
         finish_receive(t, false);  // 磁盘满 / IO 错误（Doc11 §4.5）
+        return false;
+    }
+    if (idx != t.received_chunks) {
+        // 顺序校验：WS 保序，跳号即发送侧丢片（不可续传，按完整性失败终止，Doc11 §4.5）
+        SCLD_LOG(log_, LogLevel::Error, "file",
+                 "[file_id=" + file_id + "] 片序跳号 idx=" + std::to_string(idx)
+                     + " 期望=" + std::to_string(t.received_chunks));
+        finish_receive(t, false, FileFailReason::Integrity);
         return false;
     }
     t.received_chunks = idx + 1;
@@ -384,6 +424,19 @@ void FileService::finish_receive(Transfer& t, bool ok, FileFailReason reason) {
         t.out = nullptr;
     }
     const std::string part_path = t.save_dir + "/" + t.meta.file_id + ".part";
+    if (ok) {
+        // 完整性校验：落盘字节数对账（跳号/丢片/截断兜底，Doc11 §3；SHA256 全量为 V1.0 任务）
+        std::error_code ec;
+        const auto part_size = static_cast<uint64_t>(
+            std::filesystem::file_size(part_path, ec));
+        if (!ec && part_size != t.meta.size) {
+            SCLD_LOG(log_, LogLevel::Error, "file",
+                     "[file_id=" + t.meta.file_id + "] 落盘不完整 part="
+                         + std::to_string(part_size) + " 期望="
+                         + std::to_string(t.meta.size));
+            ok = false;
+        }
+    }
     if (ok) {
         // 完整性校验：分片计数对账（Doc11 §3；CRC32/SHA256 为 V1.0 任务）
         std::error_code ec;
@@ -418,8 +471,15 @@ void FileService::finish_receive(Transfer& t, bool ok, FileFailReason reason) {
             bus_->publish(e);
         }
     }
+    static constexpr const char* kReasonStr[] = {"None",  "Cancelled", "DiskFull",
+                                                 "Io",    "Integrity", "Unauthed",
+                                                 "Peer"};
+    const auto ri = static_cast<int>(reason);
     SCLD_LOG(log_, ok ? LogLevel::Info : LogLevel::Error, "file",
-             "[file_id=" + t.meta.file_id + "] 接收" + (ok ? "完成" : "失败"));
+             "[file_id=" + t.meta.file_id + "] 接收"
+                 + (ok ? std::string("完成")
+                       : "失败 reason="
+                             + std::string(kReasonStr[ri >= 0 && ri < 7 ? ri : 3])));
     transfers_.erase(t.meta.file_id);
 }
 

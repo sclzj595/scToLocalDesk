@@ -75,6 +75,7 @@ private:
         FILE* out{nullptr};             ///< 临时文件句柄（接收端）
         uint32_t received_chunks{0};
         bool aborted{false};
+        bool awaiting_confirm{false};   ///< 前置确认预建：confirm 窗口内片照收，拒绝即清理
     };
 
     void send_loop(const std::string& abs_path, const FileMeta& meta);

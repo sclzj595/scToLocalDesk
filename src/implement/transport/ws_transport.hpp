@@ -62,9 +62,12 @@ private:
     /// 等价 asio strand：同一时刻至多一个 drain 在执行）
     std::unique_ptr<QObject> drain_ctx_;
 
-    // 发送外箱：IO 线程入队（QWebSocket 非线程安全，禁止跨线程直发），
-    // socket 线程事件驱动抽干。画面帧 push_overwrite 丢旧留新，其余 push_wait_for
+    // 发送外箱双队列（IO 线程入队，socket 线程事件驱动抽干）：
+    // 文件/控制帧纯 FIFO 零丢弃（满则重试）；画面帧独立队列丢旧留新。
+    // 1GB 压测教训：混合单队列时 screen 帧 push_overwrite 会挤掉队头文件片，
+    // 接收端跳号断传——帧类别分队列后互不侵蚀
     foundation::BoundedQueue<QByteArray> tx_{128};
+    foundation::BoundedQueue<QByteArray> screen_tx_{2};
     std::atomic<bool> flush_scheduled_{false};  ///< drain 事件防重标记
     QTimer* ping_timer_{nullptr};
     int ping_miss_{0};  ///< 连续无 pong 计数（仅 socket 线程访问）

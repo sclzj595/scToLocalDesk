@@ -366,7 +366,7 @@ int main(int argc, char* argv[]) {
                          });
     }
     // 冒烟钩子 3（默认关）：SCLD_SMOKE_FILE=1 时 Running 后 3s 自动生成
-    // 8MB 随机文件发送 + 收到接收请求自动同意（Doc18 §5 E2E 回环）
+    // 随机文件发送（大小 SCLD_SMOKE_FILE_MB，默认 8MB）+ 收到接收请求自动同意
     if (qEnvironmentVariable("SCLD_SMOKE_FILE") == "1") {
         QObject::connect(
             &bridge, &platform::QtEventBridge::sessionStarted, &bridge,
@@ -377,16 +377,30 @@ int main(int argc, char* argv[]) {
                                          + "/scld_smoke_file.bin";
                     QFile f(path);
                     if (f.open(QIODevice::WriteOnly)) {
-                        constexpr qint64 kSize = 8 * 1024 * 1024;
-                        QByteArray blk(65536, 0);
+                        qint64 mb = qEnvironmentVariable("SCLD_SMOKE_FILE_MB")
+                                        .toLongLong();
+                        if (mb <= 0) {
+                            mb = 8;
+                        }
+                        const qint64 kSize = mb * 1024 * 1024;
+                        QByteArray blk(1024 * 1024, 0);
+                        for (int i = 0; i < blk.size(); ++i) {
+                            blk[i] = static_cast<char>(
+                                QRandomGenerator::global()->generate());
+                        }
                         for (qint64 off = 0; off < kSize; off += blk.size()) {
-                            for (int i = 0; i < blk.size(); ++i) {
-                                blk[i] = static_cast<char>(
-                                    QRandomGenerator::global()->generate());
-                            }
-                            f.write(blk);
+                            f.write(blk.constData(),
+                                    static_cast<qint64>(qMin<qint64>(
+                                        blk.size(), kSize - off)));
                         }
                         f.close();
+                        SCLD_LOG(logger, LogLevel::Info, "smoke",
+                                 "smoke file gen " + path.toStdString() + " size="
+                                     + std::to_string(f.size()));
+                    } else {
+                        SCLD_LOG(logger, LogLevel::Warn, "smoke",
+                                 "smoke file gen open 失败 " + path.toStdString()
+                                     + " err=" + f.errorString().toStdString());
                     }
                     if (bridge.sendFile(path)) {
                         SCLD_LOG(logger, LogLevel::Info, "smoke",

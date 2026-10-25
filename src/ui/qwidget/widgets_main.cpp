@@ -320,7 +320,7 @@ int main(int argc, char* argv[]) {
     }
 
     // 冒烟钩子（Doc18 §5 E2E）：SCLD_SMOKE_FILE=1 时 Running 后 3s 自动生成
-    // 8MB 随机文件发送（接收端 confirm 钩子自动同意），收发哈希对账用
+    // 随机文件发送（大小 SCLD_SMOKE_FILE_MB，默认 8MB；接收端 confirm 钩子自动同意）
     if (qEnvironmentVariable("SCLD_SMOKE_FILE") == "1") {
         bus->subscribe<Evt_SessionStart>([files, &logger](const Evt_SessionStart&) {
             QTimer::singleShot(3000, [files, &logger] {
@@ -328,16 +328,32 @@ int main(int argc, char* argv[]) {
                     QCoreApplication::applicationDirPath() + "/smoke_file.bin";
                 QFile f(path);
                 if (f.open(QIODevice::WriteOnly)) {
-                    // 8MB 伪随机（qrand 逐字节太慢，用块随机）
-                    constexpr qint64 kSize = 8 * 1024 * 1024;
-                    QByteArray blk(65536, 0);
+                    qint64 mb =
+                        qEnvironmentVariable("SCLD_SMOKE_FILE_MB").toLongLong();
+                    if (mb <= 0) {
+                        mb = 8;
+                    }
+                    const qint64 kSize = mb * 1024 * 1024;
+                    QByteArray blk(1024 * 1024, 0);
+                    for (int i = 0; i < blk.size(); ++i) {
+                        blk[i] =
+                            static_cast<char>(QRandomGenerator::global()->generate());
+                    }
                     for (qint64 off = 0; off < kSize; off += blk.size()) {
-                        for (int i = 0; i < blk.size(); ++i) {
-                            blk[i] = static_cast<char>(QRandomGenerator::global()->generate());
-                        }
-                        f.write(blk);
+                        f.write(blk.constData(),
+                                static_cast<qint64>(
+                                    qMin<qint64>(blk.size(), kSize - off)));
                     }
                     f.close();
+                    SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info,
+                             "smoke",
+                             "smoke file gen " + path.toStdString() + " size="
+                                 + std::to_string(f.size()));
+                } else {
+                    SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn,
+                             "smoke",
+                             "smoke file gen open 失败 " + path.toStdString()
+                                 + " err=" + f.errorString().toStdString());
                 }
                 if (files->send_file(path.toStdString())) {
                     SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "smoke",

@@ -16,6 +16,10 @@ namespace sc::localdesk {
 
 namespace {
 constexpr int kFlushBudget = 32;          ///< 单次 drain 最多出队帧数（防饿主线程）
+// socket 写缓冲背压水位：QWebSocket::sendBinaryMessage 异步入 Qt 内部缓冲无上限，
+// 1GB 文件压测实测发送端 PM 涨到 1.17GB（≈文件大小全堆在此）。超水位停写，
+// 剩余由 bytesWritten 信号驱动续排（事件驱动，零忙等）
+constexpr qint64 kSendWatermarkBytes = 4 * 1024 * 1024;
 constexpr int kPingIntervalMs = 5000;     ///< KEEPALIVE ping 周期（Doc08 §6）
 constexpr int kPingMaxMiss = 3;           ///< 连续无 pong 上限，超出判链路死亡
 constexpr int kNonScreenWaitMs = 100;     ///< 非画面帧入队限时
@@ -72,6 +76,9 @@ bool WsTransport::start_server(uint16_t port) {
                              peer_ = nullptr;
                              set_state(TransportState::Idle);
                          });
+                         // 写缓冲排空信号：背压停写后的续排驱动（防重原子合并）
+                         QObject::connect(sock, &QWebSocket::bytesWritten,
+                                          [this](qint64) { schedule_drain(); });
                          QObject::connect(sock, &QWebSocket::pong,
                                           [this](quint64, const QByteArray&) { ping_miss_ = 0; });
                          set_state(TransportState::Connected);
@@ -109,6 +116,9 @@ void WsTransport::connect_client(const std::string& host, uint16_t port) {
     QObject::connect(sock, &QWebSocket::disconnected, [this] {
         peer_ = nullptr;
     });
+    // 写缓冲排空信号：背压停写后的续排驱动（防重原子合并）
+    QObject::connect(sock, &QWebSocket::bytesWritten,
+                     [this](qint64) { schedule_drain(); });
     QObject::connect(sock, &QWebSocket::pong,
                      [this](quint64, const QByteArray&) { ping_miss_ = 0; });
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
@@ -128,14 +138,20 @@ void WsTransport::send_binary(const std::vector<uint8_t>& data) {
     }
     QByteArray ba(reinterpret_cast<const char*>(data.data()),
                   static_cast<qsizetype>(data.size()));
-    // 流控水位（Doc08 §4）：画面帧丢旧留新；其余帧限时等空位，超时丢弃
+    // 流控分队列（Doc08 §4 修订）：画面帧独立队列丢旧留新；文件/控制帧
+    // 纯 FIFO 零丢弃——1GB 压测教训：混合队列 overwrite 挤掉文件片致跳号断传
     const bool is_screen =
         data[0] == static_cast<uint8_t>(protocol::MsgType::ScreenFrame);
     if (is_screen) {
-        (void)tx_.push_overwrite(std::move(ba));
+        (void)screen_tx_.push_overwrite(std::move(ba));
     }
     else {
-        (void)tx_.push_wait_for(std::move(ba), kNonScreenWaitMs);
+        // 零丢弃：满则重试直至入队或链路关闭（100ms/轮退避）
+        while (!tx_.push_wait_for(QByteArray(ba), kNonScreenWaitMs)) {
+            if (tx_.closed()) {
+                return;
+            }
+        }
     }
     schedule_drain();   // proactor：入队即投递排空事件（原子防重）
 }
@@ -143,6 +159,7 @@ void WsTransport::send_binary(const std::vector<uint8_t>& data) {
 void WsTransport::close() {
     stop_timers();
     tx_.close();
+    screen_tx_.close();
     if (peer_ != nullptr) {
         peer_->close();
         peer_->deleteLater();
@@ -200,16 +217,44 @@ void WsTransport::drain_outbox() {
     if (peer_ == nullptr) {
         return;
     }
+    const auto defer_drain = [this] {
+        QTimer::singleShot(10, drain_ctx_.get(), [this] {
+            if (peer_ != nullptr && (!tx_.empty() || !screen_tx_.empty())) {
+                drain_outbox();
+            }
+        });
+    };
     QByteArray pkt;
+    // 画面帧全发（队列容量 2，均为最新帧，保推流实时性）
+    while (screen_tx_.pop_wait(pkt, 0)) {
+        if (peer_ == nullptr) {
+            return;
+        }
+        if (peer_->bytesToWrite() > kSendWatermarkBytes) {
+            defer_drain();
+            return;
+        }
+        peer_->sendBinaryMessage(pkt);
+    }
+    // 文件/控制帧按预算抽干（纯 FIFO，不丢）
     int budget = kFlushBudget;
-    while (budget-- > 0 && tx_.pop_wait(pkt, 0)) {
+    while (budget-- > 0) {
         if (peer_ == nullptr) {
             return;  // drain 期间对端断开
+        }
+        // 背压：socket 写缓冲超水位即停。停写后 10ms 退避自续排兜底——
+        // 单靠 bytesWritten 续排存在丢失窗口（1GB 压测实测）
+        if (peer_->bytesToWrite() > kSendWatermarkBytes) {
+            defer_drain();
+            return;
+        }
+        if (!tx_.pop_wait(pkt, 0)) {
+            break;
         }
         peer_->sendBinaryMessage(pkt);
     }
     // 预算耗尽仍有积压：再投一轮（自续），保持批并节奏
-    if (!tx_.empty()) {
+    if (!tx_.empty() || !screen_tx_.empty()) {
         schedule_drain();
     }
 }
