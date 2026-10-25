@@ -62,6 +62,12 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
             }
         }, Qt::QueuedConnection);
     });
+    bus->subscribe<Evt_ConnectDenied>([this](const Evt_ConnectDenied& e) {
+        QMetaObject::invokeMethod(this, [this, e] {
+            emit connectDenied(QString::fromStdString(e.alias),
+                               QString::fromStdString(e.reason));
+        }, Qt::QueuedConnection);
+    });
     bus->subscribe<Evt_SessionStart>([this](const Evt_SessionStart& e) {
         QMetaObject::invokeMethod(this, [this, e] {
             emit sessionStarted(QString::fromStdString(e.device_alias));

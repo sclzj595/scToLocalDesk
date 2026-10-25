@@ -58,6 +58,12 @@ struct Evt_ConnectRequest final : IEvent {
     bool auto_approved{false};  ///< 无人值守鉴权通过，UI 只 Toast 不弹窗
 };
 
+/// 控制端发起被本地拦截（自连等）：不发网络包，UI 弹提示
+struct Evt_ConnectDenied final : IEvent {
+    std::string alias;
+    std::string reason;  ///< 人类可读文案，直接展示
+};
+
 struct Evt_SessionStart final : IEvent {
     bool unattended{false};
 };

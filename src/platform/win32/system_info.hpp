@@ -6,6 +6,9 @@
 #pragma once
 
 #include <string>
+#include <vector>
+
+#include <string>
 
 namespace sc::localdesk::platform {
 
@@ -13,6 +16,7 @@ struct SystemInfo {
     std::string hostname;  // UTF-8；API 失败时为空
     std::string username;  // UTF-8；API 失败时为空
     std::string mac;       // 12 位大写 hex 无分隔符；无非虚拟在线网卡时为空
+    std::vector<std::string> ips;  // 全部在线网卡 IPv4（含虚拟网卡，排回环 127.*）；自连拦截比对用
 };
 
 /// 采集本机身份三要素（GetComputerNameW/GetUserNameW/GetAdaptersAddresses）

@@ -90,6 +90,49 @@ std::string first_physical_mac() {
     return {};
 }
 
+/// 全部在线网卡 IPv4 字符串（含虚拟网卡，排回环）：自连拦截比对集合
+/// PRD：只拦"自己连自己"，虚拟机/同网段设备不在集合内正常放行
+std::vector<std::string> all_local_ipv4() {
+    std::vector<std::string> out;
+    constexpr ULONG kFlags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST
+                           | GAA_FLAG_SKIP_DNS_SERVER;
+    ULONG size = 15 * 1024;
+    std::vector<unsigned char> buf(size);
+    for (;;) {
+        const ULONG ret = GetAdaptersAddresses(
+            AF_INET, kFlags, nullptr,
+            reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data()), &size);
+        if (ret == ERROR_BUFFER_OVERFLOW) {
+            buf.assign(size, 0);
+            continue;
+        }
+        if (ret != NO_ERROR) {
+            return out;
+        }
+        break;
+    }
+    for (auto* ad = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data());
+         ad != nullptr; ad = ad->Next) {
+        if (ad->IfType == IF_TYPE_SOFTWARE_LOOPBACK
+            || ad->OperStatus != IfOperStatusUp) {
+            continue;
+        }
+        for (auto* un = ad->FirstUnicastAddress; un != nullptr; un = un->Next) {
+            if (un->Address.lpSockaddr == nullptr
+                || un->Address.lpSockaddr->sa_family != AF_INET) {
+                continue;
+            }
+            const auto* sa =
+                reinterpret_cast<const sockaddr_in*>(un->Address.lpSockaddr);
+            char ip[INET_ADDRSTRLEN] = {};
+            if (inet_ntop(AF_INET, &sa->sin_addr, ip, sizeof(ip)) != nullptr) {
+                out.push_back(ip);
+            }
+        }
+    }
+    return out;
+}
+
 }  // namespace
 
 SystemInfo query_system_info() {
@@ -105,6 +148,7 @@ SystemInfo query_system_info() {
         si.username = wide_to_utf8(user, ulen - 1);  // ulen 含结尾符
     }
     si.mac = first_physical_mac();
+    si.ips = all_local_ipv4();
     return si;
 }
 

@@ -147,6 +147,21 @@ int main(int argc, char* argv[]) {
         transport, manual_auth, unattended_auth, crypto, aliases, bus, logger);
     sessions->set_stream_params(cfg.fps, cfg.jpeg_quality);
     sessions->set_trust_store(&trust_store);  // 已信任设备免确认直连（Doc18 §3.2）
+    // 自连拦截（PRD 连接黑名单）：本机网卡 IP 集合 + 本机监听端口双条件
+    const std::vector<std::string> local_ips = sys.ips;
+    const uint16_t local_port = static_cast<uint16_t>(cfg.ws_port);
+    sessions->set_self_ip_checker(
+        [local_ips, local_port](const std::string& ip, uint16_t port) {
+            if (port != local_port) {
+                return false;  // 同机双实例（端口不同）放行，保 E2E 回环
+            }
+            for (const auto& own : local_ips) {
+                if (own == ip) {
+                    return true;
+                }
+            }
+            return false;
+        });
     auto stream = std::make_shared<ScreenStreamService>(bus, logger);
 #if SCLD_HAS_FFMPEG
     stream->set_source(std::make_shared<GdiCapturer>(),
@@ -180,6 +195,19 @@ int main(int argc, char* argv[]) {
     app.setStyleSheet(sc::localdesk::ui::GlassTheme::instance().buildQss());
 
     sc::localdesk::ui::MainWindow win;
+
+    // 自连拦截提示（Evt_ConnectDenied → 主线程弹窗，不发网络包）
+    bus->subscribe<Evt_ConnectDenied>([&win, &logger](const Evt_ConnectDenied& e) {
+        QMetaObject::invokeMethod(
+            &win,
+            [&win, &logger, e] {
+                SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn,
+                         "smoke", "connect denied " + e.reason);
+                QMessageBox::warning(&win, QStringLiteral("无法发起协助"),
+                                     QString::fromStdString(e.reason));
+            },
+            Qt::QueuedConnection);
+    });
 
     // 入站连接申请 → 主线程确认（暂用 QMessageBox，玻璃化随 P4 UI 专项；
     // SCLD_SMOKE_APPROVE=1 冒烟钩子：自动放行，双实例 E2E 用）

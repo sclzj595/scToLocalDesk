@@ -117,6 +117,7 @@ signals:
     void aliasConflict(const QString& alias, const QString& conflictIp);
     // 会话
     void connectRequest(const QString& alias);      ///< 人工确认弹窗触发
+    void connectDenied(const QString& alias, const QString& reason);  ///< 本地拦截提示
     void sessionStarted(const QString& alias);
     void sessionClosed(const QString& reasonText);
     // 文件（dir: 0 发送 1 接收；name 供 UI 首次插条目）

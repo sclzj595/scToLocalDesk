@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -110,6 +111,14 @@ public:
         trust_ = ts;
     }
 
+    /// 自连拦截（PRD 连接黑名单）：注入本机判定回调（IP 属本机集合 且 端口==本机监听端口）；
+    /// connect_to_peer 拨号前比对，命中即本地拒绝不发网络包。
+    /// 双实例同机（端口不同）不算自连，放行保 E2E 回环
+    void set_self_ip_checker(
+        std::function<bool(const std::string& ip, uint16_t port)> checker) {
+        self_ip_checker_ = std::move(checker);
+    }
+
     /// 应用设置页推流参数（Doc17 session.fps / session.jpeg_quality）
     void set_stream_params(int fps, int quality);
 
@@ -163,6 +172,7 @@ private:
     PendingConnect pending_connect_;  ///< 控制端待发申请
     bool listening_{false};
     std::atomic<int64_t> session_seq_{0};
+    std::function<bool(const std::string&, uint16_t)> self_ip_checker_;  ///< 自连拦截判定（空=不拦）
 };
 
 }  // namespace sc::localdesk

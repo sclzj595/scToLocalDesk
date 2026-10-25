@@ -162,6 +162,18 @@ bool RemoteSessionService::connect_to_peer(const std::string& alias, bool unatte
         SCLD_LOG(log_, LogLevel::Warn, "session", "[alias=" + alias + "] 内网未找到该设备");
         return false;
     }
+    // 自连拦截（PRD 连接黑名单）：目标 IP 属本机网卡集合 且 端口=本机监听端口
+    // → 本地拒绝不发网络包；同机双实例（端口不同）/虚拟机均放行
+    if (self_ip_checker_ && self_ip_checker_(peer->ip, peer->port)) {
+        SCLD_LOG(log_, LogLevel::Warn, "session",
+                 "[alias=" + alias + "] 目标 " + peer->ip + ":"
+                     + std::to_string(peer->port) + " 为本机自身，拒绝连接");
+        Evt_ConnectDenied e;
+        e.device_alias = alias;
+        e.reason = "不允许连接本机";
+        bus_->publish(e);
+        return false;
+    }
     // 单会话红线：控制端同时只发起一路（Doc09 §3.4）
     {
         std::lock_guard<std::mutex> lk(mtx_);

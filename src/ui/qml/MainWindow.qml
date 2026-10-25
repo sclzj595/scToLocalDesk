@@ -282,6 +282,9 @@ ApplicationWindow {
             confirmPopup.outgoing = false;   // 入站申请：同意即 approve
             confirmPopup.open();
         }
+        function onConnectDenied(alias, reason) {
+            toast.show((alias === "" ? "" : alias + "：") + reason);
+        }
         function onSessionStarted(alias) {
             dockBar.currentIndex = 2;        // 切远程画面页（管线已在跑）
             toast.show("会话已建立：" + alias);
