@@ -23,7 +23,7 @@ endif()
 
 option(SCTOLOCALDESK_BUILD_CORE_ONLY "仅编译核心静态库 + headless 冒烟入口（无 Qt）" ON)
 option(SCTOLOCALDESK_BUILD_QT_APP    "编译 QML 桌面应用（需 Qt 6.5.3 + MSVC2019）" OFF)
-option(SCTOLOCALDESK_BUILD_TESTS     "编译单元测试（需 gtest）" OFF)
+option(SCTOLOCALDESK_BUILD_TESTS     "编译单元测试（doctest，header-only vendored）" OFF)
 option(SCTOLOCALDESK_WITH_SPDLOG     "启用 spdlog 日志实现（关闭时使用内置 ConsoleLogger）" OFF)
 option(SCTOLOCALDESK_WITH_OPENSSL    "启用 OpenSSL 加密实现（AES-GCM/PBKDF2/HMAC，关闭时使用桩实现）" OFF)
 

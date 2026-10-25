@@ -1,23 +1,31 @@
-# 单元测试：仅依赖 sc_localdesk_core + gtest（无网络、无 Qt，Doc14 §1）
-find_package(GTest CONFIG QUIET)
-if(NOT GTest_FOUND)
-    message(STATUS "未找到 gtest，跳过单元测试（vcpkg install gtest 后重试）")
-    return()
-endif()
+# ============================================================
+# scToLocalDesk | tests/CMakeLists.txt
+# 单元测试（Doc18 §6.1）：doctest header-only，链接核心静态库
+# 用例覆盖：protocol / bounded_queue / config / trust_store / id_service
+# ============================================================
 
 add_executable(sc_localdesk_tests
-    protocol_test/tlv_test.cpp
-    foundation_test/buffer_test.cpp
-    foundation_test/event_bus_test.cpp
-    foundation_test/bounded_queue_test.cpp
+    main.cpp
+    test_protocol.cpp
+    test_bounded_queue.cpp
+    test_config.cpp
+    test_trust_store.cpp
+    test_id_service.cpp
 )
-target_link_libraries(sc_localdesk_tests PRIVATE
-    sc_localdesk_core
-    GTest::gtest GTest::gtest_main)
+
+target_include_directories(sc_localdesk_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/doctest/doctest
+)
+
+target_link_libraries(sc_localdesk_tests PRIVATE sc_localdesk_core)
 
 if(MSVC)
-    target_compile_options(sc_localdesk_tests PRIVATE /W4)
+    # 不开 /WX：vendored doctest.h 在 /W4 下有告警，测试代码保持 /W3 自净
+    target_compile_options(sc_localdesk_tests PRIVATE /W3 /utf-8)
+    target_compile_definitions(sc_localdesk_tests PRIVATE
+        _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
+else()
+    target_compile_options(sc_localdesk_tests PRIVATE -Wall -Wextra)
 endif()
 
-include(GoogleTest)
-gtest_discover_tests(sc_localdesk_tests)
+add_test(NAME sc_localdesk_tests COMMAND sc_localdesk_tests)

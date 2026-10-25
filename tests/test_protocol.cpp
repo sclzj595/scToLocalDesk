@@ -1,0 +1,192 @@
+// ============================================================
+// scToLocalDesk | tests/test_protocol.cpp
+// TLV 协议编解码用例（Doc05）：整帧构建/解析、半包粘包判定、
+// 各信令往返。契约：builder 返回整帧（5B 头+body），parser 吃裸 body
+// ============================================================
+#include "doctest.h"
+
+#include "core/protocol/tlv.hpp"
+
+using namespace sc::localdesk;
+using namespace sc::localdesk::protocol;
+
+/// 取整帧的裸 body 视图（builder 契约：返回整帧）
+static std::vector<uint8_t> frame_body(const std::vector<uint8_t>& frame) {
+    REQUIRE(frame.size() >= kHeaderSize);
+    return std::vector<uint8_t>(frame.begin() + kHeaderSize, frame.end());
+}
+
+TEST_CASE("整帧构建与头解析往返")
+{
+    const std::vector<uint8_t> body = {0x11, 0x22, 0x33};
+    const auto frame = build_frame(MsgType::FileMeta, body);
+
+    REQUIRE(frame.size() == kHeaderSize + body.size());
+
+    uint32_t body_len = 0;
+    const auto type = parse_header(frame.data(), frame.size(), body_len);
+    REQUIRE(type.has_value());
+    CHECK(*type == MsgType::FileMeta);
+    CHECK(body_len == 3);
+}
+
+TEST_CASE("半包与粘包判定")
+{
+    const std::vector<uint8_t> body = {0xAA, 0xBB};
+    const auto frame = build_frame(MsgType::SessionCtrl, body);
+
+    size_t total = 0;
+    // 半包：头未齐 / body 未齐均不完整
+    CHECK_FALSE(is_frame_complete(frame.data(), 2, total));
+    CHECK_FALSE(is_frame_complete(frame.data(), frame.size() - 1, total));
+    // 整帧到位
+    CHECK(is_frame_complete(frame.data(), frame.size(), total));
+    CHECK(total == frame.size());
+
+    // 粘包：两帧连排，按第一帧 total 可切出第二帧
+    std::vector<uint8_t> sticky = frame;
+    sticky.insert(sticky.end(), frame.begin(), frame.end());
+    REQUIRE(is_frame_complete(sticky.data(), sticky.size(), total));
+    CHECK(total == frame.size());
+    uint32_t body_len = 0;
+    const auto second = parse_header(sticky.data() + total, sticky.size() - total,
+                                     body_len);
+    REQUIRE(second.has_value());
+    CHECK(*second == MsgType::SessionCtrl);
+    CHECK(body_len == 2);
+}
+
+TEST_CASE("头长度不足返回 nullopt")
+{
+    uint32_t body_len = 0;
+    const uint8_t one = 0x04;
+    CHECK_FALSE(parse_header(&one, 1, body_len).has_value());
+}
+
+TEST_CASE("REQUEST_CONNECT 往返")
+{
+    const auto frame = build_request_connect("SC-PC", connect_flags::kUnattended);
+    uint32_t body_len = 0;
+    const auto type = parse_header(frame.data(), frame.size(), body_len);
+    REQUIRE(type.has_value());
+    CHECK(*type == MsgType::SessionCtrl);
+    const auto body = frame_body(frame);
+
+    RequestConnectBody out;
+    REQUIRE(parse_request_connect(body.data(), body.size(), out));
+    CHECK(out.alias == "SC-PC");
+    CHECK(out.flags == connect_flags::kUnattended);
+}
+
+TEST_CASE("REQUEST_CONNECT 越界 body 解析拒绝")
+{
+    RequestConnectBody out;
+    CHECK_FALSE(parse_request_connect(nullptr, 0, out));
+    const uint8_t junk[] = {0xFF};
+    CHECK_FALSE(parse_request_connect(junk, 1, out));
+}
+
+TEST_CASE("FILE_META 往返（含中文名）")
+{
+    // file_id 契约：32 hex 字符 = 16B（生产链路由 16B 随机数 hex 化而来）
+    const auto frame = build_file_meta("0123456789abcdef0123456789abcdef",
+                                        "测试文件.bin", 1234567890ULL, 32);
+    uint32_t body_len = 0;
+    const auto type = parse_header(frame.data(), frame.size(), body_len);
+    REQUIRE(type.has_value());
+    CHECK(*type == MsgType::FileMeta);
+    const auto body = frame_body(frame);
+
+    FileMetaBody out;
+    REQUIRE(parse_file_meta(body.data(), body.size(), out));
+    CHECK(out.file_id == "0123456789abcdef0123456789abcdef");
+    CHECK(out.name == "测试文件.bin");
+    CHECK(out.size == 1234567890ULL);
+    CHECK(out.total_chunks == 32);
+}
+
+TEST_CASE("FILE_META 截断 body 解析拒绝")
+{
+    const auto body = frame_body(build_file_meta("0123456789abcdef0123456789abcdef",
+                                                 "a.bin", 1, 1));
+    FileMetaBody out;
+    // 掐掉尾部字段
+    CHECK_FALSE(parse_file_meta(body.data(), body.size() - 4, out));
+}
+
+TEST_CASE("键鼠帧往返")
+{
+    SUBCASE("鼠标移动 + 滚轮")
+    {
+        MouseKeyBody mk;
+        mk.kind = MouseKeyKind::Mouse;
+        mk.action = 1;
+        mk.x = 32768;
+        mk.y = 65535;
+        mk.wheel = -120;
+        const auto body = frame_body(build_mouse_key(mk));
+        MouseKeyBody out;
+        REQUIRE(parse_mouse_key(body.data(), body.size(), out));
+        CHECK(out.kind == MouseKeyKind::Mouse);
+        CHECK(out.action == 1);
+        CHECK(out.x == 32768);
+        CHECK(out.y == 65535);
+        CHECK(out.wheel == -120);
+    }
+    SUBCASE("键盘按键")
+    {
+        MouseKeyBody mk;
+        mk.kind = MouseKeyKind::Keyboard;
+        mk.vk = 0x41;
+        mk.scan = 0x1E;
+        mk.down = 1;
+        const auto body = frame_body(build_mouse_key(mk));
+        MouseKeyBody out;
+        REQUIRE(parse_mouse_key(body.data(), body.size(), out));
+        CHECK(out.kind == MouseKeyKind::Keyboard);
+        CHECK(out.vk == 0x41);
+        CHECK(out.scan == 0x1E);
+        CHECK(out.down == 1);
+    }
+}
+
+TEST_CASE("画面帧零拷贝解析")
+{
+    const uint8_t pixels[] = {1, 2, 3, 4, 5};
+    ScreenFrameHeader hdr;
+    hdr.width = 1920;
+    hdr.height = 1080;
+    hdr.timestamp_us = 1234567890123LL;
+    const auto body = frame_body(build_screen_frame(hdr, pixels, sizeof(pixels)));
+
+    ScreenFrameHeader out;
+    const uint8_t* data = nullptr;
+    size_t data_len = 0;
+    REQUIRE(parse_screen_frame(body.data(), body.size(), out, data, data_len));
+    CHECK(out.width == 1920);
+    CHECK(out.height == 1080);
+    CHECK(out.timestamp_us == 1234567890123LL);
+    REQUIRE(data_len == sizeof(pixels));
+    // 零拷贝：数据视图直指 body 缓冲
+    CHECK(data == body.data() + 16);
+    CHECK(data[0] == 1);
+    CHECK(data[4] == 5);
+}
+
+TEST_CASE("控制报文整帧：头 + sub(+reason)")
+{
+    // builder 契约：返回 SESSION_CTRL 整帧，body 首字节恒为 sub（Doc05 §3）
+    const auto ok = build_ctrl(CtrlSubType::Approved);
+    CHECK(ok.size() == kHeaderSize + 1);
+    CHECK(ok[kHeaderSize] == static_cast<uint8_t>(CtrlSubType::Approved));
+
+    const auto rej = build_reject(RejectReason::SessionBusy);
+    CHECK(rej.size() == kHeaderSize + 2);
+    CHECK(rej[kHeaderSize] == static_cast<uint8_t>(CtrlSubType::Reject));
+    CHECK(rej[kHeaderSize + 1] == static_cast<uint8_t>(RejectReason::SessionBusy));
+
+    const auto cls = build_close(CloseReason::Normal);
+    CHECK(cls.size() == kHeaderSize + 2);
+    CHECK(cls[kHeaderSize] == static_cast<uint8_t>(CtrlSubType::Close));
+    CHECK(cls[kHeaderSize + 1] == static_cast<uint8_t>(CloseReason::Normal));
+}
