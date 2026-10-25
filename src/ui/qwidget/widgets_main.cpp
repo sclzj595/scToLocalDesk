@@ -31,6 +31,7 @@
         #include "platform/qt_adapter/qt_udp_discovery.hpp"
         #include "platform/qt_adapter/single_instance_guard.hpp"
         #include "platform/qt_adapter/video_pipeline.hpp"
+        #include "platform/win32/crash_reporter.hpp"
         #include "platform/win32/system_info.hpp"
         #include "service/alias_service.hpp"
         #include "service/app_config.hpp"
@@ -60,6 +61,13 @@ sc::localdesk::foundation::LogLevel parse_log_level(const std::string& s) {
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
+
+    // 崩溃捕获（Doc18 §6.2）：exe 旁 dumps/，越早装越好
+    sc::localdesk::platform::CrashReporter::install(
+        QCoreApplication::applicationDirPath().toStdWString() + L"\\dumps");
+    if (qEnvironmentVariable("SCLD_CRASH_TEST") == "1") {
+        sc::localdesk::platform::CrashReporter::crash_for_test();
+    }
 
     // 单实例锁（exe 名作 key：与 QML 版互不排斥，对照构建可并存）
     sc::localdesk::platform::SingleInstanceGuard guard;
@@ -292,7 +300,7 @@ int main(int argc, char* argv[]) {
                 &win,
                 [files, &logger, smoke_file, e] {
                     if (smoke_file) {
-                        files->accept_pending(e.file_id);
+                        (void)files->accept_pending(e.file_id);
                         SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "smoke",
                                  "auto accept file_id=" + e.file_id);
                         return;
@@ -306,7 +314,7 @@ int main(int argc, char* argv[]) {
                             .arg(e.size),
                         QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
                     if (ret == QMessageBox::Yes) {
-                        files->accept_pending(e.file_id);
+                        (void)files->accept_pending(e.file_id);
                         SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "file",
                                  "接收确认 file_id=" + e.file_id);
                     } else {

@@ -206,6 +206,7 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
                 src/platform/win32/auto_start.cpp
                 src/platform/win32/input_injector.cpp
                 src/platform/win32/system_info.cpp
+                src/platform/win32/crash_reporter.cpp
             )
         else()
             # Linux（Doc18 P6）：system_info 走 POSIX 实现；注入器/自启动为占位
@@ -223,7 +224,7 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
         endif()
         # system_info：GetAdaptersAddresses/GetUserNameW 所需系统库
         if(WIN32)
-            target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS} iphlpapi advapi32)
+            target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS} iphlpapi advapi32 dbghelp)
         else()
             # Linux：openssl_crypto 实现检测到系统头后编入真实现，需链 OpenSSL
             find_package(OpenSSL QUIET)
@@ -287,6 +288,7 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
                 src/platform/win32/auto_start.cpp
                 src/platform/win32/input_injector.cpp
                 src/platform/win32/system_info.cpp
+                src/platform/win32/crash_reporter.cpp
                 src/platform/qt_adapter/qt_udp_discovery.cpp
             )
         endif()
@@ -296,7 +298,7 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
             target_compile_options(scToLocalDeskWidgets PRIVATE /utf-8)
         endif()
         target_link_libraries(scToLocalDeskWidgets PRIVATE
-            ${SCLD_WGT_LIBS} iphlpapi advapi32)
+            ${SCLD_WGT_LIBS} iphlpapi advapi32 dbghelp)
     else()
         message(WARNING "未找到 Qt 6.2+ Widgets，跳过 WIDGETS_APP 目标")
     endif()

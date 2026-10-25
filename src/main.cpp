@@ -57,6 +57,7 @@
     #include "platform/qt_adapter/video_pipeline.hpp"
     #include "platform/qt_adapter/video_surface.hpp"
     #include "platform/qt_adapter/remote_input_item.hpp"
+    #include "platform/win32/crash_reporter.hpp"
     #include "platform/win32/system_info.hpp"
     #include "service/alias_service.hpp"
     #include "service/app_config.hpp"
@@ -101,6 +102,13 @@ LogLevel parse_log_level(const std::string& s) {
 int main(int argc, char* argv[]) {
     // QApplication（非 QGui）：托盘 QMenu 需要 Widgets 事件栈
     QApplication app(argc, argv);
+    // ---------------- 崩溃捕获（Doc18 §6.2）：exe 旁 dumps/，越早装越好 ----------------
+    platform::CrashReporter::install(
+        std::filesystem::path(QApplication::applicationDirPath().toStdU16String())
+        / "dumps");
+    if (qEnvironmentVariable("SCLD_CRASH_TEST") == "1") {
+        platform::CrashReporter::crash_for_test();
+    }
     // Qt 消息（QML 错误等）统一落 stderr，便于冒烟诊断
     qInstallMessageHandler([](QtMsgType type, const QMessageLogContext&,
                               const QString& msg) {
