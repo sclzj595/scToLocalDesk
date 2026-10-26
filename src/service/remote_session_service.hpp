@@ -22,6 +22,7 @@
 #include "core/interface/itransport.hpp"
 #include "core/protocol/msg_type.hpp"
 #include "core/events.hpp"  // SessionEndReason（close_session 默认参数需完整类型，PRD P8）
+#include "foundation/thread_pool.hpp"
 
 namespace sc::localdesk {
 
@@ -90,8 +91,7 @@ public:
 
     /// 发起协助：解析别名 → 连接 → 发 REQUEST_CONNECT
     /// unattended=true 时 password 为设置页输入的访问密码（瞬态，proof 发送后即清）
-    bool connect_to_peer(const std::string& alias, bool unattended,
-                                       const std::string& password = "");
+    bool connect_to_peer(const std::string& alias, bool unattended,                                       const std::string& password = "");
 
     // ---------------- UI 回调（人工确认弹窗，Doc13 §3.1） ----------------
 
@@ -133,6 +133,14 @@ public:
         self_ip_checker_ = std::move(checker);
     }
 
+    /// 主线程回投（PBKDF2 异步收尾用）：服务层 Qt-free，投递能力由装配层注入
+    /// （main.cpp 经 QMetaObject::invokeMethod(qApp)）。未注入时异步完成同步兜底
+    /// （单测/headless）。校验后的状态迁移/事件发布必须在主线程——bus 订阅方
+    /// 含 Qt 模型，非全线程安全
+    void set_main_poster(std::function<void(std::function<void()>)> poster) {
+        main_poster_ = std::move(poster);
+    }
+
     /// 应用设置页推流参数（Doc17 session.fps / session.jpeg_quality）
     void set_stream_params(int fps, int quality);
 
@@ -147,6 +155,7 @@ public:
 private:
     void handle_session_ctrl(const uint8_t* body, size_t len);
     void handle_key_sync(const uint8_t* body, size_t len);  ///< 密钥协商应答（PRD 会话加密）
+    void finish_auth_proof(bool ok, const std::string& challenge);  ///< 校验完成回投（仅主线程）
     void handle_request_connect(const protocol::RequestConnectBody& req);
     void handle_auth_challenge(const uint8_t* body, size_t len);   ///< 控制端收挑战
     void handle_auth_proof(const uint8_t* body, size_t len);       ///< 被控端收证明
@@ -215,6 +224,14 @@ public:
     std::condition_variable confirm_cv_;
     uint64_t confirm_seq_{0};       ///< 当前弹窗代次（持锁变更）
     std::thread confirm_watchdog_;  ///< 仅在 arm/析构处 join（不持锁）
+
+    // PBKDF2 异步（Doc12 §3 线程池红线）：口令派生/校验移交池线程，
+    // 传输层回调（UI 主线程）不再阻塞数百毫秒。完成经 main_poster_ 回投
+    // 主线程做状态迁移（未注入则同步兜底）。声明在成员区末尾——先于其他
+    // 成员析构，池 join 时任务引用的共享指针成员仍存活
+    std::function<void(std::function<void()>)> main_poster_;  ///< 异步完成回投主线程
+    foundation::ThreadPool pbkdf2_pool_{2};  ///< 口令派生/校验专用（CPU 密集 2 线程足矣）
+    bool auth_in_flight_{false};  ///< 无人值守校验在途（持锁，吞窗口内重复 PROOF）
 };
 
 }  // namespace sc::localdesk

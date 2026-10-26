@@ -710,23 +710,41 @@ void RemoteSessionService::handle_auth_challenge(const uint8_t* body, size_t len
     if (password.empty()) {
         return;
     }
-    // TODO(V1.0): PBKDF2 10 万迭代移交线程池，避免阻塞 IO 线程（Doc12 §3）
-    std::vector<uint8_t> key;
-    if (!crypto_->derive_key(password,
-                             std::string(reinterpret_cast<const char*>(body), 16),
-                             key)) {
-        SCLD_LOG(log_, LogLevel::Error, "session", "无人值守口令派生失败");
-        return;
-    }
-    std::vector<uint8_t> proof;
-    if (!crypto_->hmac_sha256(
-            std::string(reinterpret_cast<const char*>(key.data()), key.size()),
-            std::string(reinterpret_cast<const char*>(body + 16), 16), proof)) {
-        return;
-    }
-    if (transport_ != nullptr) {
-        transport_->send_binary(protocol::build_auth_proof(proof.data()));
-    }
+    // PBKDF2 10 万迭代移交线程池（Doc12 §3）：传输层回调运行于 UI 主线程，
+    // 同步派生会卡界面数百毫秒。入参按值捕获，完成后经线程安全 send 发出
+    // （tx_ FIFO + QueuedConnection 排空）；服务析构先于池 join，共享指针
+    // 按值捕获保证对象存活。密码清零后由 lambda 独占持有，发送即销毁
+    const std::string salt(reinterpret_cast<const char*>(body), 16);
+    const std::string challenge(reinterpret_cast<const char*>(body + 16), 16);
+    auto transport = transport_;
+    auto crypto = crypto_;
+    auto logger = log_;
+    const std::string sid = session_id_;
+    pbkdf2_pool_.submit([this, transport, crypto, logger, password, salt,
+                         challenge, sid] {
+        const auto t0 = std::chrono::steady_clock::now();
+        std::vector<uint8_t> key;
+        if (!crypto->derive_key(password, salt, key)) {
+            SCLD_LOG(logger, LogLevel::Error, "session",
+                     "[session_id=" + sid + "] 无人值守口令派生失败");
+            return;
+        }
+        std::vector<uint8_t> proof;
+        if (!crypto->hmac_sha256(
+                std::string(reinterpret_cast<const char*>(key.data()), key.size()),
+                challenge, proof)) {
+            return;
+        }
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - t0)
+                            .count();
+        SCLD_LOG(logger, LogLevel::Info, "session",
+                 "[session_id=" + sid + "] 无人值守 proof 已计算 PBKDF2="
+                     + std::to_string(ms) + "ms 异步=1");
+        if (transport != nullptr) {
+            transport->send_binary(protocol::build_auth_proof(proof.data()));
+        }
+    });
 }
 
 void RemoteSessionService::handle_auth_proof(const uint8_t* body, size_t len) {
@@ -736,14 +754,45 @@ void RemoteSessionService::handle_auth_proof(const uint8_t* body, size_t len) {
     std::string challenge;
     {
         std::lock_guard<std::mutex> lk(mtx_);
-        if (state_ != SessState::WaitForUnattended) {
+        // 校验在途：PBKDF2 异步窗口内的重复 PROOF 直接吞掉（防并发重验）
+        if (state_ != SessState::WaitForUnattended || auth_in_flight_) {
             return;
         }
+        auth_in_flight_ = true;
         challenge = pending_challenge_;
     }
     const std::string proof(reinterpret_cast<const char*>(body), len);
-    const bool ok = unattended_auth_->verify_proof(challenge, proof);
+    // verify_proof 含一次性挑战消费（authenticator 内部自持锁）+ PBKDF2 慢
+    // 路径，整体移交线程池；结果回投主线程做状态迁移（bus 订阅方含 Qt 模型）
+    auto auth = unattended_auth_;
+    auto logger = log_;
+    pbkdf2_pool_.submit([this, auth, logger, challenge, proof] {
+        const auto t0 = std::chrono::steady_clock::now();
+        const bool ok = auth->verify_proof(challenge, proof);
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - t0)
+                            .count();
+        SCLD_LOG(logger, LogLevel::Info, "session",
+                 "无人值守 proof 校验完成 耗时=" + std::to_string(ms)
+                     + "ms ok=" + (ok ? "1" : "0") + " 异步=1");
+        if (main_poster_) {
+            main_poster_([this, ok, challenge] { finish_auth_proof(ok, challenge); });
+        }
+        else {
+            finish_auth_proof(ok, challenge);  // 未注入：单测/headless 同步兜底
+        }
+    });
+}
 
+void RemoteSessionService::finish_auth_proof(bool ok, const std::string& challenge) {
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auth_in_flight_ = false;
+        // 代际绑定：校验期间会话已断开重连（challenge 已换新）→ 本次结果作废
+        if (state_ != SessState::WaitForUnattended || pending_challenge_ != challenge) {
+            return;
+        }
+    }
     if (transport_ != nullptr) {
         if (ok) {
             transport_->send_binary(protocol::build_ctrl(protocol::CtrlSubType::Approved));
@@ -844,6 +893,7 @@ void RemoteSessionService::reset_to_idle() {
     key_pub_.clear();
     key_nonce_.clear();
     pending_challenge_.clear();
+    auth_in_flight_ = false;  // 在途校验结果由代次绑定作废（finish 比对 challenge）
     peer_alias_.clear();
     pending_connect_ = {};
     session_id_.clear();

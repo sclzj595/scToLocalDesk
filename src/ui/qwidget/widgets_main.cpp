@@ -150,6 +150,12 @@ int main(int argc, char* argv[]) {
     auto manual_auth = std::make_shared<ManualConfirmAuthenticator>();
     auto sessions = std::make_shared<RemoteSessionService>(
         transport, manual_auth, unattended_auth, crypto, aliases, bus, logger);
+    // PBKDF2 异步收尾回投主线程（服务层 Qt-free，投递能力装配层注入；
+    // 校验后的状态迁移/事件发布必须在主线程——bus 订阅方含 Qt 模型）
+    sessions->set_main_poster([](std::function<void()> fn) {
+        QMetaObject::invokeMethod(
+            qApp, [fn = std::move(fn)] { fn(); }, Qt::QueuedConnection);
+    });
     sessions->set_stream_params(cfg.fps, cfg.jpeg_quality);
     sessions->set_trust_store(&trust_store);  // 已信任设备免确认直连（Doc18 §3.2）
     // 自连拦截（PRD 连接黑名单）：本机网卡 IP 集合 + 本机监听端口双条件

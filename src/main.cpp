@@ -345,6 +345,12 @@ int main(int argc, char* argv[]) {
     bridge.set_discovery(&discovery);
     bridge.set_self_code(id_service.code_number());
     bridge.set_listening(listening);
+    // PBKDF2 异步收尾回投主线程（服务层 Qt-free，投递能力装配层注入；
+    // 校验后的状态迁移/事件发布必须在主线程——bus 订阅方含 Qt 模型）
+    sessions->set_main_poster([&app](std::function<void()> fn) {
+        QMetaObject::invokeMethod(
+            &app, [fn = std::move(fn)] { fn(); }, Qt::QueuedConnection);
+    });
     qmlRegisterSingletonInstance("ScLocaldesk", 1, 0, "ScLocaldesk", &bridge);
     qmlRegisterType<platform::VideoSurface>("ScLocaldesk", 1, 0, "VideoSurface");
     qmlRegisterType<platform::RemoteInputItem>("ScLocaldesk", 1, 0, "RemoteInputItem");
@@ -369,10 +375,15 @@ int main(int argc, char* argv[]) {
     // 发起会话，供双实例 E2E（对端配 SCLD_SMOKE_APPROVE=1 自动放行）
     const QString smoke_alias = qEnvironmentVariable("SCLD_SMOKE_CONNECT");
     if (!smoke_alias.isEmpty()) {
-        QTimer::singleShot(3500, &bridge, [&, smoke_alias] {
+        // SCLD_SMOKE_PWD 非空时走无人值守+密码链路（PBKDF2 异步 E2E，
+        // 对端 config.ini [security] 预置凭据且 unattended_enabled=true）
+        const QString smoke_pwd = qEnvironmentVariable("SCLD_SMOKE_PWD");
+        QTimer::singleShot(3500, &bridge, [&, smoke_alias, smoke_pwd] {
             SCLD_LOG(logger, LogLevel::Info, "smoke",
-                     "auto startControl alias=" + smoke_alias.toStdString());
-            (void)bridge.startControl(smoke_alias, false, "");
+                     "auto startControl alias=" + smoke_alias.toStdString()
+                         + " unattended=" + (smoke_pwd.isEmpty() ? "0" : "1"));
+            (void)bridge.startControl(smoke_alias, !smoke_pwd.isEmpty(),
+                                      smoke_pwd);
         });
     }
     // 冒烟钩子 2（默认关）：SCLD_SMOKE_INPUT=1 时 Running 后 2s 发键鼠序列
