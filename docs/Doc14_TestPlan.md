@@ -66,8 +66,8 @@
 
 ### 4.1 单元测试（doctest，tests/）
 
-- 覆盖：protocol（含剪贴板帧）/ bounded_queue / config / trust_store / id_service / file_service（name_safe）
-- 结果：**40 case / 181 断言全绿**（`build-msvc\tests\sc_localdesk_tests.exe`）
+- 覆盖：protocol（含剪贴板帧/KEY_SYNC 帧）/ bounded_queue / config / trust_store / id_service / file_service（name_safe）/ crypto（SHA256/HMAC/PBKDF2 标准向量、GCM 往返防篡改、ECDH 一致性、会话密钥派生确定性）
+- 结果：**47 case / 219 断言全绿**（`build-msvc\tests\sc_localdesk_tests.exe`）
 - 说明：Doc14 §1 原定 gtest → 实际落地 doctest（header-only，零依赖），断言口径不变
 
 ### 4.2 崩溃捕获（MiniDump）
@@ -90,3 +90,12 @@
 
 - 协议往返/截断/超限拒绝：单测覆盖
 - E2E：SCLD_SMOKE_CLIP 钩子单帧同步验证通过；回环防护实测（Windows 剪贴板通知异步且系统全局，QSignalBlocker 无效，最终三重内容去重收敛）
+
+### 4.6 会话加密（PRD 密钥协商，Doc05 §1.1）
+
+- 后端：Windows CNG（OS 内建 bcrypt.lib 零依赖）/ OpenSSL 头探测，缺失降级桩
+- 单测：SHA256/HMAC RFC4231 向量、PBKDF2 100001 迭代 Python hashlib 基准、
+  GCM 往返+密文篡改拒绝、ECDH 双端共享秘密一致、派生确定性
+- E2E（2026-10-26 双实例）：双端日志 `会话加密已启用 ECDH-P256/AES-256-GCM encrypted=yes`
+  （协商 <15ms）；加密视频流控制端解码 fps≈15.1 drop=0 全程零"解密失败"；
+  会话正常关闭，密钥随 reset_to_idle 清除

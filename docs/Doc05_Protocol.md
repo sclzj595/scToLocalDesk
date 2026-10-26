@@ -21,8 +21,29 @@ enum class MsgType : uint8_t
     FILE_CHUNK = 0x03,      // 文件分片
     SESSION_CTRL = 0x04,    // 会话控制：申请、同意、拒绝、断开、保活
     CONFIG_SYNC = 0x05,     // 配置同步
+    FILE_META = 0x06,       // 文件元信息（file_id/name/size/total_chunks）
+    CLIPBOARD_SYNC = 0x07,  // 剪贴板文本同步（text_len(u32BE)+text）
+    KEY_SYNC = 0x08,        // 会话密钥协商（pub 64B + nonce 16B，PRD 会话加密）
 };
 ```
+
+### 1.1 KEY_SYNC 会话密钥协商（PRD 会话加密）
+
+Body（80 B）：`pub(64B ECDH P-256 裸坐标 x||y) + nonce(16B)`
+
+流程（Running 建立即开始，早于任何业务帧）：
+
+1. 双方各自生成 ECDH P-256 临时密钥对与 16B 随机 nonce
+2. 控制端立即发送 KEY_SYNC（明文阶段）；被控端收到后**先明文应答**自己的
+   KEY_SYNC，再完成派生并激活本端加密
+3. 双方计算共享秘密（32B 大端 x 坐标，跨 CNG/OpenSSL 后端约定一致），派生
+   会话密钥：`session_key = SHA-256("SCLD-KEY-V1" || secret || nonce_c || nonce_s)`
+   （nonce 按控制端→被控端固定序拼接，域分隔串防跨协议重放）
+4. 激活后收发报文整体加密：`AES-256-GCM(iv12 || tag16 || ct)`，随机 IV 逐帧更换；
+   加密/解密失败一律 fail-closed（拒发明文 / 丢弃入站）
+5. 已协商会话拒绝重协商（防中途换钥）；会话关闭即清密钥
+
+实现：Windows 走 OS 内建 CNG（bcrypt.lib），其它平台走 OpenSSL；后端缺失降级明文并 Warn 审计。
 
 ## 2. UDP 心跳包（明文，不加密）
 

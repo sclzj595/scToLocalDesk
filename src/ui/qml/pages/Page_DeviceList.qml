@@ -7,7 +7,8 @@
 //       已信任 → 直连。hover 规范（Doc13）：主色实描边 + 外圈柔光晕
 //       + 卡面微亮，全部走透明度/颜色动画，禁 scale/translate
 //       （transform 会边框错帧残影、文字栅格化发虚）
-// V1.0 TODO：连接码由 IdService 按机器指纹派生；信任缓存落 TrustStore
+// V1.0 已落地：连接码由 IdService 按机器指纹派生；信任缓存落 TrustStore
+// （勾选记忆 → bridge trust_add 免确认直连，设置页可管理）
 // ============================================================
 import QtQuick
 import QtQuick.Controls
