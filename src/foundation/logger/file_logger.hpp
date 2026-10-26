@@ -43,7 +43,7 @@ public:
     FileLogger(const FileLogger&) = delete;
     FileLogger& operator=(const FileLogger&) = delete;
 
-    void log(LogLevel lv, std::string_view tag, std::string_view msg) override {
+    void log(LogLevel lv, const std::string& tag, const std::string& msg) override {
         if (lv < level_.load(std::memory_order_relaxed) || lv >= LogLevel::Off) {
             return;
         }

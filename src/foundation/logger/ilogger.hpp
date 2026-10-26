@@ -6,7 +6,7 @@
 // ============================================================
 #pragma once
 
-#include <string_view>
+#include <string>
 
 namespace sc::localdesk::foundation {
 
@@ -26,7 +26,7 @@ public:
 
     /// tag 为模块名（如 "session"/"auth"），msg 为正文；
     /// 结构化字段由调用方拼接进 msg（[session_id=..][alias=..]，Doc12 §1）
-    virtual void log(LogLevel lv, std::string_view tag, std::string_view msg) = 0;
+    virtual void log(LogLevel lv, const std::string& tag, const std::string& msg) = 0;
 
     virtual void set_level(LogLevel lv) = 0;
 

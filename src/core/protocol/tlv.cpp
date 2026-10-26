@@ -20,28 +20,30 @@ void push_be32(std::vector<uint8_t>& v, uint32_t x) {
     v.push_back(static_cast<uint8_t>(x));
 }
 
-void push_str8(std::vector<uint8_t>& v, std::string_view s) {
+void push_str8(std::vector<uint8_t>& v, const std::string& s) {
     v.push_back(static_cast<uint8_t>(s.size()));
     v.insert(v.end(), s.begin(), s.end());
 }
 
 }  // namespace
 
-std::optional<MsgType> parse_header(const uint8_t* data, size_t size, uint32_t& body_len) {
+bool parse_header(const uint8_t* data, size_t size, uint32_t& body_len,
+                  MsgType& type) {
     if (data == nullptr || size < kHeaderSize) {
-        return std::nullopt;
+        return false;
     }
     body_len = (static_cast<uint32_t>(data[1]) << 24)
              | (static_cast<uint32_t>(data[2]) << 16)
              | (static_cast<uint32_t>(data[3]) << 8)
              | static_cast<uint32_t>(data[4]);
-    return static_cast<MsgType>(data[0]);
+    type = static_cast<MsgType>(data[0]);
+    return true;
 }
 
 bool is_frame_complete(const uint8_t* data, size_t size, size_t& frame_total) {
     uint32_t body_len = 0;
-    const auto t = parse_header(data, size, body_len);
-    if (!t.has_value()) {
+    MsgType t;
+    if (!parse_header(data, size, body_len, t)) {
         return false;
     }
     frame_total = kHeaderSize + body_len;
@@ -61,7 +63,7 @@ std::vector<uint8_t> build_frame(MsgType type, const std::vector<uint8_t>& body)
     return out;
 }
 
-std::vector<uint8_t> build_request_connect(std::string_view alias, uint8_t flags) {
+std::vector<uint8_t> build_request_connect(const std::string& alias, uint8_t flags) {
     std::vector<uint8_t> body;
     body.reserve(1 + 1 + alias.size() + 1);
     // SESSION_CTRL body 首字节恒为 sub（Doc05 §3；此前漏写致被控端当未知 sub 丢弃）
@@ -88,7 +90,7 @@ std::vector<uint8_t> build_auth_proof(const uint8_t* proof32) {
     return build_frame(MsgType::SessionCtrl, body);
 }
 
-std::vector<uint8_t> build_file_meta(std::string_view file_id_hex, std::string_view name,
+std::vector<uint8_t> build_file_meta(const std::string& file_id_hex, const std::string& name,
                                      uint64_t size, uint32_t total_chunks) {
     std::vector<uint8_t> body;
     body.reserve(16 + 2 + name.size() + 8 + 4);
@@ -140,7 +142,7 @@ bool parse_file_meta(const uint8_t* body, size_t len, FileMetaBody& out) {
     return true;
 }
 
-std::vector<uint8_t> build_clipboard_sync(std::string_view text) {
+std::vector<uint8_t> build_clipboard_sync(const std::string& text) {
     if (text.size() > kClipboardMaxBytes) {
         return {};  // 超限拒发（防大位图挤占传输队列）
     }

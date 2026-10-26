@@ -279,7 +279,8 @@ bool QtEventBridge::startControl(const QString& alias, bool unattended,
         emit controlStartFailed(QStringLiteral("当前会话尚未结束，请先断开"));
         return false;
     }
-    if (aliases_ == nullptr || !aliases_->resolve(alias.toStdString()).has_value()) {
+    DeviceInfo peer_info;
+    if (aliases_ == nullptr || !aliases_->resolve(alias.toStdString(), peer_info)) {
         SCLD_LOG(log_, foundation::LogLevel::Warn, "session",
                  "发起协助失败：未发现设备 [alias=" + alias.toStdString() + "]");
         emit controlStartFailed(QStringLiteral("未发现设备 [%1]，对方可能已下线")

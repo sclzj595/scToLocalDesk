@@ -9,7 +9,7 @@
 
 #include <cstdint>
 #include <string>
-#include <string_view>
+#include <string>
 
 namespace sc::localdesk {
 
@@ -34,7 +34,7 @@ public:
     const std::string& fingerprint() const;
 
     /// 指纹派生（测试挂点）：xxH3 → 折叠 3×3 位
-    static uint32_t derive_code(std::string_view fingerprint);
+    static uint32_t derive_code(const std::string& fingerprint);
 
     /// 数字码 → "xxx xxx xxx"（不足 9 位左补零）
     static std::string format_code(uint32_t code);

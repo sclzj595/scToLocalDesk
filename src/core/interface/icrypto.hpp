@@ -7,7 +7,7 @@
 
 #include <cstdint>
 #include <string>
-#include <string_view>
+#include <string>
 #include <vector>
 
 namespace sc::localdesk {
@@ -25,16 +25,16 @@ public:
 
     /// PBKDF2-HMAC-SHA256 口令派生，用于无人值守密码（Doc16 §2），迭代 >= 10 万
     virtual bool derive_key(const std::string& password,
-                                          std::string_view salt,
+                                          const std::string& salt,
                                           std::vector<uint8_t>& key) = 0;
 
     /// HMAC-SHA256：无人值守挑战应答 proof 计算（Doc05 §6）
-    virtual bool hmac_sha256(std::string_view key,
-                                           std::string_view data,
+    virtual bool hmac_sha256(const std::string& key,
+                                           const std::string& data,
                                            std::vector<uint8_t>& mac) = 0;
 
     /// SHA-256 摘要（口令校验值 / 文件完整性）
-    virtual bool sha256(std::string_view data,
+    virtual bool sha256(const std::string& data,
                                       std::vector<uint8_t>& digest) = 0;
 };
 

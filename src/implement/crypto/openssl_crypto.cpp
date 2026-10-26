@@ -81,7 +81,7 @@ public:
         return true;
     }
 
-    bool derive_key(const std::string& password, std::string_view salt,
+    bool derive_key(const std::string& password, const std::string& salt,
                     std::vector<uint8_t>& key) override {
         key.resize(32);
         // 迭代 100001 次：PBKDF2 高迭代成本，防离线字典攻击（Doc16 §8）
@@ -91,7 +91,7 @@ public:
                                  static_cast<int>(key.size()), key.data()) == 1;
     }
 
-    bool hmac_sha256(std::string_view key, std::string_view data,
+    bool hmac_sha256(const std::string& key, const std::string& data,
                      std::vector<uint8_t>& mac) override {
         mac.resize(32);
         unsigned int mac_len = 0;
@@ -101,7 +101,7 @@ public:
             && mac_len == 32;
     }
 
-    bool sha256(std::string_view data, std::vector<uint8_t>& digest) override {
+    bool sha256(const std::string& data, std::vector<uint8_t>& digest) override {
         digest.resize(32);
         unsigned int len = 0;
         return EVP_Digest(data.data(), data.size(), digest.data(), &len, EVP_sha256(),
@@ -121,13 +121,13 @@ class CryptoUnavailableStub final : public ICrypto {
 public:
     bool encrypt(const std::vector<uint8_t>&, std::vector<uint8_t>&) override { return false; }
     bool decrypt(const std::vector<uint8_t>&, std::vector<uint8_t>&) override { return false; }
-    bool derive_key(const std::string&, std::string_view, std::vector<uint8_t>&) override {
+    bool derive_key(const std::string&, const std::string&, std::vector<uint8_t>&) override {
         return false;
     }
-    bool hmac_sha256(std::string_view, std::string_view, std::vector<uint8_t>&) override {
+    bool hmac_sha256(const std::string&, const std::string&, std::vector<uint8_t>&) override {
         return false;
     }
-    bool sha256(std::string_view, std::vector<uint8_t>&) override { return false; }
+    bool sha256(const std::string&, std::vector<uint8_t>&) override { return false; }
 };
 
 }  // namespace

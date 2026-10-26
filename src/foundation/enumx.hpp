@@ -8,8 +8,7 @@
 // ============================================================
 #pragma once
 
-#include <optional>
-#include <string_view>
+#include <string>
 
 #if __has_include(<magic_enum/magic_enum_all.hpp>)
 #define SCLD_HAS_MAGIC_ENUM 1
@@ -21,9 +20,9 @@
 namespace sc::localdesk::foundation {
 
 template <typename E>
-constexpr std::string_view enum_name(E value) noexcept {
+std::string enum_name(E value) noexcept {
 #if SCLD_HAS_MAGIC_ENUM
-    return magic_enum::enum_name(value);
+    return std::string(magic_enum::enum_name(value));
 #else
     (void)value;
     return "enum";   // 库未落位：占位名（CMake 注册中心补齐即自动真名）
@@ -31,16 +30,18 @@ constexpr std::string_view enum_name(E value) noexcept {
 }
 
 template <typename E>
-constexpr std::optional<E> enum_cast(std::string_view name) noexcept {
+bool enum_cast(const std::string& name, E& out) noexcept {
 #if SCLD_HAS_MAGIC_ENUM
     const auto v = magic_enum::enum_cast<E>(name, magic_enum::case_insensitive);
     if (v.has_value()) {
-        return v.value();
+        out = v.value();
+        return true;
     }
-    return std::nullopt;
+    return false;
 #else
     (void)name;
-    return std::nullopt;
+    (void)out;
+    return false;
 #endif
 }
 

@@ -249,8 +249,8 @@ QString DeviceListPage::deviceAlias(const QString& code) const {
 
 void DeviceListPage::reflow() {
     int i = 0;
-    for (auto& [alias, c] : cards_) {
-        grid_->addWidget(c.widget, i / 3, i % 3);
+    for (auto& kv : cards_) {
+        grid_->addWidget(kv.second.widget, i / 3, i % 3);
         ++i;
     }
 }

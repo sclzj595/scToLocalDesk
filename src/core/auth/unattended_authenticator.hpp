@@ -14,7 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <string_view>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -48,8 +48,8 @@ public:
     AuthResult decide(const AuthRequest& req) override;
 
     /// 校验 AUTH_PROOF：challenge 有效性 + HMAC 常数时间比较
-    bool verify_proof(std::string_view challenge,
-                                    std::string_view proof) override;
+    bool verify_proof(const std::string& challenge,
+                                    const std::string& proof) override;
 
     // ---------------- 服务层专用 ----------------
 
@@ -72,9 +72,9 @@ public:
 
 private:
     /// 常数时间比较，防时序侧信道（Doc16 §2.8）
-    static bool constant_time_equal(std::string_view a, std::string_view b);
+    static bool constant_time_equal(const std::string& a, const std::string& b);
 
-    bool compute_proof(std::string_view challenge_hex,
+    bool compute_proof(const std::string& challenge_hex,
                                      std::vector<uint8_t>& proof) const;
 
     mutable std::mutex mtx_;

@@ -19,8 +19,8 @@ public:
     }
 
     /// 人工模式无挑战应答：恒 false（调用方不应到达此处）
-    bool verify_proof(std::string_view /*challenge*/,
-                                    std::string_view /*proof*/) override {
+    bool verify_proof(const std::string& /*challenge*/,
+                                    const std::string& /*proof*/) override {
         return false;
     }
 };

@@ -43,7 +43,7 @@ std::string make_session_id() {
          + std::to_string(seq.fetch_add(1, std::memory_order_relaxed));
 }
 
-std::vector<uint8_t> hex_to_bytes(std::string_view hex) {
+std::vector<uint8_t> hex_to_bytes(const std::string& hex) {
     std::vector<uint8_t> out;
     if (hex.size() % 2 != 0) {
         return out;
@@ -179,17 +179,17 @@ bool RemoteSessionService::connect_to_peer(const std::string& alias, bool unatte
     if (aliases_ == nullptr || transport_ == nullptr) {
         return false;
     }
-    const auto peer = aliases_->resolve(alias);
-    if (!peer.has_value()) {
+    DeviceInfo peer;
+    if (!aliases_->resolve(alias, peer)) {
         SCLD_LOG(log_, LogLevel::Warn, "session", "[alias=" + alias + "] 内网未找到该设备");
         return false;
     }
     // 自连拦截（PRD 连接黑名单）：目标 IP 属本机网卡集合 且 端口=本机监听端口
     // → 本地拒绝不发网络包；同机双实例（端口不同）/虚拟机均放行
-    if (self_ip_checker_ && self_ip_checker_(peer->ip, peer->port)) {
+    if (self_ip_checker_ && self_ip_checker_(peer.ip, peer.port)) {
         SCLD_LOG(log_, LogLevel::Warn, "session",
-                 "[alias=" + alias + "] 目标 " + peer->ip + ":"
-                     + std::to_string(peer->port) + " 为本机自身，拒绝连接");
+                 "[alias=" + alias + "] 目标 " + peer.ip + ":"
+                     + std::to_string(peer.port) + " 为本机自身，拒绝连接");
         Evt_ConnectDenied e;
         e.device_alias = alias;
         e.reason = "不允许连接本机";
@@ -209,7 +209,7 @@ bool RemoteSessionService::connect_to_peer(const std::string& alias, bool unatte
         pending_connect_.password = password;
         pending_connect_.valid = true;
     }
-    transport_->connect_client(peer->ip, peer->port);
+    transport_->connect_client(peer.ip, peer.port);
     session_id_ = make_session_id();
     last_peer_ = alias;  // 重连按钮数据源（PRD P7）
     SCLD_LOG(log_, LogLevel::Info, "session",
@@ -352,12 +352,13 @@ std::string RemoteSessionService::session_id() const {
 void RemoteSessionService::on_transport_message(
     std::shared_ptr<const std::vector<uint8_t>> data) {
     uint32_t body_len = 0;
-    const auto type = protocol::parse_header(data->data(), data->size(), body_len);
-    if (!type.has_value() || data->size() < protocol::kHeaderSize + body_len) {
+    protocol::MsgType type;
+    if (!protocol::parse_header(data->data(), data->size(), body_len, type)
+        || data->size() < protocol::kHeaderSize + body_len) {
         return;  // 畸形报文丢弃
     }
     const uint8_t* body = data->data() + protocol::kHeaderSize;
-    switch (*type) {
+    switch (type) {
     case protocol::MsgType::SessionCtrl:
         handle_session_ctrl(body, body_len);
         break;
@@ -371,7 +372,7 @@ void RemoteSessionService::on_transport_message(
             // 未鉴权业务报文一律丢弃（Doc14 §2.8 安全用例）
             SCLD_LOG(log_, LogLevel::Warn, "session",
                      "[session_id=" + session_id_ + "] 未鉴权业务报文，已丢弃 type="
-                         + std::to_string(static_cast<int>(*type)));
+                         + std::to_string(static_cast<int>(type)));
             return;
         }
     } break;
@@ -380,7 +381,7 @@ void RemoteSessionService::on_transport_message(
     }
 
     // Running 态分派（此时已释放锁）
-    switch (*type) {
+    switch (type) {
     case protocol::MsgType::FileMeta:
         if (files_ != nullptr) {
             files_->on_file_meta(body, body_len);
@@ -630,15 +631,15 @@ void RemoteSessionService::handle_auth_challenge(const uint8_t* body, size_t len
     // TODO(V1.0): PBKDF2 10 万迭代移交线程池，避免阻塞 IO 线程（Doc12 §3）
     std::vector<uint8_t> key;
     if (!crypto_->derive_key(password,
-                             std::string_view(reinterpret_cast<const char*>(body), 16),
+                             std::string(reinterpret_cast<const char*>(body), 16),
                              key)) {
         SCLD_LOG(log_, LogLevel::Error, "session", "无人值守口令派生失败");
         return;
     }
     std::vector<uint8_t> proof;
     if (!crypto_->hmac_sha256(
-            std::string_view(reinterpret_cast<const char*>(key.data()), key.size()),
-            std::string_view(reinterpret_cast<const char*>(body + 16), 16), proof)) {
+            std::string(reinterpret_cast<const char*>(key.data()), key.size()),
+            std::string(reinterpret_cast<const char*>(body + 16), 16), proof)) {
         return;
     }
     if (transport_ != nullptr) {

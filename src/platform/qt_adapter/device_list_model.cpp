@@ -111,13 +111,13 @@ void DeviceListModel::on_device_online(const std::string& alias) {
     if (aliases_ == nullptr) {
         return;
     }
-    const auto opt = aliases_->resolve(alias);
-    if (!opt.has_value()) {
+    DeviceInfo opt;
+    if (!aliases_->resolve(alias, opt)) {
         return;
     }
     const int row = find_row(alias);
     if (row >= 0) {
-        rows_[static_cast<size_t>(row)].info = *opt;
+        rows_[static_cast<size_t>(row)].info = opt;
         resync_trust(rows_[static_cast<size_t>(row)]);
         emit dataChanged(index(row, 0), index(row, 0));
         return;
@@ -125,7 +125,7 @@ void DeviceListModel::on_device_online(const std::string& alias) {
     const int insert = static_cast<int>(rows_.size());
     beginInsertRows(QModelIndex(), insert, insert);
     Row r;
-    r.info = *opt;
+    r.info = opt;
     resync_trust(r);
     rows_.push_back(r);
     index_[alias] = insert;
@@ -133,7 +133,7 @@ void DeviceListModel::on_device_online(const std::string& alias) {
     emit countChanged();
     SCLD_LOG(log_, foundation::LogLevel::Info, "devices",
              "列表新增 [alias=" + alias + "] code="
-                 + (opt->code == 0 ? "---" : std::to_string(opt->code)));
+                 + (opt.code == 0 ? "---" : std::to_string(opt.code)));
 }
 
 void DeviceListModel::on_device_offline(const std::string& alias) {
@@ -144,9 +144,9 @@ void DeviceListModel::on_device_offline(const std::string& alias) {
     beginRemoveRows(QModelIndex(), row, row);
     rows_.erase(rows_.begin() + row);
     index_.erase(alias);
-    for (auto& [a, i] : index_) {
-        if (i > row) {
-            --i;  // 行号回填
+    for (auto& kv : index_) {
+        if (kv.second > row) {
+            --kv.second;  // 行号回填
         }
     }
     endRemoveRows();
@@ -159,14 +159,14 @@ void DeviceListModel::refresh_changed() {
     }
     for (size_t i = 0; i < rows_.size(); ++i) {
         auto& row = rows_[i];
-        const auto opt = aliases_->resolve(row.info.alias);
-        if (!opt.has_value()) {
+        DeviceInfo opt;
+        if (!aliases_->resolve(row.info.alias, opt)) {
             continue;  // 离线事件随后到达，由 on_device_offline 移除
         }
         bool dirty = false;
-        if (opt->status != row.info.status || opt->ip != row.info.ip
-            || (opt->code != 0 && opt->code != row.info.code)) {
-            row.info = *opt;
+        if (opt.status != row.info.status || opt.ip != row.info.ip
+            || (opt.code != 0 && opt.code != row.info.code)) {
+            row.info = opt;
             resync_trust(row);  // 清空信任缓存/新记忆后角标随对账同步
             dirty = true;
         }

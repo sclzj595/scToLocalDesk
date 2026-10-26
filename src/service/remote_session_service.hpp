@@ -45,7 +45,7 @@ struct MouseKeyBody;
 
 
 /// 人工确认弹窗超时（PRD 确认三件套）：超时自动拒绝，对端收 REJECT(Timeout)
-inline constexpr int kConfirmTimeoutSec = 30;
+constexpr int kConfirmTimeoutSec = 30;
 
 // 协议枚举直接以短名暴露给服务层
 using protocol::CloseReason;

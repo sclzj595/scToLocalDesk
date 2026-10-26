@@ -559,10 +559,10 @@ void FileService::cancel(const std::string& file_id) {
 void FileService::stop_all() {
     std::lock_guard<std::mutex> lk(mtx_);
     std::vector<std::string> receive_ids;  // 接收条目：立即回收
-    for (auto& [id, t] : transfers_) {
-        t.aborted = true;  // 发送条目：send_loop 下片感知后自行退出并 erase
-        if (t.out != nullptr) {
-            receive_ids.push_back(id);
+    for (auto& kv : transfers_) {
+        kv.second.aborted = true;  // 发送条目：send_loop 下片感知后自行退出并 erase
+        if (kv.second.out != nullptr) {
+            receive_ids.push_back(kv.first);
         }
     }
     for (const auto& id : receive_ids) {

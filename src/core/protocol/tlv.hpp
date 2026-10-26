@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <string_view>
+#include <string>
 #include <vector>
 
 #include "core/protocol/msg_type.hpp"
@@ -17,9 +17,9 @@ namespace sc::localdesk::protocol {
 
 /// 解析报文头（不拷贝 body）
 /// 输入 data 至少包含完整头部；body_len 为 Body 长度
-/// 返回 nullopt 表示头部非法（长度不足）
-std::optional<MsgType> parse_header(const uint8_t* data, size_t size,
-                                                  uint32_t& body_len);
+/// 头部非法（长度不足）返回 false
+bool parse_header(const uint8_t* data, size_t size, uint32_t& body_len,
+                  MsgType& type);
 
 /// 判断是否已收到完整报文
 /// @param data 已缓冲字节
@@ -37,7 +37,7 @@ std::vector<uint8_t> build_frame(MsgType type, const std::vector<uint8_t>& body)
 // ---------------- 会话信令构建（Doc05 §3） ----------------
 
 /// REQUEST_CONNECT：alias(u8len) + flags(1B) + [proof_len(2B)+proof]
-std::vector<uint8_t> build_request_connect(std::string_view alias,
+std::vector<uint8_t> build_request_connect(const std::string& alias,
                                                          uint8_t flags);
 
 /// AUTH_CHALLENGE：salt(16B) + challenge(16B)（salt 供控制端 PBKDF2 派生 K，密码不上网）
@@ -48,8 +48,8 @@ std::vector<uint8_t> build_auth_challenge(const uint8_t* salt16,
 std::vector<uint8_t> build_auth_proof(const uint8_t* proof32);
 
 /// FILE_META：file_id(16B) + name_len(u16BE) + name + size(u64BE) + total_chunks(u32BE)
-std::vector<uint8_t> build_file_meta(std::string_view file_id_hex,
-                                                   std::string_view name,
+std::vector<uint8_t> build_file_meta(const std::string& file_id_hex,
+                                                   const std::string& name,
                                                    uint64_t size, uint32_t total_chunks);
 
 struct FileMetaBody {
@@ -108,10 +108,10 @@ bool parse_mouse_key(const uint8_t* body, size_t len, MouseKeyBody& out);
 // ---------------- 剪贴板文本同步（CLIPBOARD_SYNC，PRD P9） ----------------
 
 /// 单帧上限：剪贴板大文本（截图位图等）不进此通道，超限构建即拒
-inline constexpr uint32_t kClipboardMaxBytes = 1024 * 1024;
+constexpr uint32_t kClipboardMaxBytes = 1024 * 1024;
 
 /// body = text_len(u32BE) + text(UTF-8)；超限返回空帧（调用方判空丢弃）
-std::vector<uint8_t> build_clipboard_sync(std::string_view text);
+std::vector<uint8_t> build_clipboard_sync(const std::string& text);
 
 /// 超限/截断/空返回 false
 bool parse_clipboard_sync(const uint8_t* body, size_t len, std::string& out);

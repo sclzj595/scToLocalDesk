@@ -3,13 +3,11 @@
 // nlohmann/json 封装（third_party/nlohmann 单头）
 // 用途：协议信令扩展（V1.0）、结构化配置迁移预留
 // 封装约定：业务层禁止直接用 nlohmann 命名空间——统一经本层，
-//   异常在边界吃掉（noexcept 包装），错误返回空可选
+//   异常在边界吃掉（noexcept 包装），失败返回 false
 // ============================================================
 #pragma once
 
-#include <optional>
 #include <string>
-#include <string_view>
 
 #include <nlohmann/json.hpp>
 
@@ -17,13 +15,14 @@ namespace sc::localdesk::foundation {
 
 using json = nlohmann::json;
 
-/// 解析（noexcept 包装）：非法输入返回 nullopt，不抛异常打断业务流
-inline std::optional<json> json_parse(std::string_view text) noexcept {
+/// 解析（noexcept 包装）：非法输入返回 false，不抛异常打断业务流
+inline bool json_parse(const std::string& text, json& out) noexcept {
     try {
-        return json::parse(text);
+        out = json::parse(text);
+        return true;
     }
     catch (...) {
-        return std::nullopt;
+        return false;
     }
 }
 

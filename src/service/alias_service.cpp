@@ -50,8 +50,10 @@ void AliasService::upsert_device(const DeviceInfo& dev) {
     const int64_t now = now_us();
     // 事件一律锁外发布：订阅方可能同步回查本服务（DeviceListModel），
     // 持锁 publish 会造成同线程对非递归 mutex 重入加锁（UB，已踩坑）
-    std::optional<Evt_DeviceOnline> online_evt;
-    std::optional<Evt_AliasConflict> conflict_evt;
+    Evt_DeviceOnline online_evt;
+    Evt_AliasConflict conflict_evt;
+    bool has_online = false;
+    bool has_conflict = false;
     {
         std::lock_guard<std::mutex> lk(mtx_);
         const auto it = table_.find(dev.alias);
@@ -62,6 +64,7 @@ void AliasService::upsert_device(const DeviceInfo& dev) {
             SCLD_LOG(log_, LogLevel::Info, "discovery",
                      "[alias=" + dev.alias + "] 设备上线 ip=" + dev.ip);
             online_evt = make_online_evt(info);
+            has_online = true;
         }
         else {
             // 别名冲突：同别名异 IP 且旧条目未超时（Doc07 §6.2）
@@ -72,6 +75,7 @@ void AliasService::upsert_device(const DeviceInfo& dev) {
                 e.conflict_ip = dev.ip;
                 e.timestamp_us = now;
                 conflict_evt = e;
+                has_conflict = true;
                 SCLD_LOG(log_, LogLevel::Warn,
                          "discovery", "[alias=" + dev.alias + "] 别名冲突 old_ip="
                              + it->second.ip + " new_ip=" + dev.ip);
@@ -86,26 +90,27 @@ void AliasService::upsert_device(const DeviceInfo& dev) {
             it->second.last_seen_us = now;
         }
     }
-    if (online_evt.has_value()) {
-        bus_->publish(*online_evt);
+    if (has_online) {
+        bus_->publish(online_evt);
     }
-    else if (conflict_evt.has_value()) {
-        bus_->publish(*conflict_evt);
+    else if (has_conflict) {
+        bus_->publish(conflict_evt);
     }
 }
 
-std::optional<DeviceInfo> AliasService::resolve(const std::string& alias) const {
+bool AliasService::resolve(const std::string& alias, DeviceInfo& out) const {
     std::lock_guard<std::mutex> lk(mtx_);
     const auto it = table_.find(alias);
     if (it == table_.end()) {
-        return std::nullopt;
+        return false;
     }
     // 静态条目常在，不参与心跳超时
     if (static_set_.find(alias) == static_set_.end()
         && now_us() - it->second.last_seen_us > offline_timeout_us_) {
-        return std::nullopt;  // 已超时视为离线
+        return false;  // 已超时视为离线
     }
-    return it->second;
+    out = it->second;
+    return true;
 }
 
 std::vector<DeviceInfo> AliasService::online_devices() const {

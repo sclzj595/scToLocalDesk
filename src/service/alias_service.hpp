@@ -7,7 +7,6 @@
 
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -31,7 +30,8 @@ public:
     void upsert_device(const DeviceInfo& dev);
 
     /// 别名解析（控制端发起协助前调用，Doc07 §1）
-    std::optional<DeviceInfo> resolve(const std::string& alias) const;
+    /// 别名解析：未命中/已超时返回 false（out 保持不变）
+    bool resolve(const std::string& alias, DeviceInfo& out) const;
 
     /// IT 视图在线列表
     std::vector<DeviceInfo> online_devices() const;

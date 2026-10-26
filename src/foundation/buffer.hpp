@@ -41,15 +41,15 @@ public:
     }
 
     /// u8 长度前缀字符串（心跳 alias、别名载体）
-    void append_string8(std::string_view sv) {
-        append_u8(static_cast<uint8_t>(sv.size()));
-        append(sv.data(), sv.size());
+    void append_string8(std::string_view s) {
+        append_u8(static_cast<uint8_t>(s.size()));
+        append(s.data(), s.size());
     }
 
     /// u16 长度前缀字符串（TLV body 内字符串字段）
-    void append_string16(std::string_view sv) {
-        append_u16be(static_cast<uint16_t>(sv.size()));
-        append(sv.data(), sv.size());
+    void append_string16(std::string_view s) {
+        append_u16be(static_cast<uint16_t>(s.size()));
+        append(s.data(), s.size());
     }
 
     /// 回写已占位字段：如 header 的 body_len（offset 从 0 计）
@@ -105,12 +105,22 @@ public:
         return true;
     }
 
-    /// 零拷贝视图读取（调用方不得持有引用越过下次读操作）
+    /// 读取 n 字节为字符串（越界返回 false）
+    bool read_string(size_t n, std::string& out) {
+        if (read_pos_ + n > data_.size()) {
+            return false;
+        }
+        out.assign(reinterpret_cast<const char*>(data_.data()) + read_pos_, n);
+        read_pos_ += n;
+        return true;
+    }
+
+    /// 读取 n 字节为零拷贝视图（视图指向内部缓冲，下次写/扩容前有效）
     bool read_string_view(size_t n, std::string_view& out) {
         if (read_pos_ + n > data_.size()) {
             return false;
         }
-        out = {reinterpret_cast<const char*>(data_.data()) + read_pos_, n};
+        out = std::string_view(reinterpret_cast<const char*>(data_.data()) + read_pos_, n);
         read_pos_ += n;
         return true;
     }
@@ -120,12 +130,7 @@ public:
         if (!read_u8(len)) {
             return false;
         }
-        std::string_view sv;
-        if (!read_string_view(len, sv)) {
-            return false;
-        }
-        out.assign(sv);
-        return true;
+        return read_string(len, out);
     }
 
     // ---------------- 状态 ----------------

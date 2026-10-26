@@ -8,6 +8,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 #define XXH_INLINE_ALL
@@ -21,7 +22,7 @@ inline uint64_t xxh3_64(const void* data, size_t len,
     return XXH3_64bits_withSeed(data, len, seed);
 }
 
-/// string_view 便捷重载
+/// 字符串便捷重载（字面量/std::string/string_view 通吃，免手动传长度）
 inline uint64_t xxh3_64(std::string_view data,
                                       uint64_t seed = 0) noexcept {
     return xxh3_64(data.data(), data.size(), seed);

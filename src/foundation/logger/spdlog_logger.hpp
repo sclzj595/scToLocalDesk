@@ -10,7 +10,7 @@
 
 #include <memory>
 #include <string>
-#include <string_view>
+#include <string>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/rotating_file_sink.h>
@@ -41,7 +41,7 @@ public:
         }
     }
 
-    void log(LogLevel lv, std::string_view tag, std::string_view msg) override {
+    void log(LogLevel lv, const std::string& tag, const std::string& msg) override {
         if (lv >= LogLevel::Off || logger_ == nullptr) {
             return;
         }

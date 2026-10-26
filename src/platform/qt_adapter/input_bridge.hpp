@@ -8,7 +8,6 @@
 #pragma once
 
 #include <cstdint>
-#include <optional>
 #include <utility>
 
 #include <QPointF>
@@ -22,19 +21,18 @@ namespace sc::localdesk::platform {
 struct InputBridge final {
     /// 局部坐标 → 归一化（黑边区 clamp 进画面，主流远程桌面行为）。
     /// action 为 MouseAction 底层值；wheel 仅 Wheel 动作使用（120 = 一格）。
-    /// 无帧（video 空）或显示区为空返回 nullopt，调用方不发帧。
-    static std::optional<protocol::MouseKeyBody> map_mouse(
-        int action, const QPointF& local, const QSizeF& view,
-        const QSizeF& video, int wheel = 0) {
+    /// 无帧（video 空）或显示区为空返回 false，调用方不发帧。
+    static bool map_mouse(int action, const QPointF& local, const QSizeF& view,
+                          const QSizeF& video, protocol::MouseKeyBody& mk,
+                          int wheel = 0) {
         if (video.isEmpty() || view.isEmpty()) {
-            return std::nullopt;
+            return false;
         }
-        protocol::MouseKeyBody mk;
         mk.kind = protocol::MouseKeyKind::Mouse;
         mk.action = static_cast<uint8_t>(action);
         if (action == static_cast<int>(MouseAction::Wheel)) {
             mk.wheel = static_cast<int16_t>(wheel);
-            return mk;
+            return true;
         }
         const double scale = qMin(view.width() / video.width(),
                                   view.height() / video.height());
@@ -46,18 +44,17 @@ struct InputBridge final {
         const double ly = qBound(oy, local.y(), oy + dh);
         mk.x = static_cast<uint16_t>((lx - ox) / dw * 65535.0 + 0.5);
         mk.y = static_cast<uint16_t>((ly - oy) / dh * 65535.0 + 0.5);
-        return mk;
+        return true;
     }
 
     /// Qt::Key → Windows VK（scan 填 0 走 VK 路径注入）。
     /// ASCII 区标点的 Qt 值与 VK 不一致（OEM 码），一律查表；表外丢弃。
-    static std::optional<protocol::MouseKeyBody> map_key(
-        int qt_key, bool down) {
+    static bool map_key(int qt_key, bool down, protocol::MouseKeyBody& mk) {
         uint16_t vk = 0;
         bool hit = false;
-        for (const auto& [k, v] : kKeyTable) {
-            if (k == qt_key) {
-                vk = v;
+        for (const auto& kv : kKeyTable) {
+            if (kv.first == qt_key) {
+                vk = kv.second;
                 hit = true;
                 break;
             }
@@ -72,15 +69,14 @@ struct InputBridge final {
                                   || (qt_key >= 'A' && qt_key <= 'Z')
                                   || qt_key == 0x20;
             if (!passthrough) {
-                return std::nullopt;
+                return false;
             }
             vk = static_cast<uint16_t>(qt_key);
         }
-        protocol::MouseKeyBody mk;
         mk.kind = protocol::MouseKeyKind::Keyboard;
         mk.vk = vk;
         mk.down = down ? 1 : 0;
-        return mk;
+        return true;
     }
 
 private:

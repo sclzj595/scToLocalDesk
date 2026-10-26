@@ -86,11 +86,11 @@ void RemoteViewPage::send_mouse(MouseAction action, const QPointF& local, int wh
     if (sessions_ == nullptr) {
         return;
     }
-    const auto mk = platform::InputBridge::map_mouse(
-        static_cast<int>(action), local, QSizeF(size()), QSizeF(frame_.size()),
-        wheel);
-    if (mk.has_value()) {
-        (void)sessions_->send_input_event(*mk);
+    protocol::MouseKeyBody mk;
+    if (platform::InputBridge::map_mouse(
+            static_cast<int>(action), local, QSizeF(size()),
+            QSizeF(frame_.size()), mk, wheel)) {
+        (void)sessions_->send_input_event(mk);
     }
 }
 
@@ -139,18 +139,18 @@ void RemoteViewPage::wheelEvent(QWheelEvent* e) {
 
 void RemoteViewPage::keyPressEvent(QKeyEvent* e) {
     if (sessions_ != nullptr) {
-        const auto mk = platform::InputBridge::map_key(e->key(), true);
-        if (mk.has_value()) {
-            (void)sessions_->send_input_event(*mk);
+        protocol::MouseKeyBody mk;
+        if (platform::InputBridge::map_key(e->key(), true, mk)) {
+            (void)sessions_->send_input_event(mk);
         }
     }
 }
 
 void RemoteViewPage::keyReleaseEvent(QKeyEvent* e) {
     if (sessions_ != nullptr) {
-        const auto mk = platform::InputBridge::map_key(e->key(), false);
-        if (mk.has_value()) {
-            (void)sessions_->send_input_event(*mk);
+        protocol::MouseKeyBody mk;
+        if (platform::InputBridge::map_key(e->key(), false, mk)) {
+            (void)sessions_->send_input_event(mk);
         }
     }
 }

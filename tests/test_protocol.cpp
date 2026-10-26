@@ -24,9 +24,9 @@ TEST_CASE("整帧构建与头解析往返")
     REQUIRE(frame.size() == kHeaderSize + body.size());
 
     uint32_t body_len = 0;
-    const auto type = parse_header(frame.data(), frame.size(), body_len);
-    REQUIRE(type.has_value());
-    CHECK(*type == MsgType::FileMeta);
+    MsgType type;
+    REQUIRE(parse_header(frame.data(), frame.size(), body_len, type));
+    CHECK(type == MsgType::FileMeta);
     CHECK(body_len == 3);
 }
 
@@ -49,27 +49,28 @@ TEST_CASE("半包与粘包判定")
     REQUIRE(is_frame_complete(sticky.data(), sticky.size(), total));
     CHECK(total == frame.size());
     uint32_t body_len = 0;
-    const auto second = parse_header(sticky.data() + total, sticky.size() - total,
-                                     body_len);
-    REQUIRE(second.has_value());
-    CHECK(*second == MsgType::SessionCtrl);
+    MsgType second;
+    REQUIRE(parse_header(sticky.data() + total, sticky.size() - total,
+                         body_len, second));
+    CHECK(second == MsgType::SessionCtrl);
     CHECK(body_len == 2);
 }
 
-TEST_CASE("头长度不足返回 nullopt")
+TEST_CASE("头长度不足返回 false")
 {
     uint32_t body_len = 0;
+    MsgType type;
     const uint8_t one = 0x04;
-    CHECK_FALSE(parse_header(&one, 1, body_len).has_value());
+    CHECK_FALSE(parse_header(&one, 1, body_len, type));
 }
 
 TEST_CASE("REQUEST_CONNECT 往返")
 {
     const auto frame = build_request_connect("SC-PC", connect_flags::kUnattended);
     uint32_t body_len = 0;
-    const auto type = parse_header(frame.data(), frame.size(), body_len);
-    REQUIRE(type.has_value());
-    CHECK(*type == MsgType::SessionCtrl);
+    MsgType type;
+    REQUIRE(parse_header(frame.data(), frame.size(), body_len, type));
+    CHECK(type == MsgType::SessionCtrl);
     const auto body = frame_body(frame);
 
     RequestConnectBody out;
@@ -92,9 +93,9 @@ TEST_CASE("FILE_META 往返（含中文名）")
     const auto frame = build_file_meta("0123456789abcdef0123456789abcdef",
                                         "测试文件.bin", 1234567890ULL, 32);
     uint32_t body_len = 0;
-    const auto type = parse_header(frame.data(), frame.size(), body_len);
-    REQUIRE(type.has_value());
-    CHECK(*type == MsgType::FileMeta);
+    MsgType type;
+    REQUIRE(parse_header(frame.data(), frame.size(), body_len, type));
+    CHECK(type == MsgType::FileMeta);
     const auto body = frame_body(frame);
 
     FileMetaBody out;

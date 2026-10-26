@@ -35,11 +35,11 @@ std::string to_hex(const uint8_t* data, size_t len) {
     return out;
 }
 
-std::optional<std::vector<uint8_t>> from_hex(std::string_view hex) {
+bool from_hex(const std::string& hex, std::vector<uint8_t>& out) {
+    out.clear();
     if (hex.size() % 2 != 0) {
-        return std::nullopt;
+        return false;
     }
-    std::vector<uint8_t> out;
     out.reserve(hex.size() / 2);
     auto nibble = [](char c) -> int {
         if (c >= '0' && c <= '9') {
@@ -57,11 +57,11 @@ std::optional<std::vector<uint8_t>> from_hex(std::string_view hex) {
         const int hi = nibble(hex[i]);
         const int lo = nibble(hex[i + 1]);
         if (hi < 0 || lo < 0) {
-            return std::nullopt;
+            return false;
         }
         out.push_back(static_cast<uint8_t>((hi << 4) | lo));
     }
-    return out;
+    return true;
 }
 
 }  // namespace
@@ -102,8 +102,8 @@ std::string UnattendedPasswordAuthenticator::issue_challenge() {
     return hex;
 }
 
-bool UnattendedPasswordAuthenticator::verify_proof(std::string_view challenge,
-                                                   std::string_view proof) {
+bool UnattendedPasswordAuthenticator::verify_proof(const std::string& challenge,
+                                                   const std::string& proof) {
     const int64_t now = now_ms();
     {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -119,7 +119,7 @@ bool UnattendedPasswordAuthenticator::verify_proof(std::string_view challenge,
         return false;
     }
     return constant_time_equal(proof,
-                               std::string_view(reinterpret_cast<const char*>(expected.data()),
+                               std::string(reinterpret_cast<const char*>(expected.data()),
                                                 expected.size()));
 }
 
@@ -128,19 +128,19 @@ bool UnattendedPasswordAuthenticator::check_password(const std::string& password
     if (secret_.salt_hex.empty() || secret_.verify_hash_hex.empty() || crypto_ == nullptr) {
         return false;
     }
-    auto salt = from_hex(secret_.salt_hex);
-    if (!salt.has_value()) {
+    std::vector<uint8_t> salt;
+    if (!from_hex(secret_.salt_hex, salt)) {
         return false;
     }
     std::vector<uint8_t> key;
-    if (!crypto_->derive_key(password, std::string_view(
-                                            reinterpret_cast<const char*>(salt->data()),
-                                            salt->size()),
+    if (!crypto_->derive_key(password, std::string(
+                                            reinterpret_cast<const char*>(salt.data()),
+                                            salt.size()),
                              key)) {
         return false;
     }
     std::vector<uint8_t> digest;
-    if (!crypto_->sha256(std::string_view(reinterpret_cast<const char*>(key.data()),
+    if (!crypto_->sha256(std::string(reinterpret_cast<const char*>(key.data()),
                                           key.size()),
                          digest)) {
         return false;
@@ -162,14 +162,14 @@ bool UnattendedPasswordAuthenticator::set_password(const std::string& password,
     }
 
     std::vector<uint8_t> key;
-    if (!crypto_->derive_key(password, std::string_view(
-                                            reinterpret_cast<const char*>(salt.data()),
-                                            salt.size()),
+    if (!crypto_->derive_key(password, std::string(
+                                        reinterpret_cast<const char*>(salt.data()),
+                                        salt.size()),
                              key)) {
         return false;
     }
     std::vector<uint8_t> digest;
-    if (!crypto_->sha256(std::string_view(reinterpret_cast<const char*>(key.data()),
+    if (!crypto_->sha256(std::string(reinterpret_cast<const char*>(key.data()),
                                           key.size()),
                          digest)) {
         return false;
@@ -217,8 +217,8 @@ size_t UnattendedPasswordAuthenticator::purge_expired() {
     return before - pending_challenges_.size();
 }
 
-bool UnattendedPasswordAuthenticator::constant_time_equal(std::string_view a,
-                                                          std::string_view b) {
+bool UnattendedPasswordAuthenticator::constant_time_equal(const std::string& a,
+                                                          const std::string& b) {
     if (a.size() != b.size()) {
         return false;
     }
@@ -229,18 +229,19 @@ bool UnattendedPasswordAuthenticator::constant_time_equal(std::string_view a,
     return diff == 0;
 }
 
-bool UnattendedPasswordAuthenticator::compute_proof(std::string_view challenge_hex,
+bool UnattendedPasswordAuthenticator::compute_proof(const std::string& challenge_hex,
                                                     std::vector<uint8_t>& proof) const {
     std::lock_guard<std::mutex> lk(mtx_);
-    auto challenge = from_hex(challenge_hex);
-    auto key = from_hex(secret_.key_hex);
-    if (!challenge.has_value() || !key.has_value() || crypto_ == nullptr) {
+    std::vector<uint8_t> challenge;
+    std::vector<uint8_t> key;
+    if (!from_hex(challenge_hex, challenge) || !from_hex(secret_.key_hex, key)
+        || crypto_ == nullptr) {
         return false;
     }
     return crypto_->hmac_sha256(
-        std::string_view(reinterpret_cast<const char*>(key->data()), key->size()),
-        std::string_view(reinterpret_cast<const char*>(challenge->data()),
-                         challenge->size()),
+        std::string(reinterpret_cast<const char*>(key.data()), key.size()),
+        std::string(reinterpret_cast<const char*>(challenge.data()),
+                         challenge.size()),
         proof);
 }
 

@@ -77,13 +77,13 @@ void TrustStore::load() {
     if (text.empty()) {
         return;  // 首次运行无文件
     }
-    const auto root = json_parse(text);
-    if (!root.has_value() || !root->is_array()) {
+    json root;
+    if (!json_parse(text, root) || !root.is_array()) {
         SCLD_LOG(log_, LogLevel::Warn, "trust",
                  "trust.json 格式非法，按空表处理（下次变更重写）");
         return;
     }
-    for (const auto& item : *root) {
+    for (const auto& item : root) {
         if (!item.is_object() || !item.contains("code")
             || !item.at("code").is_string()) {
             continue;  // 畸形条目跳过

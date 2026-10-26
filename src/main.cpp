@@ -158,11 +158,14 @@ int main(int argc, char* argv[]) {
     // third_party 头库自检：封装层链路通畅性（校验值/解析正确性）
     {
         const auto h = foundation::xxh3_64("scToLocalDesk", 0);
-        const auto j = foundation::json_parse(foundation::json_dump(
-            foundation::json{{"app", "scToLocalDesk"}, {"ver", 1}}));
+        foundation::json j;
+        const bool j_ok = foundation::json_parse(
+            foundation::json_dump(
+                foundation::json{{"app", "scToLocalDesk"}, {"ver", 1}}),
+            j);
         SCLD_LOG(logger, LogLevel::Info, "main",
                  "third_party ready: xxh3=" + std::to_string(h)
-                     + " json_ok=" + (j.has_value() && j->at("ver") == 1 ? "1" : "0")
+                     + " json_ok=" + (j_ok && j.at("ver") == 1 ? "1" : "0")
                      + " magic_enum=" + std::string(foundation::enum_name(LogLevel::Info)));
     }
     // FFmpeg 编码自检：真实抓一帧桌面走 MJPEG 全程（压缩比/耗时落日志，

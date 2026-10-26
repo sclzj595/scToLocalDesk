@@ -4,7 +4,6 @@
 // ============================================================
 #pragma once
 
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -19,8 +18,8 @@ public:
     virtual bool start() = 0;
     virtual void stop() = 0;
 
-    /// 别名解析：alias -> ip:port；未命中返回 nullopt（Doc07 §1）
-    virtual std::optional<DeviceInfo> resolve(const std::string& alias) = 0;
+    /// 别名解析：alias -> ip:port；未命中返回 false（Doc07 §1）
+    virtual bool resolve(const std::string& alias, DeviceInfo& out) = 0;
 
     /// IT 视图在线列表（已过滤超时）
     virtual std::vector<DeviceInfo> online_devices() const = 0;

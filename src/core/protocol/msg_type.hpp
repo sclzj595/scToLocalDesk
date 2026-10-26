@@ -48,14 +48,14 @@ enum class CloseReason : uint8_t {
 
 /// REQUEST_CONNECT flags 位定义（Doc05 §3）
 namespace connect_flags {
-inline constexpr uint8_t kUnattended = 0x01;  ///< bit0：请求无人值守通道
-inline constexpr uint8_t kReservedAll = 0xFE;
+constexpr uint8_t kUnattended = 0x01;  ///< bit0：请求无人值守通道
+constexpr uint8_t kReservedAll = 0xFE;
 }  // namespace connect_flags
 
 /// 文件分片字段偏移（FILE_CHUNK Body，Doc05 §5）：16B file_id + 4B idx + 4B total + 1B last + 4B len
-inline constexpr size_t kFileChunkHeaderSize = 16 + 4 + 4 + 1 + 4;
+constexpr size_t kFileChunkHeaderSize = 16 + 4 + 4 + 1 + 4;
 
 /// 报文头尺寸
-inline constexpr size_t kHeaderSize = 1 + 4;
+constexpr size_t kHeaderSize = 1 + 4;
 
 }  // namespace sc::localdesk::protocol

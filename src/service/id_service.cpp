@@ -27,7 +27,7 @@ IdService::IdService(std::string hostname, std::string username,
     name_ = username.empty() ? hostname : username + "@" + hostname;
 }
 
-uint32_t IdService::derive_code(std::string_view fingerprint) {
+uint32_t IdService::derive_code(const std::string& fingerprint) {
     return static_cast<uint32_t>(foundation::xxh3_64(fingerprint, kIdSalt)
                                  % kCodeDomain);
 }

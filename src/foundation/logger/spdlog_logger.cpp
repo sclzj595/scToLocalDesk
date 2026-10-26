@@ -76,7 +76,7 @@ SpdlogLogger::~SpdlogLogger() {
     }
 }
 
-void SpdlogLogger::log(LogLevel lv, std::string_view tag, std::string_view msg) {
+void SpdlogLogger::log(LogLevel lv, const std::string& tag, const std::string& msg) {
     if (impl_ == nullptr) {
         return;
     }

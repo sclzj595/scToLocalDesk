@@ -77,10 +77,10 @@ public:
             return false;
         }
         // 按 section 分组输出（保持插入序：用 vector 备份序）
-        for (const auto& [sec, kv] : data_) {
-            fputs(("[" + sec + "]\n").c_str(), fp);
-            for (const auto& [k, v] : kv) {
-                fputs((k + "=" + v + "\n").c_str(), fp);
+        for (const auto& sec_kv : data_) {
+            fputs(("[" + sec_kv.first + "]\n").c_str(), fp);
+            for (const auto& item : sec_kv.second) {
+                fputs((item.first + "=" + item.second + "\n").c_str(), fp);
             }
             fputc('\n', fp);
         }
@@ -100,7 +100,7 @@ public:
 
     // ---------------- 读取（缺失/非法返回默认值，Doc12 §5） ----------------
 
-    std::string get_str(std::string_view sec, std::string_view key,
+    std::string get_str(const std::string& sec, const std::string& key,
                                       std::string def) const {
         std::lock_guard<std::mutex> lk(mtx_);
         const auto s = data_.find(to_lower(sec));
@@ -111,7 +111,7 @@ public:
         return k == s->second.end() ? def : k->second;
     }
 
-    int get_int(std::string_view sec, std::string_view key, int def) const {
+    int get_int(const std::string& sec, const std::string& key, int def) const {
         const auto s = get_str(sec, key, "");
         if (s.empty()) {
             return def;
@@ -121,7 +121,7 @@ public:
         return (end == s.c_str() || *end != '\0') ? def : static_cast<int>(v);
     }
 
-    bool get_bool(std::string_view sec, std::string_view key, bool def) const {
+    bool get_bool(const std::string& sec, const std::string& key, bool def) const {
         const auto s = to_lower(get_str(sec, key, ""));
         if (s == "true" || s == "1" || s == "yes" || s == "on") {
             return true;
@@ -134,17 +134,17 @@ public:
 
     // ---------------- 写入（仅内存，显式 save 落盘） ----------------
 
-    void set_str(std::string_view sec, std::string_view key, std::string val) {
+    void set_str(const std::string& sec, const std::string& key, std::string val) {
         std::lock_guard<std::mutex> lk(mtx_);
         data_[to_lower(sec)][to_lower(key)] = std::move(val);
         dirty_ = true;
     }
 
-    void set_int(std::string_view sec, std::string_view key, int val) {
+    void set_int(const std::string& sec, const std::string& key, int val) {
         set_str(sec, key, std::to_string(val));
     }
 
-    void set_bool(std::string_view sec, std::string_view key, bool val) {
+    void set_bool(const std::string& sec, const std::string& key, bool val) {
         set_str(sec, key, val ? "true" : "false");
     }
 
@@ -181,10 +181,6 @@ private:
             }
         }
         return s;
-    }
-
-    static std::string to_lower(std::string_view s) {
-        return to_lower(std::string(s));
     }
 
     std::filesystem::path path_;

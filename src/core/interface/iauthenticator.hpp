@@ -4,7 +4,7 @@
 // ============================================================
 #pragma once
 
-#include <string_view>
+#include <string>
 
 #include "core/interface/types.hpp"
 
@@ -19,8 +19,8 @@ public:
 
     /// 无人值守挑战应答校验：proof = HMAC-SHA256(challenge, K)（Doc05 §6）
     /// 实现必须使用常数时间比较，防时序侧信道（Doc16 §2.8）
-    virtual bool verify_proof(std::string_view challenge,
-                                            std::string_view proof) = 0;
+    virtual bool verify_proof(const std::string& challenge,
+                                            const std::string& proof) = 0;
 };
 
 }  // namespace sc::localdesk

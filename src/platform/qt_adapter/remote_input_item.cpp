@@ -18,20 +18,20 @@ RemoteInputItem::RemoteInputItem(QQuickItem* parent) : QQuickItem(parent) {
 }
 
 void RemoteInputItem::send_mouse(MouseAction action, const QPointF& local, int wheel) {
-    const auto mk = InputBridge::map_mouse(static_cast<int>(action), local,
-                                           QSizeF(width(), height()),
-                                           video_size_, wheel);
-    if (mk.has_value()) {
-        emit inputMouse(static_cast<int>(mk->action),
-                        static_cast<int>(mk->x), static_cast<int>(mk->y),
-                        static_cast<int>(mk->wheel));
+    protocol::MouseKeyBody mk;
+    if (InputBridge::map_mouse(static_cast<int>(action), local,
+                               QSizeF(width(), height()), video_size_, mk,
+                               wheel)) {
+        emit inputMouse(static_cast<int>(mk.action),
+                        static_cast<int>(mk.x), static_cast<int>(mk.y),
+                        static_cast<int>(mk.wheel));
     }
 }
 
 void RemoteInputItem::send_key(int qt_key, bool down) {
-    const auto mk = InputBridge::map_key(qt_key, down);
-    if (mk.has_value()) {
-        emit inputKey(mk->vk, mk->scan, down);
+    protocol::MouseKeyBody mk;
+    if (InputBridge::map_key(qt_key, down, mk)) {
+        emit inputKey(mk.vk, mk.scan, down);
     }
 }
 
