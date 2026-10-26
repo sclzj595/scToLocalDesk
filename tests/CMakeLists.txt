@@ -12,6 +12,7 @@ add_executable(sc_localdesk_tests
     test_trust_store.cpp
     test_id_service.cpp
     test_file_service.cpp
+    test_crypto.cpp
 )
 
 target_include_directories(sc_localdesk_tests PRIVATE

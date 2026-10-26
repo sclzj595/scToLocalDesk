@@ -25,7 +25,6 @@ option(SCTOLOCALDESK_BUILD_CORE_ONLY "仅编译核心静态库 + headless 冒烟
 option(SCTOLOCALDESK_BUILD_QT_APP    "编译 QML 桌面应用（需 Qt 6.5.3 + MSVC2019）" OFF)
 option(SCTOLOCALDESK_BUILD_TESTS     "编译单元测试（doctest，header-only vendored）" OFF)
 option(SCTOLOCALDESK_WITH_SPDLOG     "启用 spdlog 日志实现（关闭时使用内置 ConsoleLogger）" OFF)
-option(SCTOLOCALDESK_WITH_OPENSSL    "启用 OpenSSL 加密实现（AES-GCM/PBKDF2/HMAC，关闭时使用桩实现）" OFF)
 
 if(NOT SCTOLOCALDESK_BUILD_CORE_ONLY AND NOT SCTOLOCALDESK_BUILD_QT_APP)
     message(FATAL_ERROR "至少启用 SCTOLOCALDESK_BUILD_CORE_ONLY 或 SCTOLOCALDESK_BUILD_QT_APP 之一")
@@ -51,7 +50,22 @@ set(SCLD_CORE_SOURCES
     src/service/trust_store.cpp
 )
 
+# 加密后端（PRD 会话加密）：Windows 走 OS 内建 CNG，其它走 OpenSSL（头探测），
+# 缺失自动降级显式失败桩。编入 core 使单测可直接驱动 ICrypto
+set(SCLD_CRYPTO_SOURCES
+    src/implement/crypto/crypto_factory.cpp
+    src/implement/crypto/openssl_crypto.cpp
+)
+if(WIN32)
+    list(APPEND SCLD_CRYPTO_SOURCES src/implement/crypto/bcrypt_crypto.cpp)
+endif()
+
 add_library(sc_localdesk_core STATIC ${SCLD_CORE_SOURCES})
+target_sources(sc_localdesk_core PRIVATE ${SCLD_CRYPTO_SOURCES})
+
+if(WIN32)
+    target_link_libraries(sc_localdesk_core PUBLIC bcrypt)
+endif()
 
 target_include_directories(sc_localdesk_core
     PUBLIC
@@ -175,7 +189,6 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
         set(SCLD_QML_SOURCES
             src/main.cpp
             src/ui/qml.qrc
-            src/implement/crypto/openssl_crypto.cpp
             src/platform/qt_adapter/qt_event_bridge.cpp
             src/platform/qt_adapter/device_list_model.cpp
             src/platform/qt_adapter/qt_udp_discovery.cpp
@@ -227,14 +240,8 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
         if(WIN32)
             target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS} iphlpapi advapi32 dbghelp)
         else()
-            # Linux：openssl_crypto 实现检测到系统头后编入真实现，需链 OpenSSL
-            find_package(OpenSSL QUIET)
-            if(OPENSSL_FOUND)
-                target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS}
-                    OpenSSL::Crypto OpenSSL::SSL)
-            else()
-                target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS})
-            endif()
+            # Linux：OpenSSL 链接随 sc_localdesk_core PUBLIC 传递
+            target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS})
         endif()
     else()
         message(WARNING "未找到 Qt 6.2+，跳过 QT_APP 目标（请检查 CMAKE_PREFIX_PATH 指向 Qt 安装目录）")
@@ -267,7 +274,6 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
             src/ui/qwidget/pages/file_transfer_page.cpp
             src/ui/qwidget/pages/settings_page.cpp
             src/ui/qwidget/popups/connect_confirm_dialog.cpp
-            src/implement/crypto/openssl_crypto.cpp
             src/platform/qt_adapter/qt_event_bridge.cpp
             src/platform/qt_adapter/qt_udp_discovery.cpp
             src/platform/qt_adapter/video_pipeline.cpp
