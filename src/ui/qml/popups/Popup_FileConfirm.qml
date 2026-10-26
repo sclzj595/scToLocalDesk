@@ -42,14 +42,14 @@ Popup {
         spacing: 10
 
         Text {
-            text: "文件接收请求"
+            text: qsTr("文件接收请求")
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontTitle
             font.weight: Font.Medium
             color: Theme.textMain
         }
         Text {
-            text: root.peerAlias + " 向本机发送文件"
+            text: qsTr("%1 向本机发送文件").arg(root.peerAlias)
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
             color: Theme.textSecond
@@ -94,7 +94,7 @@ Popup {
             spacing: 10
 
             Button {
-                text: "拒绝"
+                text: qsTr("拒绝")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 onClicked: {
@@ -122,7 +122,7 @@ Popup {
                 }
             }
             Button {
-                text: "接收"
+                text: qsTr("接收")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 onClicked: {

@@ -38,14 +38,14 @@ Popup {
         spacing: 10
 
         Text {
-            text: "连接请求"
+            text: qsTr("连接请求")
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontTitle
             font.weight: Font.Medium
             color: Theme.textMain
         }
         Text {
-            text: root.peerAlias + " 请求远程协助本机"
+            text: qsTr("%1 请求远程协助本机").arg(root.peerAlias)
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
             color: Theme.textSecond
@@ -65,7 +65,7 @@ Popup {
                 anchors.rightMargin: 12
                 spacing: 8
                 Text {
-                    text: "对方连接码"
+                    text: qsTr("对方连接码")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontHint
                     color: Theme.textHint
@@ -93,7 +93,7 @@ Popup {
         // 信任记忆复选框（确认后才有记忆缓存）
         CheckBox {
             id: rememberChk
-            text: "记住此设备，下次免确认直连"
+            text: qsTr("记住此设备，下次免确认直连")
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
             checked: true
@@ -137,7 +137,7 @@ Popup {
             spacing: 10
 
             Button {
-                text: "拒绝"
+                text: qsTr("拒绝")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 onClicked: {
@@ -165,7 +165,7 @@ Popup {
                 }
             }
             Button {
-                text: "同意"
+                text: qsTr("同意")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 onClicked: {

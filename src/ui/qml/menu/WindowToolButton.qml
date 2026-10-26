@@ -16,6 +16,11 @@ Item {
     width: 30
     height: 24
 
+    // 自绘控件无内置 text，屏幕阅读器依赖显式声明（Doc18 §7.3）
+    Accessible.role: Accessible.Button
+    Accessible.name: root.tip
+    Accessible.focusable: true
+
     Rectangle {
         id: hl
         anchors.fill: parent

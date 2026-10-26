@@ -216,8 +216,8 @@ int main(int argc, char* argv[]) {
             &win,
             [&win, bad_port] {
                 QMessageBox box(QMessageBox::Warning,
-                                QStringLiteral("被控监听失败"),
-                                QStringLiteral("会话端口 %1 被占用或无法监听，"
+                                QObject::tr("被控监听失败"),
+                                QObject::tr("会话端口 %1 被占用或无法监听，"
                                                "对方将无法连接本机。\n请在 "
                                                "设置→网络 修改 WS 端口后重启。")
                                     .arg(bad_port),
@@ -235,7 +235,7 @@ int main(int argc, char* argv[]) {
             [&win, &logger, e] {
                 SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn,
                          "smoke", "connect denied " + e.reason);
-                QMessageBox::warning(&win, QStringLiteral("无法发起协助"),
+                QMessageBox::warning(&win, QObject::tr("无法发起协助"),
                                      QString::fromStdString(e.reason));
             },
             Qt::QueuedConnection);
@@ -279,10 +279,10 @@ int main(int argc, char* argv[]) {
                     }
                     auto* box = new QMessageBox(&win);
                     box->setAttribute(Qt::WA_DeleteOnClose);
-                    box->setWindowTitle(QStringLiteral("连接请求"));
+                    box->setWindowTitle(QObject::tr("连接请求"));
                     box->setText(e.peer_ip.empty()
-                                     ? QStringLiteral("对方请求远程协助本机，是否同意？")
-                                     : QStringLiteral("对方（%1）请求远程协助本机，是否同意？")
+                                     ? QObject::tr("对方请求远程协助本机，是否同意？")
+                                     : QObject::tr("对方（%1）请求远程协助本机，是否同意？")
                                            .arg(QString::fromStdString(e.peer_ip)));
                     box->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
                     box->setWindowFlag(Qt::WindowStaysOnTopHint, true);  // PRD 确认三件套：置顶
@@ -327,8 +327,8 @@ int main(int argc, char* argv[]) {
                              "alias", "别名冲突 alias=" + e.device_alias
                                           + " ip=" + e.conflict_ip);
                     QMessageBox::warning(
-                        &win, QStringLiteral("别名冲突"),
-                        QStringLiteral("检测到其他设备使用别名「%1」（%2），"
+                        &win, QObject::tr("别名冲突"),
+                        QObject::tr("检测到其他设备使用别名「%1」（%2），"
                                        "请在设置中修改本机连接名")
                             .arg(QString::fromStdString(e.device_alias),
                                  QString::fromStdString(e.conflict_ip)));
@@ -484,9 +484,9 @@ int main(int argc, char* argv[]) {
                     const QString alias = QString::fromStdString(e.device_alias);
                     const QString name = QString::fromStdString(e.name);
                     auto ret = QMessageBox::question(
-                        nullptr, QStringLiteral("文件接收请求"),
-                        QStringLiteral("%1 向本机发送文件：\n%2（%3 字节）\n是否接收？")
-                            .arg(alias.isEmpty() ? QStringLiteral("对方") : alias, name)
+                        nullptr, QObject::tr("文件接收请求"),
+                        QObject::tr("%1 向本机发送文件：\n%2（%3 字节）\n是否接收？")
+                            .arg(alias.isEmpty() ? QObject::tr("对方") : alias, name)
                             .arg(e.size),
                         QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
                     if (ret == QMessageBox::Yes) {

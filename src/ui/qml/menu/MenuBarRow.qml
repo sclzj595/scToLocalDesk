@@ -54,7 +54,7 @@ Item {
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: "SC 邻桌"
+            text: qsTr("SC 邻桌")
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontTitle
             font.weight: Font.Medium
@@ -70,52 +70,52 @@ Item {
 
         Repeater {
             model: [{
-                    "title": "文件",
+                    "title": qsTr("文件"),
                     "items": [{
-                            "text": "发送文件…",
+                            "text": qsTr("发送文件…"),
                             "action": "file.send"
                         }, {
                             "sep": true
                         }, {
-                            "text": "退出",
+                            "text": qsTr("退出"),
                             "action": "app.quit"
                         }]
                 }, {
-                    "title": "连接",
+                    "title": qsTr("连接"),
                     "items": [{
-                            "text": "新建连接…",
+                            "text": qsTr("新建连接…"),
                             "action": "conn.new"
                         }, {
-                            "text": "断开当前会话",
+                            "text": qsTr("断开当前会话"),
                             "action": "conn.close"
                         }]
                 }, {
-                    "title": "视图",
+                    "title": qsTr("视图"),
                     "items": [{
-                            "text": "刷新设备列表",
+                            "text": qsTr("刷新设备列表"),
                             "action": "view.refresh"
                         }, {
                             "sep": true
                         }, {
-                            "text": Theme.isDark ? "切至浅色主题" : "切至深色主题",
+                            "text": Theme.isDark ? qsTr("切至浅色主题") : qsTr("切至深色主题"),
                             "action": "view.theme"
                         }, {
-                            "text": "降低透明度",
+                            "text": qsTr("降低透明度"),
                             "action": "view.reduce"
                         }]
                 }, {
-                    "title": "工具",
+                    "title": qsTr("工具"),
                     "items": [{
-                            "text": "设置…",
+                            "text": qsTr("设置…"),
                             "action": "tool.settings"
                         }, {
-                            "text": "清除缓存数据",
+                            "text": qsTr("清除缓存数据"),
                             "action": "tool.clear"
                         }]
                 }, {
-                    "title": "帮助",
+                    "title": qsTr("帮助"),
                     "items": [{
-                            "text": "关于 SC 邻桌",
+                            "text": qsTr("关于 SC 邻桌"),
                             "action": "help.about"
                         }]
                 }]
@@ -139,19 +139,19 @@ Item {
         WindowToolButton {
             anchors.verticalCenter: parent.verticalCenter
             glyph: Theme.isDark ? "☀" : "☾"
-            tip: "切换主题"
+            tip: qsTr("切换主题")
             onClicked: root.themeToggled()
         }
         WindowToolButton {
             anchors.verticalCenter: parent.verticalCenter
             glyph: "─"
-            tip: "最小化"
+            tip: qsTr("最小化")
             onClicked: root.Window.window.showMinimized()
         }
         WindowToolButton {
             anchors.verticalCenter: parent.verticalCenter
             glyph: "□"
-            tip: "最大化"
+            tip: qsTr("最大化")
             onClicked: {
                 const w = root.Window.window;
                 w.visibility === Window.Maximized ? w.showNormal() : w.showMaximized();
@@ -160,7 +160,7 @@ Item {
         WindowToolButton {
             anchors.verticalCenter: parent.verticalCenter
             glyph: "✕"
-            tip: "关闭"
+            tip: qsTr("关闭")
             onClicked: root.Window.window.close()
         }
     }

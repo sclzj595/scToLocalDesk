@@ -33,14 +33,14 @@ Popup {
         spacing: 12
 
         Text {
-            text: "无人值守验证"
+            text: qsTr("无人值守验证")
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontTitle
             font.weight: Font.Medium
             color: Theme.textMain
         }
         Text {
-            text: "请输入 " + root.peerAlias + " 的无人值守密码"
+            text: qsTr("请输入 ") + root.peerAlias + " 的无人值守密码"
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
             color: Theme.textSecond
@@ -53,7 +53,7 @@ Popup {
                 Layout.fillWidth: true
                 echoMode: revealBtn.checked ? TextInput.Normal : TextInput.Password
                 selectByMouse: true
-                placeholderText: "无人值守密码"
+                placeholderText: qsTr("无人值守密码")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 color: Theme.textMain
@@ -98,7 +98,7 @@ Popup {
             spacing: 10
 
             Button {
-                text: "取消"
+                text: qsTr("取消")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 onClicked: {
@@ -120,7 +120,7 @@ Popup {
                 }
             }
             Button {
-                text: "验证"
+                text: qsTr("验证")
                 enabled: pwd.text.length > 0
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody

@@ -19,19 +19,19 @@ Item {
     // 0 设备列表 / 1 新建连接 / 2 远程画面 / 3 文件传输 / 4 设置
     readonly property var entries: [{
             "glyph": "◱",
-            "tip": "设备列表"
+            "tip": qsTr("设备列表")
         }, {
             "glyph": "⧉",
-            "tip": "新建连接"
+            "tip": qsTr("新建连接")
         }, {
             "glyph": "▣",
-            "tip": "远程画面"
+            "tip": qsTr("远程画面")
         }, {
             "glyph": "⇅",
-            "tip": "文件传输"
+            "tip": qsTr("文件传输")
         }, {
             "glyph": "⚙",
-            "tip": "设置"
+            "tip": qsTr("设置")
         }]
 
     GlobalGlass {
@@ -53,6 +53,10 @@ Item {
                 id: dockEntry
                 width: 56
                 height: 56
+                // 自绘控件无内置 text，屏幕阅读器依赖显式声明（Doc18 §7.3）
+                Accessible.role: Accessible.Button
+                Accessible.name: modelData.tip
+                Accessible.focusable: true
 
                 // 选中标记：左缘主色竖线
                 Rectangle {

@@ -176,6 +176,14 @@ P6 Linux 远程编译（Qt 6.2.4）──────── 跨平台适配
 - QML Accessible.name 关键控件补齐
 - commit：`MOD: i18n 包裹与无障碍属性`
 
+> **交付记录（2026-10-26）**：QML 132 处 qsTr（MainWindow 34/pages 66/popups 15/
+> 菜单 Dock 17），Widgets 41 处 tr()/QObject::tr()（菜单文本比较同步重构为
+> QAction 指针比较，翻译后不失效）；拼接串统一改 `%1.arg()` 翻译器友好形态。
+> lupdate 扫描 170 源文本 → translations/sc_localdesk_en.ts 骨架（译文后补），
+> CMake scld_lupdate target 供重扫描。无障碍：自绘控件补 Accessible.role/name
+> （Dock 条目/窗口钮/设备卡/SwitchRow——标准 Controls 的 text 自动暴露无需补）。
+> 单测 47/219 绿；QML 版启动无解析错误。
+
 ---
 
 ## 8. P6 Linux 远程编译（Qt 6.2.4）

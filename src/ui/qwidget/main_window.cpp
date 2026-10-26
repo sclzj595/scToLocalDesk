@@ -92,12 +92,12 @@ MainWindow::MainWindow() {
             [this, confirm](const QString& alias, const QString& code, bool trusted) {
                 // PRD P7 防重复：会话占用拦截（与 QML 端同文案）
                 if (sessions_ != nullptr && !sessions_->can_start_control()) {
-                    showToast(QStringLiteral("当前有会话进行中，请先断开"));
+                    showToast(tr("当前有会话进行中，请先断开"));
                     return;
                 }
                 if (trusted || (trust_ != nullptr
                                 && trust_->is_trusted(code.toStdString()))) {
-                    showToast(QStringLiteral("正在直连 %1（已信任）…").arg(alias));
+                    showToast(tr("正在直连 %1（已信任）…").arg(alias));
                     if (sessions_ != nullptr) {
                         sessions_->connect_to_peer(alias.toStdString(), false, "");  // 断头补全
                     }
@@ -109,26 +109,26 @@ MainWindow::MainWindow() {
                         trust_->trust(code.toStdString(), alias.toStdString());
                     }
                     showToast(confirm->rememberChecked()
-                            ? QStringLiteral("已确认，正在连接 %1 …").arg(alias)
-                            : QStringLiteral("正在连接 %1 …").arg(alias));
+                            ? tr("已确认，正在连接 %1 …").arg(alias)
+                            : tr("正在连接 %1 …").arg(alias));
                     if (sessions_ != nullptr) {
                         sessions_->connect_to_peer(alias.toStdString(), false, "");  // 断头补全
                     }
                 }
                 else {
-                    showToast(QStringLiteral("已取消发起"));
+                    showToast(tr("已取消发起"));
                 }
             });
     connect(connCode, &ConnectCodePage::connectRequested, this,
             [this, confirm](const QString& code) {
                 // PRD P7 防重复 + code→alias 反查（connect_to_peer 按 alias 寻址）
                 if (sessions_ != nullptr && !sessions_->can_start_control()) {
-                    showToast(QStringLiteral("当前有会话进行中，请先断开"));
+                    showToast(tr("当前有会话进行中，请先断开"));
                     return;
                 }
                 const QString alias = devList_->deviceAlias(code);
                 if (alias.isEmpty()) {
-                    showToast(QStringLiteral("设备不在线：%1").arg(code));
+                    showToast(tr("设备不在线：%1").arg(code));
                     return;
                 }
                 // 三段化显示：482130556 → 482 130 556
@@ -137,10 +137,10 @@ MainWindow::MainWindow() {
                     pretty += (i > 0 ? QStringLiteral(" ") : QString())
                             + code.mid(i, 3);
                 }
-                confirm->setPeer(QStringLiteral("设备 %1").arg(pretty),
+                confirm->setPeer(tr("设备 %1").arg(pretty),
                                  devList_->deviceIp(code), pretty);
                 if (trust_ != nullptr && trust_->is_trusted(code.toStdString())) {
-                    showToast(QStringLiteral("正在直连（已信任）…"));
+                    showToast(tr("正在直连（已信任）…"));
                     if (sessions_ != nullptr) {
                         sessions_->connect_to_peer(alias.toStdString(), false, "");  // 断头补全
                     }
@@ -151,14 +151,14 @@ MainWindow::MainWindow() {
                         trust_->trust(code.toStdString(), alias.toStdString());
                     }
                     showToast(confirm->rememberChecked()
-                            ? QStringLiteral("已确认，正在连接 %1 …").arg(alias)
-                            : QStringLiteral("正在连接 %1 …").arg(alias));
+                            ? tr("已确认，正在连接 %1 …").arg(alias)
+                            : tr("正在连接 %1 …").arg(alias));
                     if (sessions_ != nullptr) {
                         sessions_->connect_to_peer(alias.toStdString(), false, "");  // 断头补全
                     }
                 }
                 else {
-                    showToast(QStringLiteral("已取消发起"));
+                    showToast(tr("已取消发起"));
                 }
             });
 
@@ -190,7 +190,7 @@ QWidget* MainWindow::makeTitleBar() {
         "background: %1; color: white; border-radius: 5px; font-weight: bold; font-size: 11px;")
         .arg(GlassTheme::instance().primary().name(QColor::HexRgb)));
     lay->addWidget(logo);
-    auto* title = new QLabel(QStringLiteral("SC 邻桌"));
+    auto* title = new QLabel(tr("SC 邻桌"));
     title->setStyleSheet(QStringLiteral(
         "font-size: 16px; font-weight: 600; color: %1;")
         .arg(GlassTheme::instance().textMain().name(QColor::HexRgb)));
@@ -214,63 +214,67 @@ QWidget* MainWindow::makeTitleBar() {
         }
         btn->setMenu(m);
     };
-    auto* mFile = makeMenuBtn(QStringLiteral("文件"));
+    auto* mFile = makeMenuBtn(tr("文件"));
+    auto* actQuit = new QAction(tr("退出"), mFile);
     attachMenu(mFile, {
-        new QAction(QStringLiteral("发送文件…"), mFile),
-        new QAction(QStringLiteral("退出"), mFile),
+        new QAction(tr("发送文件…"), mFile),
+        actQuit,
     });
-    connect(mFile->menu(), &QMenu::triggered, this, [this](QAction* a) {
-        if (a->text() == QStringLiteral("退出")) {
+    connect(mFile->menu(), &QMenu::triggered, this, [this, actQuit](QAction* a) {
+        if (a == actQuit) {
             close();
         }
         else {
             setDockIndex(3);
         }
     });
-    auto* mConn = makeMenuBtn(QStringLiteral("连接"));
+    auto* mConn = makeMenuBtn(tr("连接"));
+    auto* actNewConn = new QAction(tr("新建连接…"), mConn);
     attachMenu(mConn, {
-        new QAction(QStringLiteral("新建连接…"), mConn),
-        new QAction(QStringLiteral("断开当前会话"), mConn),
+        actNewConn,
+        new QAction(tr("断开当前会话"), mConn),
     });
-    connect(mConn->menu(), &QMenu::triggered, this, [this](QAction* a) {
-        if (a->text() == QStringLiteral("新建连接…")) {
+    connect(mConn->menu(), &QMenu::triggered, this, [this, actNewConn](QAction* a) {
+        if (a == actNewConn) {
             setDockIndex(1);
         }
         else {
             setDockIndex(0);
         }
     });
-    auto* mView = makeMenuBtn(QStringLiteral("视图"));
+    auto* mView = makeMenuBtn(tr("视图"));
+    auto* actTheme = new QAction(tr("切换主题"), mView);
     attachMenu(mView, {
-        new QAction(QStringLiteral("刷新设备列表"), mView),
-        new QAction(QStringLiteral("切换主题"), mView),
+        new QAction(tr("刷新设备列表"), mView),
+        actTheme,
     });
-    connect(mView->menu(), &QMenu::triggered, this, [this](QAction* a) {
-        if (a->text() == QStringLiteral("切换主题")) {
+    connect(mView->menu(), &QMenu::triggered, this, [this, actTheme](QAction* a) {
+        if (a == actTheme) {
             applyTheme(!GlassTheme::instance().isDark());
         }
         else {
-            showToast(QStringLiteral("设备列表已刷新"));   // TODO(V1.0) discovery refresh
+            showToast(tr("设备列表已刷新"));   // TODO(V1.0) discovery refresh
         }
     });
-    auto* mTool = makeMenuBtn(QStringLiteral("工具"));
+    auto* mTool = makeMenuBtn(tr("工具"));
+    auto* actSettings = new QAction(tr("设置…"), mTool);
     attachMenu(mTool, {
-        new QAction(QStringLiteral("设置…"), mTool),
-        new QAction(QStringLiteral("清空信任设备缓存"), mTool),
+        actSettings,
+        new QAction(tr("清空信任设备缓存"), mTool),
     });
-    connect(mTool->menu(), &QMenu::triggered, this, [this](QAction* a) {
-        if (a->text() == QStringLiteral("设置…")) {
+    connect(mTool->menu(), &QMenu::triggered, this, [this, actSettings](QAction* a) {
+        if (a == actSettings) {
             setDockIndex(4);
         }
         else {
             if (trust_ != nullptr) {
                 trust_->clear();
             }
-            showToast(QStringLiteral("信任设备缓存已清空"));
+            showToast(tr("信任设备缓存已清空"));
         }
     });
-    auto* mHelp = makeMenuBtn(QStringLiteral("帮助"));
-    attachMenu(mHelp, {new QAction(QStringLiteral("关于 SC 邻桌"), mHelp)});
+    auto* mHelp = makeMenuBtn(tr("帮助"));
+    attachMenu(mHelp, {new QAction(tr("关于 SC 邻桌"), mHelp)});
     lay->addWidget(mFile);
     lay->addWidget(mConn);
     lay->addWidget(mView);
@@ -283,7 +287,7 @@ QWidget* MainWindow::makeTitleBar() {
     themeBtn_->setObjectName(QStringLiteral("winBtn"));
     themeBtn_->setFixedSize(30, 24);
     themeBtn_->setAlignment(Qt::AlignCenter);
-    themeBtn_->setToolTip(QStringLiteral("切换主题"));
+    themeBtn_->setToolTip(tr("切换主题"));
     themeBtn_->setProperty("themeToggle", true);
     themeBtn_->installEventFilter(this);
     lay->addWidget(themeBtn_);
@@ -334,9 +338,9 @@ QWidget* MainWindow::makeDock() {
     const QStringList glyphs = {QStringLiteral("◱"), QStringLiteral("⧉"),
                                 QStringLiteral("▣"), QStringLiteral("⇅"),
                                 QStringLiteral("⚙")};
-    const QStringList tips = {QStringLiteral("设备列表"), QStringLiteral("新建连接"),
-                              QStringLiteral("远程画面"), QStringLiteral("文件传输"),
-                              QStringLiteral("设置")};
+    const QStringList tips = {tr("设备列表"), tr("新建连接"),
+                              tr("远程画面"), tr("文件传输"),
+                              tr("设置")};
 
     for (int i = 0; i < glyphs.size(); ++i) {
         auto* btn = new QLabel(glyphs.at(i));

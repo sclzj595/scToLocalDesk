@@ -319,3 +319,18 @@ if(SCTOLOCALDESK_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# ------------------------------------------------------------
+# 5) i18n（Doc18 §7.3）：zh-CN 为源语言，en.ts 骨架已入 translations/；
+#    翻译后补时先重扫描再填译文。手动手令：
+#    lupdate src/ui/qml src/ui/qwidget -extensions qml,cpp,h -ts translations/sc_localdesk_en.ts
+# ------------------------------------------------------------
+find_program(SCLD_LUPDATE NAMES lupdate HINTS "${QT_DIR}/../../../bin" "${CMAKE_PREFIX_PATH}/bin")
+if(SCLD_LUPDATE)
+    add_custom_target(scld_lupdate
+        COMMAND "${SCLD_LUPDATE}" src/ui/qml src/ui/qwidget
+                -extensions qml,cpp,h
+                -ts translations/sc_localdesk_en.ts
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "i18n: rescanning qsTr/tr into sc_localdesk_en.ts")
+endif()

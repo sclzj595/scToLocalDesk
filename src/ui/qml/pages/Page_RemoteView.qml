@@ -47,7 +47,7 @@ Item {
         Text {
             anchors.centerIn: parent
             visible: !root.inSession
-            text: "暂未进行远程控制\n从设备列表或连接码页发起会话后，画面将显示在此处"
+            text: qsTr("暂未进行远程控制\n从设备列表或连接码页发起会话后，画面将显示在此处")
             horizontalAlignment: Text.AlignHCenter
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
@@ -90,7 +90,7 @@ Item {
 
                 ToolButton {
                     id: fullBtn
-                    text: "⛶ 全屏"
+                    text: qsTr("⛶ 全屏")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontBody
                     contentItem: Text {
@@ -119,7 +119,7 @@ Item {
 
                 Button {
                     id: discBtn
-                    text: "断开连接"
+                    text: qsTr("断开连接")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontBody
                     onClicked: root.disconnected()

@@ -24,7 +24,7 @@ ApplicationWindow {
     minimumWidth: 860
     minimumHeight: 560
     visible: true
-    title: "SC 邻桌"
+    title: qsTr("SC 邻桌")
 
     // 无边框窗口（红线4：菜单栏即标题栏）
     flags: Qt.Window | Qt.FramelessWindowHint
@@ -51,8 +51,8 @@ ApplicationWindow {
         }
         if (!ScLocaldesk.listening) {
             // 端口占用（Doc18 风险清单 P1）：10s 长驻告警 + 具体端口指引
-            toast.show("会话端口 " + ScLocaldesk.settingsValue("ports.ws_port")
-                       + " 监听失败，请在 设置→网络 更换端口后重启", 10000);
+            toast.show(qsTr("会话端口 %1 监听失败，请在 设置→网络 更换端口后重启")
+                           .arg(ScLocaldesk.settingsValue("ports.ws_port")), 10000);
         }
     }
 
@@ -87,11 +87,11 @@ ApplicationWindow {
                 Page_DeviceList {
                     onConnectRequested: (aliasName, code, trusted) => {
                         if (ScLocaldesk.sessionBusy) {
-                            toast.show("当前有会话进行中，请先断开");  // PRD P7 防重复
+                            toast.show(qsTr("当前有会话进行中，请先断开"));  // PRD P7 防重复
                             return;
                         }
                         if (trusted || ScLocaldesk.isTrusted(code)) {
-                            toast.show("正在直连 " + aliasName + "（已信任）…");
+                            toast.show(qsTr("正在直连 %1（已信任）…").arg(aliasName));
                             ScLocaldesk.startControl(aliasName, false, "");
                         }
                         else {
@@ -106,18 +106,18 @@ ApplicationWindow {
                 Page_Connect {
                     onConnectRequested: code => {
                         if (ScLocaldesk.sessionBusy) {
-                            toast.show("当前有会话进行中，请先断开");  // PRD P7 防重复
+                            toast.show(qsTr("当前有会话进行中，请先断开"));  // PRD P7 防重复
                             return;
                         }
                         const aliasName = ScLocaldesk.deviceAlias(code);
                         if (aliasName === "") {
-                            toast.show("设备不在线：" + code);
+                            toast.show(qsTr("设备不在线：%1").arg(code));
                             return;
                         }
                         pendingAlias = aliasName;
                         pendingCode = code;
                         if (ScLocaldesk.isTrusted(code)) {
-                            toast.show("正在直连（已信任）…");
+                            toast.show(qsTr("正在直连（已信任）…"));
                             ScLocaldesk.startControl(aliasName, false, "");
                         }
                         else {
@@ -130,7 +130,7 @@ ApplicationWindow {
                 Page_RemoteView {
                     onDisconnected: {
                         ScLocaldesk.disconnectSession();
-                        toast.show("会话已断开");
+                        toast.show(qsTr("会话已断开"));
                     }
                 }
 
@@ -175,10 +175,10 @@ ApplicationWindow {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: connectStage === "connecting"
-                              ? "正在连接 " + connectAlias + " …"
+                              ? qsTr("正在连接 %1 …").arg(connectAlias)
                               : connectStage === "wait_confirm"
-                                  ? "等待 " + connectAlias + " 确认…"
-                                  : connectAlias + " 拒绝了本次协助"
+                                  ? qsTr("等待 %1 确认…").arg(connectAlias)
+                                  : qsTr("%1 拒绝了本次协助").arg(connectAlias)
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontBody
                     color: connectStage === "rejected" ? Theme.accentRed : "#FFFFFF"
@@ -187,7 +187,7 @@ ApplicationWindow {
                 // 取消（拨号/等确认期）/ 重连（被拒后）
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: connectStage === "rejected" ? "重新连接" : "取消"
+                    text: connectStage === "rejected" ? qsTr("重新连接") : qsTr("取消")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontBody
                     color: Theme.primary
@@ -206,7 +206,7 @@ ApplicationWindow {
                             else {
                                 ScLocaldesk.cancelConnect();  // PRD P7 取消
                                 connectStage = "";
-                                toast.show("已取消连接");
+                                toast.show(qsTr("已取消连接"));
                             }
                         }
                     }
@@ -266,23 +266,23 @@ ApplicationWindow {
             if (confirmPopup.outgoing) {
                 // 控制端发起：确认后真正拨号（Doc18 §4.3；密码模式走无人值守弹窗）
                 ScLocaldesk.startControl(pendingAlias, false, "");
-                toast.show("正在连接 " + pendingAlias + " …");
+                toast.show(qsTr("正在连接 %1 …").arg(pendingAlias));
             }
             else {
                 // 被控端入站申请
                 if (remember) {
                     ScLocaldesk.trust(pendingCode, pendingAlias);   // 确认之后才有：落盘 trust.json
-                    toast.show("已同意，" + pendingAlias + " 已加入信任缓存");
+                    toast.show(qsTr("已同意，%1 已加入信任缓存").arg(pendingAlias));
                 }
                 else {
-                    toast.show("已同意，会话建立中…");
+                    toast.show(qsTr("已同意，会话建立中…"));
                 }
                 ScLocaldesk.approve();
             }
         }
         onRejected: {
             ScLocaldesk.reject();
-            toast.show("已拒绝连接");
+            toast.show(qsTr("已拒绝连接"));
         }
     }
 
@@ -293,7 +293,7 @@ ApplicationWindow {
         peerAlias: pendingAlias
         onVerified: pwd => {
             ScLocaldesk.startControl(pendingAlias, true, pwd);
-            toast.show("正在验证无人值守密码…");
+            toast.show(qsTr("正在验证无人值守密码…"));
         }
     }
 
@@ -303,11 +303,11 @@ ApplicationWindow {
         glassSource: shell
         onAccepted: {
             ScLocaldesk.acceptFile(pendingFileId);
-            toast.show("已同意接收，保存至 设置→文件 指定目录");
+            toast.show(qsTr("已同意接收，保存至 设置→文件 指定目录"));
         }
         onRejected: {
             ScLocaldesk.rejectFile(pendingFileId);
-            toast.show("已拒绝接收");
+            toast.show(qsTr("已拒绝接收"));
         }
     }
 
@@ -332,27 +332,27 @@ ApplicationWindow {
             break;
         case "conn.close":
             ScLocaldesk.disconnectSession();
-            toast.show("会话已断开");
+            toast.show(qsTr("会话已断开"));
             break;
         case "view.refresh":
-            toast.show("设备列表已刷新");
+            toast.show(qsTr("设备列表已刷新"));
             break;
         case "view.theme":
             Theme.toggleDark();
             break;
         case "view.reduce":
             Theme.reducedTransparency = !Theme.reducedTransparency;
-            toast.show(Theme.reducedTransparency ? "已降低透明度" : "已恢复毛玻璃");
+            toast.show(Theme.reducedTransparency ? qsTr("已降低透明度") : qsTr("已恢复毛玻璃"));
             break;
         case "tool.settings":
             dockBar.currentIndex = 4;
             break;
         case "tool.clear":
             ScLocaldesk.clearTrust();   // 清信任缓存（trust.json 同步重写）
-            toast.show("信任缓存已清除");
+            toast.show(qsTr("信任缓存已清除"));
             break;
         case "help.about":
-            toast.show("SC 邻桌 v0.1.0 · 企业内网远程协助");
+            toast.show(qsTr("SC 邻桌 v0.1.0 · 企业内网远程协助"));
             break;
         }
     }
@@ -372,7 +372,7 @@ ApplicationWindow {
         function onConnectRequestTimedOut() {
             // PRD 确认三件套：30s 未响应服务端已自动拒，收尾弹窗
             confirmPopup.close();
-            toast.show("30 秒未响应，已自动拒绝");
+            toast.show(qsTr("30 秒未响应，已自动拒绝"));
         }
         function onConnectDenied(alias, reason) {
             toast.show((alias === "" ? "" : alias + "：") + reason);
@@ -393,7 +393,7 @@ ApplicationWindow {
                 // rejected：状态条转失败文案（带重连按钮），4s 后自动收
                 connectStage = "rejected";
                 if (stage === "rejected") {
-                    toast.show(alias + " 拒绝了本次协助");
+                    toast.show(qsTr("%1 拒绝了本次协助").arg(alias));
                 }
                 connectHideTimer.restart();
             }
@@ -401,26 +401,26 @@ ApplicationWindow {
         function onSessionStarted(alias) {
             connectStage = "";               // 会话建立：连接条收起（PRD P7）
             dockBar.currentIndex = 2;        // 切远程画面页（管线已在跑）
-            toast.show("会话已建立：" + alias);
+            toast.show(qsTr("会话已建立：%1").arg(alias));
         }
         function onAliasConflict(alias, conflictIp) {
             // PRD P5 别名冲突：引导改名（设置 → 本机连接名）
-            toast.show("检测到别名冲突：" + alias + "（" + conflictIp
-                       + "），请在设置中修改本机连接名");
+            toast.show(qsTr("检测到别名冲突：%1（%2），请在设置中修改本机连接名")
+                           .arg(alias, conflictIp));
         }
         function onSettingsRejected(key, why) {
-            toast.show("保存被拒绝：" + why);
+            toast.show(qsTr("保存被拒绝：%1").arg(why));
         }
         function onSessionClosed(reason) {
             if (dockBar.currentIndex === 2) {
                 dockBar.currentIndex = 0;    // 断开回设备列表
             }
             connectStage = "";               // 对端断开/网络中断：连接条一并收起（PRD P8）
-            toast.show("会话已结束：" + reason);
+            toast.show(qsTr("会话已结束：%1").arg(reason));
         }
         function onFileMetaReceived(fileId, name, size, alias) {
             pendingFileId = fileId;
-            fileConfirmPopup.peerAlias = alias === "" ? "对方" : alias;
+            fileConfirmPopup.peerAlias = alias === "" ? qsTr("对方") : alias;
             fileConfirmPopup.fileName = name;
             fileConfirmPopup.fileSize = size;
             fileConfirmPopup.open();

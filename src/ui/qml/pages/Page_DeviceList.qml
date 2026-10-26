@@ -52,7 +52,7 @@ Item {
                     color: Qt.alpha(Theme.primary, 0.14)
                     Text {
                         anchors.centerIn: parent
-                        text: "本"
+                        text: qsTr("本")
                         color: Theme.primary
                         font.pixelSize: 20
                         font.weight: Font.Medium
@@ -62,7 +62,7 @@ Item {
                 ColumnLayout {
                     spacing: 4
                     Text {
-                        text: "本机连接名"
+                        text: qsTr("本机连接名")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontHint
                         color: Theme.textHint
@@ -83,7 +83,7 @@ Item {
                 ColumnLayout {
                     spacing: 4
                     Text {
-                        text: "本机连接码"
+                        text: qsTr("本机连接码")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontHint
                         color: Theme.textHint
@@ -101,7 +101,7 @@ Item {
                 Button {
                     id: copyBtn
                     property bool copied: false
-                    text: copied ? "已复制 ✓" : "复制"
+                    text: copied ? qsTr("已复制 ✓") : qsTr("复制")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontBody
                     onClicked: {
@@ -147,7 +147,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Text {
-                text: "局域网设备"
+                text: qsTr("局域网设备")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontTitle
                 font.weight: Font.Medium
@@ -157,7 +157,7 @@ Item {
                 Layout.fillWidth: true
             }
             Text {
-                text: "首次连接需对方确认，确认后免验证直连"
+                text: qsTr("首次连接需对方确认，确认后免验证直连")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontHint
                 color: Theme.textHint
@@ -177,7 +177,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 visible: DeviceListModel.count === 0
-                text: "未发现局域网设备，等待心跳中…"
+                text: qsTr("未发现局域网设备，等待心跳中…")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 color: Theme.textHint
@@ -187,6 +187,10 @@ Item {
                 id: cardWrap
                 width: grid.cellWidth - 16
                 height: grid.cellHeight - 16
+                // 设备卡自绘可点击，读屏器播报名称+状态（Doc18 §7.3）
+                Accessible.role: Accessible.Button
+                Accessible.name: model.name + " " + (model.busy ? qsTr("会话中") : qsTr("可连接"))
+                Accessible.focusable: true
 
                 // 外圈柔光晕：悬浮时淡入的主色光环（纯透明度动画，
                 // 无 transform —— 从根源避免边框错帧/文字发虚）
@@ -273,7 +277,7 @@ Item {
                             }
                             // 信任角标（向日葵模式：确认后才有记忆缓存）
                             Label {
-                                text: model.trusted ? "已信任" : "待确认"
+                                text: model.trusted ? qsTr("已信任") : qsTr("待确认")
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 11
                                 color: model.trusted ? Theme.accentGreen : Theme.textHint
@@ -307,7 +311,7 @@ Item {
                                 color: model.busy ? Theme.accentGreen : Theme.accentBlue
                             }
                             Text {
-                                text: model.busy ? "会话中" : "可连接"
+                                text: model.busy ? qsTr("会话中") : qsTr("可连接")
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontHint
                                 color: Theme.textSecond

@@ -28,7 +28,7 @@ Item {
     function tryConnect() {
         const code = f0.text + f1.text + f2.text;
         if (code.length !== 9) {
-            hint.text = "请输入完整 9 位连接码";
+            hint.text = qsTr("请输入完整 9 位连接码");
             hint.color = Theme.accentRed;
             return;
         }
@@ -64,14 +64,14 @@ Item {
         spacing: 14
 
         Text {
-            text: "通过连接码连接"
+            text: qsTr("通过连接码连接")
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontTitle
             font.weight: Font.Medium
             color: Theme.textMain
         }
         Text {
-            text: "输入对方首页展示的 9 位连接码，对方确认后建立会话；确认过一次将进入信任缓存"
+            text: qsTr("输入对方首页展示的 9 位连接码，对方确认后建立会话；确认过一次将进入信任缓存")
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontHint
             color: Theme.textHint
@@ -204,7 +204,7 @@ Item {
             }
 
             Button {
-                text: "连 接"
+                text: qsTr("连 接")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontCard
                 onClicked: root.tryConnect()
@@ -244,7 +244,7 @@ Item {
         RowLayout {
             Layout.topMargin: 16
             Text {
-                text: "最近连接"
+                text: qsTr("最近连接")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontCard
                 font.weight: Font.Medium
@@ -254,7 +254,7 @@ Item {
                 Layout.fillWidth: true
             }
             Text {
-                text: "已信任设备免对方确认"
+                text: qsTr("已信任设备免对方确认")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontHint
                 color: Theme.textHint
@@ -272,7 +272,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 visible: root.history.length === 0
-                text: "暂无连接记录\n首次连接经对方确认后，将显示在此处"
+                text: qsTr("暂无连接记录\n首次连接经对方确认后，将显示在此处")
                 horizontalAlignment: Text.AlignHCenter
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
@@ -325,7 +325,7 @@ Item {
                             color: Theme.textHint
                         }
                         Text {
-                            text: "连接"
+                            text: qsTr("连接")
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontBody
                             color: Theme.primary
@@ -351,7 +351,7 @@ Item {
                                 anchors.left: parent.left
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: noteEdit.text === "" && !noteEdit.activeFocus
-                                text: "添加备注（标注对方是谁）"
+                                text: qsTr("添加备注（标注对方是谁）")
                                 font: noteEdit.font
                                 color: Theme.textHint
                             }
@@ -365,7 +365,7 @@ Item {
 
                         Text {
                             visible: hma.containsMouse
-                            text: "删除"
+                            text: qsTr("删除")
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontHint
                             color: Theme.accentRed

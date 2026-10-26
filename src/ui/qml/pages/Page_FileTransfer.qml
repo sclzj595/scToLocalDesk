@@ -49,12 +49,12 @@ Item {
 
     function sendFiles(urls) {
         if (!ScLocaldesk.sessionRunning()) {
-            requestToast("当前无进行中的会话，请先连接设备");
+            requestToast(qsTr("当前无进行中的会话，请先连接设备"));
             return;
         }
         for (let i = 0; i < urls.length; ++i) {
             if (!ScLocaldesk.sendFile(toLocalPath(urls[i]))) {
-                requestToast("发送失败：" + toLocalPath(urls[i]));
+                requestToast(qsTr("发送失败：%1").arg(toLocalPath(urls[i])));
             }
         }
     }
@@ -62,7 +62,7 @@ Item {
     FileDialog {
         id: fileDialog
         fileMode: FileDialog.OpenFiles
-        title: "选择要发送的文件"
+        title: qsTr("选择要发送的文件")
         onAccepted: root.sendFiles(selectedFiles)
     }
 
@@ -105,7 +105,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Text {
-                text: "文件传输"
+                text: qsTr("文件传输")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontTitle
                 font.weight: Font.Medium
@@ -115,7 +115,7 @@ Item {
                 Layout.fillWidth: true
             }
             Button {
-                text: "发送文件…"
+                text: qsTr("发送文件…")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 onClicked: fileDialog.open()
@@ -175,7 +175,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     visible: transfers.count === 0
-                    text: "暂无传输任务\n连接设备后，点击\"发送文件\"或将文件拖入本区"
+                    text: qsTr("暂无传输任务\n连接设备后，点击\")发送文件\"或将文件拖入本区"
                     horizontalAlignment: Text.AlignHCenter
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontBody
@@ -218,9 +218,10 @@ Item {
                                     Layout.fillWidth: true
                                 }
                                 Text {
-                                    text: model.done === 1 ? "已完成"
-                                          : model.done === 2 ? "失败"
-                                          : Math.round(model.progress * 100) + "%" + (model.speed ? " · " + model.speed : "")
+                                    text: model.done === 1 ? qsTr("已完成")
+                                          : model.done === 2 ? qsTr("失败")
+                                          : Math.round(model.progress * 100) + "%"
+                                          + (model.speed ? qsTr(" · ") + model.speed : "")
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontHint
                                     color: model.done === 1 ? Theme.accentGreen

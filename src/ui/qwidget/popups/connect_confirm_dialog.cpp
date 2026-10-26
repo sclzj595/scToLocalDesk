@@ -27,7 +27,7 @@ ConnectConfirmDialog::ConnectConfirmDialog(QWidget* parent) : QDialog(parent) {
     lay->setContentsMargins(24, 20, 24, 20);
     lay->setSpacing(10);
 
-    auto* title = new QLabel(QStringLiteral("连接请求"));
+    auto* title = new QLabel(tr("连接请求"));
     title->setObjectName(QStringLiteral("titleLabel"));
     text_ = new QLabel();
     text_->setWordWrap(true);
@@ -46,7 +46,7 @@ ConnectConfirmDialog::ConnectConfirmDialog(QWidget* parent) : QDialog(parent) {
                  .arg(GlassTheme::instance().divider().alphaF(), 0, 'f', 3)));
     auto* codeLay = new QHBoxLayout(codeCard);
     codeLay->setContentsMargins(12, 0, 12, 0);
-    auto* codeHint = new QLabel(QStringLiteral("对方连接码"));
+    auto* codeHint = new QLabel(tr("对方连接码"));
     codeHint->setObjectName(QStringLiteral("hintLabel"));
     codeLbl_ = new QLabel();
     QFont cf = codeLbl_->font();
@@ -64,7 +64,7 @@ ConnectConfirmDialog::ConnectConfirmDialog(QWidget* parent) : QDialog(parent) {
     ip_->setObjectName(QStringLiteral("hintLabel"));
 
     // 信任记忆复选框（确认后才有记忆缓存，向日葵模式）
-    rememberChk_ = new QCheckBox(QStringLiteral("记住此设备，下次免确认直连"));
+    rememberChk_ = new QCheckBox(tr("记住此设备，下次免确认直连"));
     rememberChk_->setChecked(true);
 
     lay->addWidget(title);
@@ -76,9 +76,9 @@ ConnectConfirmDialog::ConnectConfirmDialog(QWidget* parent) : QDialog(parent) {
 
     auto* btnRow = new QHBoxLayout();
     btnRow->addStretch();
-    auto* rejectBtn = new QPushButton(QStringLiteral("拒绝"));
+    auto* rejectBtn = new QPushButton(tr("拒绝"));
     rejectBtn->setObjectName(QStringLiteral("secondaryBtn"));
-    auto* acceptBtn = new QPushButton(QStringLiteral("同意"));
+    auto* acceptBtn = new QPushButton(tr("同意"));
     acceptBtn->setObjectName(QStringLiteral("primaryBtn"));
     btnRow->addWidget(rejectBtn);
     btnRow->addWidget(acceptBtn);
@@ -90,7 +90,7 @@ ConnectConfirmDialog::ConnectConfirmDialog(QWidget* parent) : QDialog(parent) {
 
 void ConnectConfirmDialog::setPeer(const QString& alias, const QString& ip,
                                    const QString& code) {
-    text_->setText(alias + QStringLiteral(" 请求远程协助本机"));
+    text_->setText(alias + tr(" 请求远程协助本机"));
     codeLbl_->setText(code);
     ip_->setText(QStringLiteral("IP：") + ip);
 }
