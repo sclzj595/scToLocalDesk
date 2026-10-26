@@ -238,31 +238,7 @@ int main(int argc, char* argv[]) {
     aliases->set_self_alias(cfg.alias);
     // 静态映射（Doc07 §7）：alias=ip:port;... —— 组播不可达（NAT/跨段）时直连
     if (!cfg.static_map.empty()) {
-        std::vector<DeviceInfo> statics;
-        size_t pos = 0;
-        while (pos < cfg.static_map.size()) {
-            const size_t semi = cfg.static_map.find(';', pos);
-            const size_t end = semi == std::string::npos ? cfg.static_map.size() : semi;
-            const std::string item = cfg.static_map.substr(pos, end - pos);
-            pos = semi == std::string::npos ? cfg.static_map.size() : semi + 1;
-            const auto eq = item.find('=');
-            const auto colon = item.find(':');
-            if (eq == std::string::npos || colon == std::string::npos || eq == 0
-                || colon < eq + 2 || colon + 2 > item.size()) {
-                continue;  // 畸形条目跳过
-            }
-            const std::string port_str = item.substr(colon + 1);
-            if (port_str.find_first_not_of("0123456789") != std::string::npos) {
-                continue;
-            }
-            DeviceInfo dev;
-            dev.alias = item.substr(0, eq);
-            dev.ip = item.substr(eq + 1, colon - eq - 1);
-            dev.port = static_cast<uint16_t>(std::stoi(port_str));
-            if (!dev.ip.empty() && dev.port != 0) {
-                statics.push_back(std::move(dev));
-            }
-        }
+        const std::vector<DeviceInfo> statics = parse_static_map(cfg.static_map);
         if (!statics.empty()) {
             aliases->set_static_map(statics);
             SCLD_LOG(logger, LogLevel::Info, "discovery",
@@ -579,17 +555,56 @@ int main(int argc, char* argv[]) {
     }
 
     // 单实例唤起：二次启动把首实例主窗带到前台（可能收拢在托盘）
-    if (auto* win = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst())) {
-        guard.set_raise_callback([win] {
-            win->show();
-            win->raise();
-            win->requestActivate();
+    QQuickWindow* main_win =
+        qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
+    if (main_win != nullptr) {
+        guard.set_raise_callback([main_win] {
+            main_win->show();
+            main_win->raise();
+            main_win->requestActivate();
         });
     }
 
     // 托盘（显示窗口 / 停止服务 / 退出，Doc02 §5.4）
     platform::TrayController tray;
     tray.show();
+    QObject::connect(&tray, &platform::TrayController::showMainRequested, &tray,
+                     [main_win] {
+                         if (main_win != nullptr) {
+                             main_win->show();
+                             main_win->raise();
+                             main_win->requestActivate();
+                         }
+                     });
+    // 停止服务 toggle（Doc02 §5.4）：停监听+停心跳；会话中先礼貌断开
+    //（close_session 内部 Idle 直返，无会话时安全）
+    bool service_stopped = false;
+    QObject::connect(&tray, &platform::TrayController::stopServiceRequested, &tray,
+                     [&] {
+                         if (!service_stopped) {
+                             sessions->close_session(protocol::CloseReason::Normal);
+                             transport->close();
+                             discovery.stop();
+                             service_stopped = true;
+                             tray.set_service_stopped(true);
+                             SCLD_LOG(logger, LogLevel::Warn, "tray",
+                                      "服务已停止（监听+心跳）");
+                         }
+                         else if (transport->start_server(
+                                      static_cast<uint16_t>(cfg.ws_port))) {
+                             service_stopped = false;
+                             tray.set_service_stopped(false);
+                             SCLD_LOG(logger, LogLevel::Info, "tray", "服务已恢复");
+                         }
+                         else {
+                             SCLD_LOG(logger, LogLevel::Error, "tray",
+                                      "服务恢复失败（端口被占用？）");
+                         }
+                     });
+    // 退出程序：exec 返回走焦点链清理 + 析构 flush（优雅退出，Doc02 §5.4）
+    QObject::connect(&tray, &platform::TrayController::quitRequested, &app, [] {
+        QApplication::quit();
+    });
 
     // 被控端知情权（PRD P4）：会话中托盘状态项 + 一键断开 + 推流水印
     //（"访客别名 · 时间"，60s 刷新；水印渲染在主线程，混合在采集线程）
@@ -653,7 +668,14 @@ int main(int argc, char* argv[]) {
             });
     }
 
-    (void)discovery.start();
+    // 组播开关（Doc07 §7）：关闭即静态映射模式（仅查表，不发心跳不收组播）
+    if (cfg.multicast_enabled) {
+        (void)discovery.start();
+    }
+    else {
+        SCLD_LOG(logger, LogLevel::Info, "discovery",
+                 "组播发现已关闭（静态映射模式，仅查表解析）");
+    }
     const int rc = app.exec();
     // 规避 Qt 6.5.3 窗口析构期焦点链 UAF（clearFocusInScope 触碰已释放
     // focus scope，0xC0000005 稳定复现；启动期 forceActiveFocus 的深层

@@ -86,4 +86,19 @@ void TrayController::set_session_active(bool on, const QString& peer_alias) {
     }
 }
 
+void TrayController::set_service_stopped(bool on) {
+    stop_action_->setText(on ? QStringLiteral("恢复服务") : QStringLiteral("停止服务"));
+    if (on) {
+        tray_.setToolTip(QStringLiteral("SC 邻桌（服务已停止）"));
+    }
+    else if (!disconnect_action_->isVisible()) {  // 会话中 tooltip 由会话态管理
+        tray_.setToolTip(unattended_on_ ? QStringLiteral("SC 邻桌（无人值守开启中）")
+                                        : QStringLiteral("SC 邻桌"));
+    }
+}
+
+void TrayController::notify(const QString& title, const QString& body) {
+    tray_.showMessage(title, body, QSystemTrayIcon::Information, 5000);
+}
+
 }  // namespace sc::localdesk::platform

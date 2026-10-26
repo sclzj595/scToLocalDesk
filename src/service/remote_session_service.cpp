@@ -871,6 +871,10 @@ void RemoteSessionService::enter_running(bool unattended) {
         u.device_alias = peer_alias_;
         u.started_at_us = ts;
         bus_->publish(u);
+        // 审计日志 Warn 级（spdlog flush_on(Warn) 即时落盘，Doc16 §2.5）
+        SCLD_LOG(log_, LogLevel::Warn, "audit",
+                 "[session_id=" + session_id_ + "][alias=" + peer_alias_
+                     + "] 无人值守接入（密码校验通过，自动同意）");
     }
 }
 

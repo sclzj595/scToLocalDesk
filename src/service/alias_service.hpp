@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -20,6 +21,10 @@ class ILogger;
 }
 
 namespace sc::localdesk {
+
+/// 静态映射文本解析（Doc07 §7）：`alias=ip:port;...`，畸形条目跳过；
+/// 全程无 throw（端口溢出/缺段直接丢弃），供装配层与设置页共用
+std::vector<DeviceInfo> parse_static_map(std::string_view text);
 
 class AliasService final {
 public:

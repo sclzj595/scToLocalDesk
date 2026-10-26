@@ -232,6 +232,11 @@ public:
     /// 配置注入（Doc18 §3.3）：初始化控件真值并启用持久化（widgets_main 调用）
     void bind_config(foundation::IniConfig* ini, AppConfig* cfg);
 
+    /// 别名服务注入（静态映射热生效，Doc17 §3.3；与 QML bridge 口径一致）
+    void set_alias_service(AliasService* a) {
+        aliases_ = a;
+    }
+
 signals:
     /// 深色主题开关切换（主窗口统一 applyTheme：QSS + Dock 染色 + glyph）
     void themeChanged(bool dark);
@@ -247,6 +252,7 @@ private:
 
     foundation::IniConfig* ini_{nullptr};
     AppConfig* cfg_{nullptr};
+    AliasService* aliases_{nullptr};
     QLineEdit* aliasEd_{nullptr};
     ToggleSwitch* autoStartSw_{nullptr};
     ToggleSwitch* minTraySw_{nullptr};
@@ -254,6 +260,8 @@ private:
     ToggleSwitch* reduceSw_{nullptr};
     QLineEdit* portEd_{nullptr};
     QLineEdit* mcEd_{nullptr};
+    ToggleSwitch* mcSw_{nullptr};
+    QLineEdit* smEd_{nullptr};
     QLineEdit* hbEd_{nullptr};
     QLineEdit* fpsEd_{nullptr};
     QLineEdit* qEd_{nullptr};

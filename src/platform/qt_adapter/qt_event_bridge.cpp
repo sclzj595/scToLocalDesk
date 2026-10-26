@@ -508,6 +508,13 @@ QString QtEventBridge::settingsValue(const QString& key) const {
     if (k == "network.multicast_addr") {
         return QString::fromStdString(cfg_->multicast_addr);
     }
+    if (k == "network.multicast_enabled") {
+        return cfg_->multicast_enabled ? QStringLiteral("true")
+                                       : QStringLiteral("false");
+    }
+    if (k == "network.static_map") {
+        return QString::fromStdString(cfg_->static_map);
+    }
     if (k == "network.heartbeat_interval_s") {
         return QString::number(cfg_->heartbeat_interval_s);
     }
@@ -620,6 +627,25 @@ void QtEventBridge::settingsSetValue(const QString& key, const QString& value) {
     else if (k == "network.multicast_addr") {
         cfg_->multicast_addr = v;  // 适配器 Options 构建期固定，重启生效
         persist("（重启生效）");
+    }
+    else if (k == "network.multicast_enabled") {
+        cfg_->multicast_enabled = (value == QStringLiteral("true"));
+        persist("（重启生效）");  // 组播收发启停构建期决定（Doc07 §2）
+    }
+    else if (k == "network.static_map") {
+        // Doc17 §3.3 热生效：合法即应用（replace 语义，删条目同步生效）
+        const auto table = parse_static_map(v);
+        if (!v.empty() && table.empty()) {
+            emit settingsRejected(
+                key, QStringLiteral("格式应为 别名=IP:端口，多条用分号分隔"));
+            warn_invalid("static_map 无有效条目");
+            return;
+        }
+        cfg_->static_map = v;
+        if (aliases_ != nullptr) {
+            aliases_->set_static_map(table);
+        }
+        persist("");
     }
     else if (k == "network.heartbeat_interval_s") {
         const int s = value.toInt(&num_ok);

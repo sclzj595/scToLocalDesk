@@ -88,6 +88,16 @@ Item {
                     value: ScLocaldesk.settingsValue("network.multicast_addr")
                     onEdited: v => ScLocaldesk.settingsSetValue("network.multicast_addr", v)
                 }
+                SwitchRow {
+                    text: qsTr("组播发现（关闭走静态映射，重启生效）")
+                    checked: ScLocaldesk.settingsValue("network.multicast_enabled") === "true"
+                    onToggled: ScLocaldesk.settingsSetValue("network.multicast_enabled", checked ? "true" : "false")
+                }
+                TextRow {
+                    label: qsTr("静态映射")
+                    value: ScLocaldesk.settingsValue("network.static_map")
+                    onEdited: v => ScLocaldesk.settingsSetValue("network.static_map", v)
+                }
                 TextRow {
                     label: qsTr("心跳间隔（秒）")
                     value: ScLocaldesk.settingsValue("network.heartbeat_interval_s")

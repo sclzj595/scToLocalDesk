@@ -21,6 +21,10 @@ public:
     void set_unattended_badge(bool on);  ///< 无人值守徽标（Doc16 §7）
     /// 会话知情权（PRD P4）：会话中托盘 tooltip 变更 + 状态/断开菜单项可见
     void set_session_active(bool on, const QString& peer_alias);
+    /// 停止服务 toggle（Doc02 §5.4）：菜单文案 停止服务↔恢复服务 + tooltip
+    void set_service_stopped(bool on);
+    /// 托盘气泡（无人值守接入提示等，Doc16 §2.5 可见性）
+    void notify(const QString& title, const QString& body);
 
 signals:
     void showMainRequested();

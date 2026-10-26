@@ -53,6 +53,11 @@ public:
         return devList_;
     }
 
+    /// 设置页访问（widgets_main 注入 AliasService，静态映射热生效）
+    SettingsPage* settingsPage() const {
+        return settingsPage_;
+    }
+
     /// 远程画面页访问（widgets_main 接解码管线 frameReady，Doc18 §4.2）
     RemoteViewPage* remoteViewPage() const {
         return remoteView_;

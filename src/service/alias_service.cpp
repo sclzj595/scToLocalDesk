@@ -33,6 +33,45 @@ Evt_DeviceOnline make_online_evt(const DeviceInfo& dev) {
 
 }  // namespace
 
+std::vector<DeviceInfo> parse_static_map(std::string_view text) {
+    std::vector<DeviceInfo> out;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        const size_t semi = text.find(';', pos);
+        const size_t end = semi == std::string_view::npos ? text.size() : semi;
+        const std::string_view item = text.substr(pos, end - pos);
+        pos = semi == std::string_view::npos ? text.size() : semi + 1;
+        const auto eq = item.find('=');
+        const auto colon = item.find(':');
+        if (eq == std::string_view::npos || colon == std::string_view::npos
+            || eq == 0 || colon < eq + 2 || colon + 2 > item.size()) {
+            continue;  // 畸形条目跳过（Doc07 §7）
+        }
+        const auto port_str = item.substr(colon + 1);
+        if (port_str.empty()
+            || port_str.find_first_not_of("0123456789") != std::string_view::npos) {
+            continue;
+        }
+        // 手工转端口：stoi 溢出抛异常，配置入口禁异常路径
+        uint32_t port = 0;
+        for (const char c : port_str) {
+            port = port * 10 + static_cast<uint32_t>(c - '0');
+            if (port > 65535) {
+                port = 0;
+                break;
+            }
+        }
+        DeviceInfo dev;
+        dev.alias.assign(item.substr(0, eq));
+        dev.ip.assign(item.substr(eq + 1, colon - eq - 1));
+        dev.port = static_cast<uint16_t>(port);
+        if (!dev.alias.empty() && !dev.ip.empty() && dev.port != 0) {
+            out.push_back(std::move(dev));
+        }
+    }
+    return out;
+}
+
 AliasService::AliasService(std::shared_ptr<foundation::EventBus> bus,
                            std::shared_ptr<foundation::ILogger> logger)
     : bus_(std::move(bus)),
@@ -174,6 +213,11 @@ void AliasService::set_offline_timeout(int64_t timeout_us) {
 
 void AliasService::set_static_map(const std::vector<DeviceInfo>& table) {
     std::lock_guard<std::mutex> lk(mtx_);
+    // replace 语义：先清全部旧静态条目（热更新删除条目需生效），再插入新表
+    for (const auto& alias : static_set_) {
+        table_.erase(alias);
+    }
+    static_set_.clear();
     for (const auto& dev : table) {
         DeviceInfo info = dev;
         info.last_seen_us = now_us();  // 静态条目视为常在（Doc07 §7）

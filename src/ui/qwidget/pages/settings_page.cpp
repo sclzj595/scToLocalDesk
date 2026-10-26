@@ -16,6 +16,7 @@
 #include <QVBoxLayout>
 
 #include "../glass_theme.h"
+#include "service/alias_service.hpp"
 #include "service/app_config.hpp"
 #include "foundation/config_parser.hpp"
 
@@ -98,10 +99,18 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     mcEd_ = new QLineEdit();
     mcEd_->setFixedWidth(240);
     bind_ed(mcEd_, QStringLiteral("network.multicast_addr"));
+    mcSw_ = new ToggleSwitch();
+    bind_sw(mcSw_, QStringLiteral("network.multicast_enabled"));
+    smEd_ = new QLineEdit();
+    smEd_->setFixedWidth(240);
+    smEd_->setPlaceholderText(QStringLiteral("别名=IP:端口;别名2=IP2:端口2"));
+    bind_ed(smEd_, QStringLiteral("network.static_map"));
     hbEd_ = make_num_ed(this, 2);
     bind_ed(hbEd_, QStringLiteral("network.heartbeat_interval_s"));
     netForm->addRow(QStringLiteral("会话端口"), portEd_);
     netForm->addRow(QStringLiteral("组播地址"), mcEd_);
+    netForm->addRow(QStringLiteral("组播发现（关闭走静态映射，重启生效）"), mcSw_);
+    netForm->addRow(QStringLiteral("静态映射"), smEd_);
     netForm->addRow(QStringLiteral("心跳间隔（秒）"), hbEd_);
     lay->addWidget(grpNet);
 
@@ -203,6 +212,8 @@ void SettingsPage::bind_config(foundation::IniConfig* ini, AppConfig* cfg) {
     reduceSw_->setChecked(cfg_->appearance_reduce_transparency);
     portEd_->setText(QString::number(cfg_->ws_port));
     mcEd_->setText(QString::fromStdString(cfg_->multicast_addr));
+    mcSw_->setChecked(cfg_->multicast_enabled);
+    smEd_->setText(QString::fromStdString(cfg_->static_map));
     hbEd_->setText(QString::number(cfg_->heartbeat_interval_s));
     fpsEd_->setText(QString::number(cfg_->fps));
     qEd_->setText(QString::number(cfg_->jpeg_quality));
@@ -251,6 +262,20 @@ void SettingsPage::on_changed(const QString& key, const QString& value) {
     }
     else if (k == "network.multicast_addr") {
         cfg_->multicast_addr = v;
+    }
+    else if (k == "network.multicast_enabled") {
+        cfg_->multicast_enabled = (value == QStringLiteral("true"));
+    }
+    else if (k == "network.static_map") {
+        // 校验口径与 QtEventBridge::settingsSetValue 一致；合法即热生效
+        const auto table = parse_static_map(v);
+        if (!v.empty() && table.empty()) {
+            return;  // 畸形格式拒绝落盘
+        }
+        cfg_->static_map = v;
+        if (aliases_ != nullptr) {
+            aliases_->set_static_map(table);
+        }
     }
     else if (k == "network.heartbeat_interval_s") {
         const int n = value.toInt(&num_ok);

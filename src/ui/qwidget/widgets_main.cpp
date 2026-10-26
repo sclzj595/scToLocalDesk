@@ -123,6 +123,15 @@ int main(int argc, char* argv[]) {
     auto bus = std::make_shared<sc::localdesk::foundation::EventBus>();
     auto aliases = std::make_shared<sc::localdesk::AliasService>(bus, logger);
     aliases->set_self_alias(cfg.alias);  // 本机自滤（Doc07 §5），漏掉则回环心跳入列表
+    // 静态映射（Doc07 §7）：组播不可达场景的跨机直连表
+    if (!cfg.static_map.empty()) {
+        const auto statics = sc::localdesk::parse_static_map(cfg.static_map);
+        if (!statics.empty()) {
+            aliases->set_static_map(statics);
+            SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "discovery",
+                     "静态映射已加载 n=" + std::to_string(statics.size()));
+        }
+    }
     sc::localdesk::platform::UdpDiscoveryAdapter::Options opt;
     opt.multicast_addr = cfg.multicast_addr;
     opt.self_alias = cfg.alias;
@@ -132,9 +141,16 @@ int main(int argc, char* argv[]) {
     opt.log_tag = "discovery.widgets";  // 与 QML 版共用组播组，日志区分实例
     sc::localdesk::platform::UdpDiscoveryAdapter discovery(opt, aliases.get(),
                                                            logger.get());
-    if (!discovery.start()) {
-        SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn, "discovery",
-                 "组播发现启动失败（设备列表将为空，不影响本机功能）");
+    // 组播开关（Doc07 §7）：关闭即静态映射模式（仅查表，不发心跳不收组播）
+    if (cfg.multicast_enabled) {
+        if (!discovery.start()) {
+            SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn, "discovery",
+                     "组播发现启动失败（设备列表将为空，不影响本机功能）");
+        }
+    }
+    else {
+        SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "discovery",
+                 "组播发现已关闭（静态映射模式，仅查表解析）");
     }
 
     // 会话栈（Doc18 §4.3，与 QML 版同构）：WS 监听 + 鉴权三路 + 推流/键鼠
@@ -337,6 +353,7 @@ int main(int argc, char* argv[]) {
         });
     win.setTrustStore(&trust_store);
     win.set_config_store(&ini, &cfg);
+    win.settingsPage()->set_alias_service(aliases.get());  // 静态映射热生效
     win.setSessionService(sessions.get());  // PRD P7：确认后真正发起拨号
     win.show();
 
@@ -344,6 +361,54 @@ int main(int argc, char* argv[]) {
     // 推流水印（"访客别名 · 时间"，60s 刷新；渲染主线程、混合采集线程）
     sc::localdesk::platform::TrayController tray;
     tray.show();
+    // 托盘三键接线（Doc02 §5.4）：显示主窗 / 停止服务 toggle / 退出程序
+    QObject::connect(
+        &tray, &sc::localdesk::platform::TrayController::showMainRequested, &tray,
+        [&win] {
+            win.show();
+            win.raise();
+            win.activateWindow();
+        });
+    bool service_stopped = false;
+    QObject::connect(
+        &tray, &sc::localdesk::platform::TrayController::stopServiceRequested, &tray,
+        [&] {
+            if (!service_stopped) {
+                sessions->close_session(
+                    sc::localdesk::protocol::CloseReason::Normal);  // Idle 直返
+                transport->close();
+                discovery.stop();
+                service_stopped = true;
+                tray.set_service_stopped(true);
+                SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn, "tray",
+                         "服务已停止（监听+心跳）");
+            }
+            else if (transport->start_server(
+                         static_cast<uint16_t>(cfg.ws_port))) {
+                service_stopped = false;
+                tray.set_service_stopped(false);
+                SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "tray",
+                         "服务已恢复");
+            }
+            else {
+                SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Error, "tray",
+                         "服务恢复失败（端口被占用？）");
+            }
+        });
+    QObject::connect(&tray, &sc::localdesk::platform::TrayController::quitRequested,
+                     &tray, [] { QApplication::quit(); });
+    // 无人值守接入气泡（Doc16 §2.5 全程审计可见；审计 Warn 由服务层落盘）
+    bus->subscribe<sc::localdesk::Evt_UnattendedLogin>(
+        [&tray](const sc::localdesk::Evt_UnattendedLogin& e) {
+            QMetaObject::invokeMethod(
+                &tray,
+                [&tray, e] {
+                    tray.notify(QObject::tr("无人值守接入"),
+                                QObject::tr("【%1】已通过密码接入")
+                                    .arg(QString::fromStdString(e.device_alias)));
+                },
+                Qt::QueuedConnection);
+        });
     {
         auto current_peer = std::make_shared<QString>();
         auto wm_timer = new QTimer(&tray);
