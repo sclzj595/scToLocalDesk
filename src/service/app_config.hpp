@@ -37,6 +37,8 @@ struct AppConfig {
     // [file]
     std::string save_path;  // 空 = 桌面（main 解析 %USERPROFILE%）
     bool confirm_before_transfer{true};
+    /// 对端文件名安全校验开关（PRD P10）：默认开启，关闭仅在受控环境调试
+    bool file_safe_path{true};
     int chunk_size_kb{256};
     std::string overwrite{"ask"};
     // [security]（Doc16 §6）

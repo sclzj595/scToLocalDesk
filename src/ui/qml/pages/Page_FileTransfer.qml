@@ -27,7 +27,8 @@ Item {
             }
         }
         transfers.append({fileId: fileId, name: name, dir: dir,
-                          progress: 0, done: 0});
+                          progress: 0, done: 0, speed: "",
+                          speedVal: 0, lastX: 0, lastT: 0});
         return transfers.count - 1;
     }
 
@@ -70,6 +71,23 @@ Item {
         function onFileProgress(fileId, name, transferred, total, dir) {
             const i = root.upsert(fileId, name, dir);
             transfers.setProperty(i, "progress", total > 0 ? transferred / total : 0);
+            // 速度 = 两次进度差 / 时间差（UI 层算，指数平滑抖动收敛）
+            const now = Date.now();
+            const e = transfers.get(i);
+            if (e.lastT > 0 && now > e.lastT) {
+                const bps = (transferred - e.lastX) * 1000 / (now - e.lastT);
+                const smooth = e.speedVal > 0 ? e.speedVal * 0.6 + bps * 0.4 : bps;
+                transfers.setProperty(i, "speedVal", smooth);
+                transfers.setProperty(i, "speed", humanSpeed(smooth));
+            }
+            transfers.setProperty(i, "lastX", transferred);
+            transfers.setProperty(i, "lastT", now);
+        }
+        function humanSpeed(bps) {
+            if (bps >= 1073741824) return (bps / 1073741824).toFixed(1) + " GB/s";
+            if (bps >= 1048576) return (bps / 1048576).toFixed(1) + " MB/s";
+            if (bps >= 1024) return (bps / 1024).toFixed(1) + " KB/s";
+            return Math.round(bps) + " B/s";
         }
         function onFileDone(fileId, name, dir) {
             root.setDone(fileId, false);
@@ -202,7 +220,7 @@ Item {
                                 Text {
                                     text: model.done === 1 ? "已完成"
                                           : model.done === 2 ? "失败"
-                                          : Math.round(model.progress * 100) + "%"
+                                          : Math.round(model.progress * 100) + "%" + (model.speed ? " · " + model.speed : "")
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontHint
                                     color: model.done === 1 ? Theme.accentGreen

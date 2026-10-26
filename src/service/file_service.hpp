@@ -54,6 +54,15 @@ public:
     /// 接收前置确认（file.confirm_before_transfer，Doc11 §4.3）；
     /// 开启时对端文件先挂 pending 并发 Evt_FileMetaReceived，等 UI accept/reject
     void set_confirm_enabled(bool enabled);
+    /// 危险路径校验开关（file.safe_path，PRD P10；默认开，调试用）
+    void set_safe_path(bool enabled) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        safe_path_ = enabled;
+    }
+
+    /// 对端文件名安全校验（PRD P10 危险路径防线）：禁路径分隔/盘符/通配符/
+    /// 父目录/控制符/隐藏名/Windows 保留设备名；on_file_meta 唯一拦截入口
+    static bool name_safe(const std::string& name);
     /// UI 确认后落盘接收（pending 中查找）
     bool accept_pending(const std::string& file_id);
     /// UI 拒绝
@@ -98,6 +107,7 @@ private:
     std::unordered_map<std::string, Transfer> transfers_;  ///< file_id -> 状态
     std::unordered_map<std::string, FileMeta> pending_;    ///< 待确认（confirm 流程）
     bool confirm_enabled_{true};
+    bool safe_path_{true};
     FileEventCb event_cb_;
     uint32_t chunk_size_{256 * 1024};  ///< 默认 256KB（Doc05 §5）
     std::string save_dir_{"."};

@@ -38,6 +38,7 @@ void AppConfig::load(const foundation::IniConfig& ini) {
         ini.get_bool("file", "confirm_before_transfer", confirm_before_transfer);
     chunk_size_kb = ini.get_int("file", "chunk_size_kb", chunk_size_kb);
     overwrite = ini.get_str("file", "overwrite", overwrite);
+    file_safe_path = ini.get_bool("file", "safe_path", file_safe_path);
 
     unattended_enabled = ini.get_bool("security", "unattended_enabled", unattended_enabled);
     unattended_salt = ini.get_str("security", "unattended_salt", unattended_salt);
@@ -84,6 +85,7 @@ void AppConfig::save(foundation::IniConfig& ini) const {
     ini.set_bool("file", "confirm_before_transfer", confirm_before_transfer);
     ini.set_int("file", "chunk_size_kb", chunk_size_kb);
     ini.set_str("file", "overwrite", overwrite);
+    ini.set_bool("file", "safe_path", file_safe_path);
 
     ini.set_bool("security", "unattended_enabled", unattended_enabled);
     ini.set_str("security", "unattended_salt", unattended_salt);

@@ -131,6 +131,9 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     confirmSw_ = new ToggleSwitch();
     bind_sw(confirmSw_, QStringLiteral("file.confirm_before_transfer"));
     fileForm->addRow(QStringLiteral("接收前需确认"), confirmSw_);
+    safeSw_ = new ToggleSwitch();
+    bind_sw(safeSw_, QStringLiteral("file.safe_path"));
+    fileForm->addRow(QStringLiteral("文件名安全校验"), safeSw_);
     lay->addWidget(grpFile);
 
     // ---- 安全（清空信任缓存带即时反馈） ----
@@ -206,6 +209,7 @@ void SettingsPage::bind_config(foundation::IniConfig* ini, AppConfig* cfg) {
     dirEd_->setText(QString::fromStdString(cfg_->save_path));
     chunkEd_->setText(QString::number(cfg_->chunk_size_kb));
     confirmSw_->setChecked(cfg_->confirm_before_transfer);
+    safeSw_->setChecked(cfg_->file_safe_path);
     unattSw_->setChecked(cfg_->unattended_enabled);
     lvEd_->setText(QString::fromStdString(cfg_->log_level));
     logMaxEd_->setText(QString::number(cfg_->log_max_size_mb));
@@ -281,6 +285,9 @@ void SettingsPage::on_changed(const QString& key, const QString& value) {
     }
     else if (k == "file.confirm_before_transfer") {
         cfg_->confirm_before_transfer = (value == QStringLiteral("true"));
+    }
+    else if (k == "file.safe_path") {
+        cfg_->file_safe_path = (value == QStringLiteral("true"));
     }
     else if (k == "security.unattended_enabled") {
         cfg_->unattended_enabled = (value == QStringLiteral("true"));

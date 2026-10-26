@@ -258,6 +258,47 @@ void FileService::send_loop(const std::string& abs_path, const FileMeta& meta) {
 
 // ---------------- 接收 ----------------
 
+bool FileService::name_safe(const std::string& name) {
+    if (name.empty() || name.size() > 255) {
+        return false;
+    }
+    if (name.front() == '.') {
+        return false;  // 隐藏文件 / 相对引用开头
+    }
+    for (const char c : name) {
+        const auto uc = static_cast<unsigned char>(c);
+        if (uc < 0x20 || uc == 0x7F) {
+            return false;  // 控制字符
+        }
+        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"'
+            || c == '<' || c == '>' || c == '|') {
+            return false;  // 路径/盘符/通配符元字符
+        }
+    }
+    if (name.find("..") != std::string::npos) {
+        return false;  // 父目录引用
+    }
+    // Windows 保留设备名（CON.asp 等 8.3 形态同拦；小写表配 low 比较）
+    static const char* const kReserved[] = {
+        "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+        "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"};
+    const size_t dot = name.find(".");
+    const std::string base =
+        dot == std::string::npos ? name : name.substr(0, dot);
+    std::string low = base;
+    for (char& c : low) {
+        if (c >= 'A' && c <= 'Z') {
+            c += 32;
+        }
+    }
+    for (const char* r : kReserved) {
+        if (low == r) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void FileService::on_file_meta(const uint8_t* body, size_t len) {
     protocol::FileMetaBody m;
     if (!protocol::parse_file_meta(body, len, m)) {
@@ -272,10 +313,19 @@ void FileService::on_file_meta(const uint8_t* body, size_t len) {
     meta.total_chunks = m.total_chunks;
     std::string dir;
     bool need_confirm = false;
+    bool safe = true;
     {
         std::lock_guard<std::mutex> lk(mtx_);
         need_confirm = confirm_enabled_;
         dir = save_dir_;
+        safe = safe_path_;
+    }
+    // 危险路径防线（PRD P10）：对端 meta.name 是不可信输入，路径穿越/保留名
+    // 一律拒收（save_dir 拼接发生在 accept_file，此为唯一入口）
+    if (safe && !name_safe(m.name)) {
+        SCLD_LOG(log_, LogLevel::Warn, "file",
+                 "[file_id=" + m.file_id + "] 对端文件名不安全，拒收 name=" + m.name);
+        return;
     }
     if (need_confirm) {
         // 前置确认：挂 pending → UI 弹窗（Doc11 §4.3 / Doc13）。

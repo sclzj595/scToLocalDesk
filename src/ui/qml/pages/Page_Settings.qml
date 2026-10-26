@@ -132,6 +132,11 @@ Item {
                     checked: ScLocaldesk.settingsValue("file.confirm_before_transfer") === "true"
                     onToggled: ScLocaldesk.settingsSetValue("file.confirm_before_transfer", checked ? "true" : "false")
                 }
+                SwitchRow {
+                    text: "文件名安全校验（拒收路径穿越等危险名）"
+                    checked: ScLocaldesk.settingsValue("file.safe_path") !== "false"
+                    onToggled: ScLocaldesk.settingsSetValue("file.safe_path", checked ? "true" : "false")
+                }
             }
 
             // ---- 安全 ----

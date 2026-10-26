@@ -4,6 +4,7 @@
 #include "page_kit.h"
 
 #include <QColor>
+#include <QDateTime>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileDialog>
@@ -152,7 +153,18 @@ void FileTransferPage::on_file_progress(const QString& file_id, const QString& n
     r.size->setText(human_size(total));
     const int pct = total > 0 ? static_cast<int>(transferred * 100 / total) : 0;
     r.bar->setValue(pct);
-    r.status->setText(QStringLiteral("%1%").arg(pct));
+    // 速度 = 两次进度差/时间差，指数平滑（0.6 旧 + 0.4 新）收敛抖动
+    const qint64 now_ms = QDateTime::currentMSecsSinceEpoch();
+    QString speed_text;
+    if (r.last_t_ms > 0 && now_ms > r.last_t_ms) {
+        const double bps = (transferred - r.last_x) * 1000.0 / (now_ms - r.last_t_ms);
+        r.speed_bps = r.speed_bps > 0.0 ? r.speed_bps * 0.6 + bps * 0.4 : bps;
+        speed_text = QStringLiteral(" · %1/s").arg(human_size(
+            static_cast<qint64>(r.speed_bps)));
+    }
+    r.last_x = transferred;
+    r.last_t_ms = now_ms;
+    r.status->setText(QStringLiteral("%1%").arg(pct) + speed_text);
     r.status->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
                                 .arg(GlassTheme::instance().textSecond().name(QColor::HexRgb)));
 }

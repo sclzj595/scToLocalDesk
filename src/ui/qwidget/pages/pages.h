@@ -184,6 +184,10 @@ struct FileRow {
     QProgressBar* bar{nullptr};
     QLabel* status{nullptr};
     QLabel* size{nullptr};
+    // 速度显示（PRD P10）：两次进度差/时间差 + 指数平滑
+    qint64 last_x{0};
+    qint64 last_t_ms{0};
+    double speed_bps{0.0};
 };
 
 /// 文件传输列表页：真事件流动态行卡 + 主色进度条（完成绿/失败红）+
@@ -256,6 +260,7 @@ private:
     QLineEdit* dirEd_{nullptr};
     QLineEdit* chunkEd_{nullptr};
     ToggleSwitch* confirmSw_{nullptr};
+    ToggleSwitch* safeSw_{nullptr};
     ToggleSwitch* unattSw_{nullptr};
     QLineEdit* lvEd_{nullptr};
     QLineEdit* logMaxEd_{nullptr};

@@ -525,6 +525,9 @@ QString QtEventBridge::settingsValue(const QString& key) const {
     if (k == "file.confirm_before_transfer") {
         return cfg_->confirm_before_transfer ? QStringLiteral("true") : QStringLiteral("false");
     }
+    if (k == "file.safe_path") {
+        return cfg_->file_safe_path ? QStringLiteral("true") : QStringLiteral("false");
+    }
     if (k == "security.unattended_enabled") {
         return cfg_->unattended_enabled ? QStringLiteral("true") : QStringLiteral("false");
     }
@@ -679,6 +682,13 @@ void QtEventBridge::settingsSetValue(const QString& key, const QString& value) {
         cfg_->confirm_before_transfer = (value == QStringLiteral("true"));
         if (files_ != nullptr) {
             files_->set_confirm_enabled(cfg_->confirm_before_transfer);
+        }
+        persist("");
+    }
+    else if (k == "file.safe_path") {
+        cfg_->file_safe_path = (value == QStringLiteral("true"));
+        if (files_ != nullptr) {
+            files_->set_safe_path(cfg_->file_safe_path);
         }
         persist("");
     }

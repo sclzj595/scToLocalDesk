@@ -185,6 +185,7 @@ int main(int argc, char* argv[]) {
     files->set_thread_pool(pool);
     files->set_chunk_size(static_cast<uint32_t>(cfg.chunk_size_kb));
     files->set_confirm_enabled(cfg.confirm_before_transfer);
+    files->set_safe_path(cfg.file_safe_path);
     files->set_save_dir(cfg.save_path.empty()
                             ? (QCoreApplication::applicationDirPath().toStdString()
                                + "/received")
