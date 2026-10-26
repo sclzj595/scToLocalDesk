@@ -31,6 +31,8 @@ public:
     void connect_client(const std::string& host, uint16_t port) override;
     void send_binary(const std::vector<uint8_t>& data) override;
     void close() override;
+    /// PRD P8：断会话连接保留监听（防僵尸连接；close_session 调用）
+    void disconnect_peer() override;
     void set_message_callback(OnMessageCb cb) override;
     void set_state_callback(OnStateCb cb) override;
 

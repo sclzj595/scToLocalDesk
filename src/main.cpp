@@ -449,6 +449,46 @@ int main(int argc, char* argv[]) {
             });
     }
 
+    // 冒烟钩子 4（默认关）：SCLD_SMOKE_RECONNECT=<N> 断开-重连循环（PRD P8
+    // 网络加固 E2E）。配合 SCLD_SMOKE_CONNECT：Running 后 2s 主动断开，
+    // 1s 后重连，共 N 轮——验证快速往返无泄漏/无状态残留
+    //（对端配 SCLD_SMOKE_APPROVE=1 自动放行）
+    {
+        const int smoke_reconnect =
+            qEnvironmentVariable("SCLD_SMOKE_RECONNECT").toInt();
+        if (smoke_reconnect > 0 && !smoke_alias.isEmpty()) {
+            // 全部定时器在主线程触发，普通计数即可；shared_ptr 供 lambda 值捕获
+            auto rounds = std::make_shared<int>(0);
+            QObject::connect(
+                &bridge, &platform::QtEventBridge::sessionStarted, &bridge,
+                [&bridge, &logger, rounds, smoke_reconnect, smoke_alias] {
+                    QTimer::singleShot(2000, &bridge, [&bridge, &logger, rounds,
+                                                       smoke_reconnect] {
+                        const int n = ++(*rounds);
+                        SCLD_LOG(logger, LogLevel::Warn, "smoke",
+                                 "reconnect round " + std::to_string(n) + "/"
+                                     + std::to_string(smoke_reconnect)
+                                     + " close begin");
+                        bridge.disconnectSession();
+                    });
+                });
+            QObject::connect(
+                &bridge, &platform::QtEventBridge::sessionClosed, &bridge,
+                [&bridge, &logger, rounds, smoke_reconnect, smoke_alias] {
+                    if (*rounds >= smoke_reconnect) {
+                        SCLD_LOG(logger, LogLevel::Warn, "smoke",
+                                 "reconnect loop done rounds="
+                                     + std::to_string(*rounds) + "/"
+                                     + std::to_string(smoke_reconnect));
+                        return;
+                    }
+                    QTimer::singleShot(1000, &bridge, [&bridge, smoke_alias] {
+                        (void)bridge.startControl(smoke_alias, false, "");
+                    });
+                });
+        }
+    }
+
     if (engine.rootObjects().isEmpty()) {
         fprintf(stderr, "[main] QML 加载失败 rootObjects 为空\n");
         fflush(stderr);

@@ -29,6 +29,11 @@ public:
 
     virtual void close() = 0;
 
+    /// 断开当前会话连接但保留 server 监听（PRD P8 防僵尸连接）：
+    /// close_session 后调用；client 模式关 socket，server 模式关对端连接。
+    /// 默认空实现（无会话传输桩兼容）
+    virtual void disconnect_peer() {}
+
     /// 零拷贝消息缓冲（asio buffer 思想）：shared_ptr 所有权转移代替按值
     /// 拷贝——画面帧 ~1MB/帧 × 30fps 下省出一整条内存带宽；订阅方只读
     using OnMessageCb = std::function<void(std::shared_ptr<const std::vector<uint8_t>>)>;

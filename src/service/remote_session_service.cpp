@@ -284,20 +284,34 @@ void RemoteSessionService::reject(RejectReason reason) {
     reset_to_idle();
 }
 
-void RemoteSessionService::close_session(CloseReason reason) {
+void RemoteSessionService::close_session(CloseReason reason,
+                                         SessionEndReason end_reason) {
+    std::string sid;
     {
         std::lock_guard<std::mutex> lk(mtx_);
         if (state_ == SessState::Idle) {
             return;
         }
         state_ = SessState::Closing;
+        sid = session_id_;  // reset_to_idle 会清，事件先拷
     }
     if (transport_ != nullptr) {
         transport_->send_binary(protocol::build_close(reason));
+        transport_->disconnect_peer();  // PRD P8：断链防僵尸连接（server 监听保留）
     }
     reset_to_idle();
-    SCLD_LOG(log_, LogLevel::Info, "session",
+    // 审计类事件 Warn 即时落盘（spdlog flush_on(Warn)，Info 强杀丢缓冲）
+    SCLD_LOG(log_, LogLevel::Warn, "session",
              "会话关闭 reason=" + std::to_string(static_cast<int>(reason)));
+    // Evt_SessionClosed 唯一发布点（PRD P8）：主动断开/对端断开/网络错误
+    // 全部经此，UI（连接条收起/页面切回/托盘复位）单一消费
+    if (bus_ != nullptr) {
+        Evt_SessionClosed e;
+        e.session_id = sid;
+        e.reason = end_reason;
+        e.timestamp_us = now_us();
+        bus_->publish(e);
+    }
 }
 
 bool RemoteSessionService::send_business_frame(const std::vector<uint8_t>& frame) {
@@ -405,26 +419,15 @@ void RemoteSessionService::on_transport_state(TransportState st) {
         send_request_connect();
     }
     else if (st == TransportState::Error) {
-        if (bus_ != nullptr) {
-            Evt_SessionClosed e;
-            e.session_id = session_id_;
-            e.reason = SessionEndReason::NetworkError;
-            e.timestamp_us = now_us();
-            bus_->publish(e);
-        }
-        close_session(CloseReason::Error);
+        close_session(CloseReason::Error, SessionEndReason::NetworkError);
     }
     else if (st == TransportState::Idle) {
-        // 对端断开
-        if (state() == SessState::Running) {
-            if (bus_ != nullptr) {
-                Evt_SessionClosed e;
-                e.session_id = session_id_;
-                e.reason = SessionEndReason::PeerQuit;
-                e.timestamp_us = now_us();
-                bus_->publish(e);
-            }
-            close_session(CloseReason::Normal);
+        // 对端断开（PRD P8 断连通知）：Running 收尾 + 等确认期复位弹窗，
+        // 非 Idle 一律发 SessionClosed 供 UI 收连接条/提示
+        const SessState cur = state();
+        if (cur != SessState::Idle) {
+            SCLD_LOG(log_, LogLevel::Warn, "session", "对端连接断开，会话复位");
+            close_session(CloseReason::Normal, SessionEndReason::PeerQuit);
         }
     }
 }

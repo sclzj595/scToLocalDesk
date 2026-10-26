@@ -397,7 +397,9 @@ ApplicationWindow {
             }
         }
         function onSessionStarted(alias) {
-            connectStage = "";  // 会话建立：连接条收起（PRD P7）
+            connectStage = "";               // 会话建立：连接条收起（PRD P7）
+            dockBar.currentIndex = 2;        // 切远程画面页（管线已在跑）
+            toast.show("会话已建立：" + alias);
         }
         function onAliasConflict(alias, conflictIp) {
             // PRD P5 别名冲突：引导改名（设置 → 本机连接名）
@@ -407,14 +409,11 @@ ApplicationWindow {
         function onSettingsRejected(key, why) {
             toast.show("保存被拒绝：" + why);
         }
-        function onSessionStarted(alias) {
-            dockBar.currentIndex = 2;        // 切远程画面页（管线已在跑）
-            toast.show("会话已建立：" + alias);
-        }
         function onSessionClosed(reason) {
             if (dockBar.currentIndex === 2) {
                 dockBar.currentIndex = 0;    // 断开回设备列表
             }
+            connectStage = "";               // 对端断开/网络中断：连接条一并收起（PRD P8）
             toast.show("会话已结束：" + reason);
         }
         function onFileMetaReceived(fileId, name, size, alias) {

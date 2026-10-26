@@ -81,9 +81,15 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
             emit sessionStarted(QString::fromStdString(e.device_alias));
         }, Qt::QueuedConnection);
     });
-    bus->subscribe<Evt_SessionClosed>([this](const Evt_SessionClosed&) {
-        QMetaObject::invokeMethod(this, [this] {
+    bus->subscribe<Evt_SessionClosed>([this](const Evt_SessionClosed& e) {
+        QMetaObject::invokeMethod(this, [this, e] {
             emit sessionBusyChanged();
+            static constexpr const char* kText[] = {
+                "协助已结束", "对方拒绝了协助", "访问密码不正确",
+                "请求等待超时", "对方正在协助中", "网络中断，协助已断开", "对方已断开协助"};
+            const int idx = static_cast<int>(e.reason);
+            emit sessionClosed(QString::fromUtf8(
+                kText[idx >= 0 && idx < 7 ? idx : 0]));
         }, Qt::QueuedConnection);
     });
     bus->subscribe<Evt_ConnectRequest>([this](const Evt_ConnectRequest& e) {
@@ -103,21 +109,6 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
         QMetaObject::invokeMethod(this, [this, e] {
             emit connectDenied(QString::fromStdString(e.alias),
                                QString::fromStdString(e.reason));
-        }, Qt::QueuedConnection);
-    });
-    bus->subscribe<Evt_SessionStart>([this](const Evt_SessionStart& e) {
-        QMetaObject::invokeMethod(this, [this, e] {
-            emit sessionStarted(QString::fromStdString(e.device_alias));
-        }, Qt::QueuedConnection);
-    });
-    bus->subscribe<Evt_SessionClosed>([this](const Evt_SessionClosed& e) {
-        QMetaObject::invokeMethod(this, [this, e] {
-            static constexpr const char* kText[] = {
-                "协助已结束", "对方拒绝了协助", "访问密码不正确",
-                "请求等待超时", "对方正在协助中", "网络中断，协助已断开", "对方已断开协助"};
-            const int idx = static_cast<int>(e.reason);
-            emit sessionClosed(QString::fromUtf8(
-                kText[idx >= 0 && idx < 7 ? idx : 0]));
         }, Qt::QueuedConnection);
     });
     bus->subscribe<Evt_FileProgress>([this](const Evt_FileProgress& e) {

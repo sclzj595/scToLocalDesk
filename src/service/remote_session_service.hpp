@@ -21,6 +21,7 @@
 #include "core/interface/icrypto.hpp"
 #include "core/interface/itransport.hpp"
 #include "core/protocol/msg_type.hpp"
+#include "core/events.hpp"  // SessionEndReason（close_session 默认参数需完整类型，PRD P8）
 
 namespace sc::localdesk {
 
@@ -41,6 +42,7 @@ namespace protocol {
 struct RequestConnectBody;
 struct MouseKeyBody;
 }
+
 
 /// 人工确认弹窗超时（PRD 确认三件套）：超时自动拒绝，对端收 REJECT(Timeout)
 inline constexpr int kConfirmTimeoutSec = 30;
@@ -98,8 +100,11 @@ public:
 
     // ---------------- 会话内 ----------------
 
-    /// 一键断开（被控悬浮按钮 / 控制端关闭，均走此入口）
-    void close_session(CloseReason reason = CloseReason::Normal);
+    /// 一键断开（被控悬浮按钮 / 控制端关闭，均走此入口）。
+    /// end_reason：UI 事件语义（对端断开=PeerQuit / 网络错=NetworkError），
+    /// close_session 是 Evt_SessionClosed 唯一发布点（PRD P8 断连通知收敛）
+    void close_session(CloseReason reason = CloseReason::Normal,
+                       SessionEndReason end_reason = SessionEndReason::Normal);
 
     /// 会话中发送业务帧（画面/键鼠/文件），Running 前全部拒绝（Doc09 §3.1）
     bool send_business_frame(const std::vector<uint8_t>& frame);

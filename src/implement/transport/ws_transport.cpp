@@ -170,6 +170,15 @@ void WsTransport::send_binary(const std::vector<uint8_t>& data) {
     schedule_drain();   // proactor：入队即投递排空事件（原子防重）
 }
 
+void WsTransport::disconnect_peer() {
+    if (peer_ != nullptr) {
+        peer_->close();
+        peer_->deleteLater();
+        peer_ = nullptr;
+        // peer 关闭触发 disconnected → set_state(Idle) → 会话层收尾
+    }
+}
+
 void WsTransport::close() {
     stop_timers();
     tx_.close();
