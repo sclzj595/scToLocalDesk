@@ -97,7 +97,7 @@ public:
                 // 磁盘满/句柄失效：退化 stderr，本轮起不再写文件
                 out_.close();
                 broken_ = true;
-                std::fputs("[file_logger] 文件写入失败，退化为 stderr\n", stderr);
+                std::fputs("[file_logger] file write failed, fallback to stderr\n", stderr);
             }
         }
     }
@@ -119,7 +119,7 @@ private:
         out_.open(file_, std::ios::app | std::ios::binary);
         if (!out_.is_open()) {
             broken_ = true;
-            std::fputs("[file_logger] 日志文件打开失败，退化为 stderr\n", stderr);
+            std::fputs("[file_logger] log file open failed, fallback to stderr\n", stderr);
             return;
         }
         std::error_code sz_ec;
@@ -142,7 +142,7 @@ private:
         std::filesystem::rename(file_, archive_path(1), ec);
         if (ec) {
             // 让位失败（文件被杀软/编辑器占用）：直接截断续写，不丢日志通路
-            std::fputs("[file_logger] 滚动失败，截断续写\n", stderr);
+            std::fputs("[file_logger] rotate failed, truncate and continue\n", stderr);
         }
         out_.open(file_, std::ios::trunc | std::ios::binary);
         written_ = 0;

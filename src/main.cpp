@@ -126,7 +126,7 @@ int main(int argc, char* argv[]) {
     // ---------------- 单实例锁（exe 名作 key：对照构建可并存，正式单 exe 即全局） ----------------
     platform::SingleInstanceGuard guard;
     if (!guard.acquire(QFileInfo(QApplication::applicationFilePath()).fileName())) {
-        fprintf(stderr, "[main] 已有实例在运行，已投递唤起请求，本实例退出\n");
+        fprintf(stderr, "[main] another instance running, wake request sent\n");
         fflush(stderr);
         return 0;
     }
