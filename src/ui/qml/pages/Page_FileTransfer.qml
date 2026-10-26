@@ -175,7 +175,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     visible: transfers.count === 0
-                    text: qsTr("暂无传输任务\n连接设备后，点击\")发送文件\"或将文件拖入本区"
+                    text: qsTr("暂无传输任务\n连接设备后，点击「发送文件」或将文件拖入本区")
                     horizontalAlignment: Text.AlignHCenter
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontBody
