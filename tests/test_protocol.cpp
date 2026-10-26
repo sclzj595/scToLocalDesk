@@ -179,6 +179,34 @@ TEST_CASE("剪贴板帧往返与超限拒绝")
     const std::string big(kClipboardMaxBytes + 1, 'x');
     CHECK(build_clipboard_sync(big).empty());
 }
+TEST_CASE("KEY_SYNC 密钥协商帧往返")
+{
+    std::vector<uint8_t> pub(64), nonce(16);
+    for (size_t i = 0; i < pub.size(); ++i) {
+        pub[i] = static_cast<uint8_t>(i);
+    }
+    for (size_t i = 0; i < nonce.size(); ++i) {
+        nonce[i] = static_cast<uint8_t>(0xF0 + i);
+    }
+    const auto frame = build_key_sync(pub.data(), nonce.data());
+    REQUIRE(frame.size() == kHeaderSize + 80);
+
+    uint32_t body_len = 0;
+    MsgType type;
+    REQUIRE(parse_header(frame.data(), frame.size(), body_len, type));
+    CHECK(type == MsgType::KeySync);
+    CHECK(body_len == 80);
+
+    std::vector<uint8_t> pub_out, nonce_out;
+    REQUIRE(parse_key_sync(frame.data() + kHeaderSize, body_len, pub_out, nonce_out));
+    CHECK(pub_out == pub);
+    CHECK(nonce_out == nonce);
+
+    // 长度不符 / 空指针拒绝
+    CHECK_FALSE(parse_key_sync(frame.data() + kHeaderSize, 79, pub_out, nonce_out));
+    CHECK(build_key_sync(nullptr, nonce.data()).empty());
+}
+
 TEST_CASE("画面帧零拷贝解析")
 {
     const uint8_t pixels[] = {1, 2, 3, 4, 5};

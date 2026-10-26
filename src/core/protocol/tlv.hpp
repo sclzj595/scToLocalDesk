@@ -116,6 +116,16 @@ std::vector<uint8_t> build_clipboard_sync(const std::string& text);
 /// 超限/截断/空返回 false
 bool parse_clipboard_sync(const uint8_t* body, size_t len, std::string& out);
 
+// ---------------- 会话密钥协商（KEY_SYNC，PRD 会话加密） ----------------
+
+/// body = pub(64B ECDH 裸 x||y) + nonce(16B)；入参为空指针返回空帧
+std::vector<uint8_t> build_key_sync(const uint8_t* pub64, const uint8_t* nonce16);
+
+/// 长度不符（!= 80B）返回 false
+bool parse_key_sync(const uint8_t* body, size_t len,
+                                  std::vector<uint8_t>& pub,
+                                  std::vector<uint8_t>& nonce);
+
 // ---------------- 画面帧（SCREEN_FRAME，Doc05 §1） ----------------
 
 struct ScreenFrameHeader {

@@ -4,7 +4,10 @@
 // ============================================================
 #include "service/remote_session_service.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <cstring>
+#include <random>
 #include <utility>
 
 #include "core/auth/unattended_authenticator.hpp"
@@ -17,6 +20,7 @@
 #include "service/file_service.hpp"
 #include "service/input_service.hpp"
 #include "service/screen_stream_service.hpp"
+#include "service/session_crypto.hpp"
 #include "service/trust_store.hpp"
 
 namespace sc::localdesk {
@@ -319,11 +323,22 @@ bool RemoteSessionService::send_business_frame(const std::vector<uint8_t>& frame
     if (state_ != SessState::Running) {  // 鉴权红线：Running 前不发业务帧
         return false;
     }
-    if (transport_ != nullptr) {
-        transport_->send_binary(frame);
+    if (transport_ == nullptr) {
+        return false;
+    }
+    if (encrypted_.load(std::memory_order_relaxed)) {
+        // 会话加密（PRD）：fail-closed——加密失败宁丢帧不回退明文
+        std::vector<uint8_t> cipher;
+        if (crypto_ == nullptr || !crypto_->encrypt(frame, cipher)) {
+            SCLD_LOG(log_, LogLevel::Error, "session",
+                     "[session_id=" + session_id_ + "] 业务帧加密失败，拒发明文");
+            return false;
+        }
+        transport_->send_binary(cipher);
         return true;
     }
-    return false;
+    transport_->send_binary(frame);
+    return true;
 }
 
 bool RemoteSessionService::send_input_event(const protocol::MouseKeyBody& mk) {
@@ -351,6 +366,17 @@ std::string RemoteSessionService::session_id() const {
 
 void RemoteSessionService::on_transport_message(
     std::shared_ptr<const std::vector<uint8_t>> data) {
+    // 会话加密（PRD）：协商激活后入站报文一律先解密，
+    // fail-closed——解密失败（密钥不一致/被篡改）整帧丢弃
+    if (encrypted_.load(std::memory_order_relaxed)) {
+        auto plain = std::make_shared<std::vector<uint8_t>>();
+        if (crypto_ == nullptr || !crypto_->decrypt(*data, *plain)) {
+            SCLD_LOG(log_, LogLevel::Warn, "session",
+                     "[session_id=" + session_id_ + "] 报文解密失败，已丢弃");
+            return;
+        }
+        data = plain;
+    }
     uint32_t body_len = 0;
     protocol::MsgType type;
     if (!protocol::parse_header(data->data(), data->size(), body_len, type)
@@ -361,6 +387,9 @@ void RemoteSessionService::on_transport_message(
     switch (type) {
     case protocol::MsgType::SessionCtrl:
         handle_session_ctrl(body, body_len);
+        break;
+    case protocol::MsgType::KeySync:
+        handle_key_sync(body, body_len);
         break;
     case protocol::MsgType::FileMeta:
     case protocol::MsgType::FileChunk:
@@ -454,6 +483,59 @@ void RemoteSessionService::on_transport_state(TransportState st) {
 }
 
 // ---------------- SESSION_CTRL 处理 ----------------
+
+void RemoteSessionService::handle_key_sync(const uint8_t* body, size_t len) {
+    std::vector<uint8_t> peer_pub, peer_nonce;
+    if (!protocol::parse_key_sync(body, len, peer_pub, peer_nonce)) {
+        SCLD_LOG(log_, LogLevel::Warn, "session", "KEY_SYNC 解析失败，丢弃");
+        return;
+    }
+    Role role = Role::Controlled;
+    std::vector<uint8_t> my_pub, my_nonce;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        // 已协商后拒绝重协商（防会话中途换钥攻击）；仅 Running 态处理
+        if (encrypted_.load(std::memory_order_relaxed)
+            || state_ != SessState::Running || crypto_ == nullptr) {
+            return;
+        }
+        role = role_;
+        my_pub = key_pub_;
+        my_nonce = key_nonce_;
+    }
+    if (my_pub.size() != 64 || my_nonce.size() != 16) {
+        return;  // 本端密钥对未就绪（enter_running 初始化失败已降级明文）
+    }
+    std::vector<uint8_t> secret;
+    if (!crypto_->ecdh_shared(peer_pub, secret) || secret.size() != 32) {
+        SCLD_LOG(log_, LogLevel::Warn, "session",
+                 "[session_id=" + session_id_ + "] ECDH 共享秘密计算失败，本会话保持明文");
+        return;
+    }
+    // nonce 拼接按 控制端→被控端 固定序，双端各自按角色取位（Doc 契约见 session_crypto.hpp）
+    const std::vector<uint8_t>& nc =
+        role == Role::Controller ? my_nonce : peer_nonce;
+    const std::vector<uint8_t>& ns =
+        role == Role::Controller ? peer_nonce : my_nonce;
+    std::vector<uint8_t> key;
+    if (!RemoteSessionCrypto::derive_session_key(*crypto_, secret, nc, ns, key)) {
+        SCLD_LOG(log_, LogLevel::Warn, "session",
+                 "[session_id=" + session_id_ + "] 会话密钥派生失败，本会话保持明文");
+        return;
+    }
+    // 被控端：先明文应答 KEY_SYNC（对方尚未派生，必须明文），再激活本端加密
+    if (role == Role::Controlled && transport_ != nullptr) {
+        transport_->send_binary(
+            protocol::build_key_sync(my_pub.data(), my_nonce.data()));
+    }
+    crypto_->set_key(key);
+    bool expect = false;
+    if (!encrypted_.compare_exchange_strong(expect, true)) {
+        return;  // 并发竞态兜底（close_session 已复位）
+    }
+    SCLD_LOG(log_, LogLevel::Info, "session",
+             "[session_id=" + session_id_ + "] 会话加密已启用 ECDH-P256/AES-256-GCM encrypted=yes");
+}
 
 void RemoteSessionService::handle_session_ctrl(const uint8_t* body, size_t len) {
     if (body == nullptr || len == 0) {
@@ -685,6 +767,30 @@ void RemoteSessionService::handle_auth_proof(const uint8_t* body, size_t len) {
 void RemoteSessionService::enter_running(bool unattended) {
     // 前置：调用方已持锁且 state_ 已迁移
     state_ = SessState::Running;
+    // 会话密钥协商（PRD 会话加密）：生成 ECDH 临时密钥对 + 16B nonce。
+    // 控制端立即发 KEY_SYNC（此刻仍明文）；被控端等对端 KEY_SYNC 到达后
+    // 明文应答再激活加密（handle_key_sync）。失败降级明文并 Warn 审计
+    if (crypto_ != nullptr) {
+        std::vector<uint8_t> pub;
+        if (crypto_->ecdh_keygen(pub) && pub.size() == 64) {
+            static thread_local std::mt19937_64 rng{std::random_device{}()};
+            std::vector<uint8_t> nonce(16);
+            for (size_t i = 0; i < nonce.size(); i += 8) {
+                const uint64_t r = rng();
+                std::memcpy(nonce.data() + i, &r, std::min<size_t>(8, nonce.size() - i));
+            }
+            key_pub_ = pub;
+            key_nonce_ = nonce;
+            if (role_ == Role::Controller && transport_ != nullptr) {
+                transport_->send_binary(
+                    protocol::build_key_sync(pub.data(), nonce.data()));
+            }
+        }
+        else {
+            SCLD_LOG(log_, LogLevel::Warn, "session",
+                     "[session_id=" + session_id_ + "] 密钥协商初始化失败，本会话降级明文传输");
+        }
+    }
     // 文件事件来源名（Evt_FileMetaReceived.device_alias 弹窗展示，Doc18 §5）
     if (files_ != nullptr) {
         files_->set_peer_alias(peer_alias_);
@@ -730,6 +836,13 @@ void RemoteSessionService::reset_to_idle() {
         files_->set_peer_alias("");  // 清来源名，防下次会话前残留
     }
     state_ = SessState::Idle;
+    // 会话加密复位（PRD）：清会话密钥与协商上下文，下次会话重新协商
+    encrypted_.store(false, std::memory_order_relaxed);
+    if (crypto_ != nullptr) {
+        crypto_->set_key({});
+    }
+    key_pub_.clear();
+    key_nonce_.clear();
     pending_challenge_.clear();
     peer_alias_.clear();
     pending_connect_ = {};

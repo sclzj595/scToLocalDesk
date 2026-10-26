@@ -153,6 +153,28 @@ std::vector<uint8_t> build_clipboard_sync(const std::string& text) {
     return build_frame(MsgType::ClipboardSync, body);
 }
 
+std::vector<uint8_t> build_key_sync(const uint8_t* pub64, const uint8_t* nonce16) {
+    if (pub64 == nullptr || nonce16 == nullptr) {
+        return {};
+    }
+    std::vector<uint8_t> body;
+    body.reserve(80);
+    body.insert(body.end(), pub64, pub64 + 64);
+    body.insert(body.end(), nonce16, nonce16 + 16);
+    return build_frame(MsgType::KeySync, body);
+}
+
+bool parse_key_sync(const uint8_t* body, size_t len,
+                    std::vector<uint8_t>& pub,
+                    std::vector<uint8_t>& nonce) {
+    if (body == nullptr || len != 80) {
+        return false;
+    }
+    pub.assign(body, body + 64);
+    nonce.assign(body + 64, body + 80);
+    return true;
+}
+
 bool parse_clipboard_sync(const uint8_t* body, size_t len, std::string& out) {
     out.clear();
     if (body == nullptr || len < 4) {

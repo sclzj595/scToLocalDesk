@@ -146,6 +146,7 @@ public:
 
 private:
     void handle_session_ctrl(const uint8_t* body, size_t len);
+    void handle_key_sync(const uint8_t* body, size_t len);  ///< 密钥协商应答（PRD 会话加密）
     void handle_request_connect(const protocol::RequestConnectBody& req);
     void handle_auth_challenge(const uint8_t* body, size_t len);   ///< 控制端收挑战
     void handle_auth_proof(const uint8_t* body, size_t len);       ///< 被控端收证明
@@ -201,6 +202,12 @@ public:
     std::atomic<int64_t> session_seq_{0};
     std::function<bool(const std::string&, uint16_t)> self_ip_checker_;  ///< 自连拦截判定（空=不拦）
     std::string last_peer_;  ///< 最近发起目标（重连用；连接期赋值）
+
+    // 会话密钥协商（PRD 会话加密）：Running 时生成临时密钥对 + nonce，
+    // KEY_SYNC 交换派生 AES-256-GCM 会话密钥；encrypted_ 为收发激活开关
+    std::atomic<bool> encrypted_{false};
+    std::vector<uint8_t> key_pub_;   ///< 本端 ECDH 裸公钥（64B，持锁读写）
+    std::vector<uint8_t> key_nonce_; ///< 本端 16B nonce（持锁读写）
 
     // 确认看门狗（PRD 确认三件套）：WaitForUser 期间 30s 无响应自动拒。
     // 代次模型：每次进入 WaitForUser 分配新 seq；approve/reject/析构使旧代次
