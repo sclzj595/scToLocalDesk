@@ -50,7 +50,9 @@ ApplicationWindow {
             Theme.reducedTransparency = true;
         }
         if (!ScLocaldesk.listening) {
-            toast.show("会话端口监听失败，请在 设置→网络 更换端口后重启");
+            // 端口占用（Doc18 风险清单 P1）：10s 长驻告警 + 具体端口指引
+            toast.show("会话端口 " + ScLocaldesk.settingsValue("ports.ws_port")
+                       + " 监听失败，请在 设置→网络 更换端口后重启", 10000);
         }
     }
 

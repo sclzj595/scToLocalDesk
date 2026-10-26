@@ -15,9 +15,11 @@ import "."
 Rectangle {
     id: root
 
-    function show(text) {
+    function show(text, ms) {
         tipText.text = text;
         root.opacity = 1;
+        // ms 可选：关键告警传长时长；不传恢复默认，防上一条长时长残留
+        hideTimer.interval = (ms !== undefined) ? ms : 2000;
         hideTimer.restart();
     }
 

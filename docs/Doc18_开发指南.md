@@ -214,9 +214,9 @@ P6 Linux 远程编译（Qt 6.2.4）──────── 跨平台适配
 | RAW 带宽不可商用 | P2 阻塞 | MJPG（§4.1） | 排期 P2 |
 | QML 大帧渲染卡顿 | P2 体验 | 先 QQuickPaintedItem，卡再 TextureNode | §4.2 预案 |
 | 心跳包无连接码字段 | P1 设备列表 | TLV 加可选体，旧包 `---` 降级 | §3.4 |
-| 端口占用静默失败 | 客户现场首装体验 | 日志已告警，需 UI 弹窗提示（P1 设置接线时顺带） | 待办 |
+| 端口占用静默失败 | 客户现场首装体验 | **已修（2026-10-26）**：Widgets 非模态置顶弹窗（端口+改法指引）+ QML 启动回放 toast 10s 长驻带端口号；E2E exclusive 占端实测 WARN→弹窗触发 | 已闭环 |
 | 中文安装路径 | 已修 IniConfig | P5 便携包回归测试覆盖中文路径 | 回归项 |
-| 8899 TIME_WAIT 重启失败 | 高频重启调试期 | 日志已见；可加 SO_REUSEADDR 或换端口配置 | 待办（P1） |
+| 8899 TIME_WAIT 重启失败 | 高频重启调试期 | **已评估（2026-10-26）**：UDP 组播已有 ShareAddress\|ReuseAddressHint；TCP 由 QWebSocketServer 托管不暴露 socket option——Windows 无 TIME_WAIT 阻塞 bind 问题（TIME_WAIT 挂连接四元组），但默认双 bind 可被静默劫持（实测），彻底加固需 QTcpServer 子类化注入 SO_EXCLUSIVEADDRUSE（Qt 无 API，另行排期）；Linux 重启 TIME_WAIT 场景随 Linux 批次处理。端口配置已支持（ports.ws_port），UI 告警兜底 | 部分闭环 |
 
 ---
 

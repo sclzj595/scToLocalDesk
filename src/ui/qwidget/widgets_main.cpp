@@ -202,6 +202,26 @@ int main(int argc, char* argv[]) {
 
     sc::localdesk::ui::MainWindow win;
 
+    // 端口占用 UI 提示（Doc18 风险清单 P1）：非模态弹窗带具体端口与改法，
+    // 不阻塞装配；主线程投递（start_listening 在装配线程）
+    if (!listening) {
+        const int bad_port = cfg.ws_port;
+        QMetaObject::invokeMethod(
+            &win,
+            [&win, bad_port] {
+                QMessageBox box(QMessageBox::Warning,
+                                QStringLiteral("被控监听失败"),
+                                QStringLiteral("会话端口 %1 被占用或无法监听，"
+                                               "对方将无法连接本机。\n请在 "
+                                               "设置→网络 修改 WS 端口后重启。")
+                                    .arg(bad_port),
+                                QMessageBox::Ok, &win);
+                box.setWindowFlag(Qt::WindowStaysOnTopHint, true);
+                box.show();  // 非模态：不阻塞主窗口交互
+            },
+            Qt::QueuedConnection);
+    }
+
     // 自连拦截提示（Evt_ConnectDenied → 主线程弹窗，不发网络包）
     bus->subscribe<Evt_ConnectDenied>([&win, &logger](const Evt_ConnectDenied& e) {
         QMetaObject::invokeMethod(
