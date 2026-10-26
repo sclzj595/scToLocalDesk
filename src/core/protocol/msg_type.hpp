@@ -17,6 +17,7 @@ enum class MsgType : uint8_t {
     SessionCtrl  = 0x04,  ///< 会话控制
     ConfigSync   = 0x05,  ///< 配置同步（预留）
     FileMeta     = 0x06,  ///< 文件元信息（file_id/name/size/total_chunks，Doc05 §5）
+    ClipboardSync = 0x07, ///< 剪贴板文本同步（PRD P9：text_len(u32BE)+text）
 };
 
 /// SESSION_CTRL Body 首字节 ctrl_subtype（Doc05 §3）

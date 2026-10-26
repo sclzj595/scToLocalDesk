@@ -97,6 +97,13 @@ struct Evt_VideoFrame final : IEvent {
     uint32_t height{0};
 };
 
+// ---------------- 剪贴板（PRD P9） ----------------
+
+/// 远端剪贴板文本到达：平台层写入本机剪贴板（QSignalBlocker 防回环）
+struct Evt_ClipboardReceived final : IEvent {
+    std::string text;  ///< UTF-8 文本
+};
+
 // ---------------- 文件（Doc11 §2） ----------------
 
 enum class FileFailReason {

@@ -140,6 +140,33 @@ bool parse_file_meta(const uint8_t* body, size_t len, FileMetaBody& out) {
     return true;
 }
 
+std::vector<uint8_t> build_clipboard_sync(std::string_view text) {
+    if (text.size() > kClipboardMaxBytes) {
+        return {};  // 超限拒发（防大位图挤占传输队列）
+    }
+    std::vector<uint8_t> body;
+    body.reserve(4 + text.size());
+    push_be32(body, static_cast<uint32_t>(text.size()));
+    body.insert(body.end(), text.begin(), text.end());
+    return build_frame(MsgType::ClipboardSync, body);
+}
+
+bool parse_clipboard_sync(const uint8_t* body, size_t len, std::string& out) {
+    out.clear();
+    if (body == nullptr || len < 4) {
+        return false;
+    }
+    const uint32_t n = (static_cast<uint32_t>(body[0]) << 24)
+                     | (static_cast<uint32_t>(body[1]) << 16)
+                     | (static_cast<uint32_t>(body[2]) << 8)
+                     | static_cast<uint32_t>(body[3]);
+    if (n > kClipboardMaxBytes || 4u + n > len) {
+        return false;  // 超限或截断
+    }
+    out.assign(reinterpret_cast<const char*>(body) + 4, n);
+    return true;
+}
+
 std::vector<uint8_t> build_ctrl(CtrlSubType sub) {
     const std::vector<uint8_t> body{static_cast<uint8_t>(sub)};
     return build_frame(MsgType::SessionCtrl, body);

@@ -7,6 +7,7 @@
     #ifdef SCLD_QT_WIDGETS_UI
 
         #include <QApplication>
+        #include <QClipboard>
         #include <QCoreApplication>
         #include <QFile>
         #include <QFileInfo>
@@ -522,6 +523,56 @@ int main(int argc, char* argv[]) {
         });
     }
 
+    // 剪贴板文本同步（PRD P9）：装配同 main.cpp（内容三重去重防回环）
+    {
+        QClipboard* clip = QApplication::clipboard();
+        auto echo_mtx = std::make_shared<std::mutex>();
+        auto last_remote = std::make_shared<QString>();
+        auto last_sent = std::make_shared<QString>();
+        bus->subscribe<Evt_ClipboardReceived>(
+            [&logger, clip, echo_mtx, last_remote](const Evt_ClipboardReceived& e) {
+                {
+                    std::lock_guard<std::mutex> lk(*echo_mtx);
+                    *last_remote = QString::fromUtf8(QByteArray::fromStdString(e.text));
+                }
+                QMetaObject::invokeMethod(
+                    qApp,
+                    [&logger, clip, e] {
+                        const QString text =
+                            QString::fromUtf8(QByteArray::fromStdString(e.text));
+                        if (text.isEmpty()) {
+                            return;
+                        }
+                        clip->setText(text);
+                        SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn,
+                                 "clipboard",
+                                 "远端文本已写入本机剪贴板 len="
+                                     + std::to_string(e.text.size())
+                                     + " head=" + e.text.substr(0, 24));
+                    });
+            });
+        QObject::connect(clip, &QClipboard::dataChanged, qApp,
+                         [clip, &sessions, &logger, echo_mtx, last_remote, last_sent] {
+                             const QString text = clip->text();
+                             if (text.isEmpty()) {
+                                 return;
+                             }
+                             {
+                                 std::lock_guard<std::mutex> lk(*echo_mtx);
+                                 if (text == *last_remote || text == *last_sent) {
+                                     return;  // 回声：远端写入 / 本端已发，不再同步
+                                 }
+                                 *last_sent = text;
+                             }
+                             if (sessions->send_clipboard(text.toStdString())) {
+                                 SCLD_LOG(logger,
+                                          sc::localdesk::foundation::LogLevel::Info,
+                                          "clipboard",
+                                          "本机剪贴板已同步 len="
+                                              + std::to_string(text.toStdString().size()));
+                             }
+                         });
+    }
     // 单实例唤起：二次启动把首实例主窗带到前台
     guard.set_raise_callback([&win] {
         win.showNormal();

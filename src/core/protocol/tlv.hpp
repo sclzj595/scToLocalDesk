@@ -105,6 +105,17 @@ std::vector<uint8_t> build_mouse_key(const MouseKeyBody& mk);
 
 bool parse_mouse_key(const uint8_t* body, size_t len, MouseKeyBody& out);
 
+// ---------------- 剪贴板文本同步（CLIPBOARD_SYNC，PRD P9） ----------------
+
+/// 单帧上限：剪贴板大文本（截图位图等）不进此通道，超限构建即拒
+inline constexpr uint32_t kClipboardMaxBytes = 1024 * 1024;
+
+/// body = text_len(u32BE) + text(UTF-8)；超限返回空帧（调用方判空丢弃）
+std::vector<uint8_t> build_clipboard_sync(std::string_view text);
+
+/// 超限/截断/空返回 false
+bool parse_clipboard_sync(const uint8_t* body, size_t len, std::string& out);
+
 // ---------------- 画面帧（SCREEN_FRAME，Doc05 §1） ----------------
 
 struct ScreenFrameHeader {

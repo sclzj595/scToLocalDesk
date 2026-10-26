@@ -330,6 +330,13 @@ bool RemoteSessionService::send_input_event(const protocol::MouseKeyBody& mk) {
     return send_business_frame(protocol::build_mouse_key(mk));
 }
 
+bool RemoteSessionService::send_clipboard(const std::string& text) {
+    if (text.empty() || text.size() > protocol::kClipboardMaxBytes) {
+        return false;
+    }
+    return send_business_frame(protocol::build_clipboard_sync(text));
+}
+
 RemoteSessionService::SessState RemoteSessionService::state() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return state_;
@@ -357,6 +364,7 @@ void RemoteSessionService::on_transport_message(
     case protocol::MsgType::FileMeta:
     case protocol::MsgType::FileChunk:
     case protocol::MsgType::MouseKey:
+    case protocol::MsgType::ClipboardSync:
     case protocol::MsgType::ScreenFrame: {
         std::lock_guard<std::mutex> lk(mtx_);
         if (state_ != SessState::Running) {
@@ -389,6 +397,18 @@ void RemoteSessionService::on_transport_message(
             (void)input_->handle(body, body_len);
         }
         break;
+    case protocol::MsgType::ClipboardSync: {
+        // 双端剪贴板同步（PRD P9）：解析后经事件上抛，平台层写本机剪贴板
+        std::string text;
+        if (protocol::parse_clipboard_sync(body, body_len, text) && bus_ != nullptr) {
+            Evt_ClipboardReceived e;
+            e.session_id = session_id_;
+            e.text = std::move(text);
+            e.timestamp_us = now_us();
+            bus_->publish(e);
+        }
+        break;
+    }
     case protocol::MsgType::ScreenFrame: {
         // 控制端：帧头解析后经事件零拷贝上抛（解码渲染在 platform 层，Doc18 §4.2）
         protocol::ScreenFrameHeader hdr;

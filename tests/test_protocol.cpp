@@ -150,6 +150,34 @@ TEST_CASE("键鼠帧往返")
     }
 }
 
+TEST_CASE("剪贴板帧往返与超限拒绝")
+{
+    // 常规往返（UTF-8 中文）
+    const std::string text = "scld 剪贴板同步 abc123";
+    const auto frame = build_clipboard_sync(text);
+    REQUIRE(frame.size() == protocol::kHeaderSize + 4 + text.size());
+    const auto body = frame_body(frame);
+    std::string out;
+    REQUIRE(parse_clipboard_sync(body.data(), body.size(), out));
+    CHECK(out == text);
+
+    // 空文本：构建合法（len=0），解析得空串
+    const auto empty_frame = build_clipboard_sync("");
+    const auto empty_body = frame_body(empty_frame);
+    REQUIRE(parse_clipboard_sync(empty_body.data(), empty_body.size(), out));
+    CHECK(out.empty());
+
+    // 截断 body：声明长度大于实际 → 拒绝
+    CHECK_FALSE(parse_clipboard_sync(body.data(), body.size() - 1, out));
+
+    // body 短于 4B 头 → 拒绝
+    const uint8_t tiny[] = {0, 0};
+    CHECK_FALSE(parse_clipboard_sync(tiny, sizeof(tiny), out));
+
+    // 超限文本：构建即拒（空帧）
+    const std::string big(kClipboardMaxBytes + 1, 'x');
+    CHECK(build_clipboard_sync(big).empty());
+}
 TEST_CASE("画面帧零拷贝解析")
 {
     const uint8_t pixels[] = {1, 2, 3, 4, 5};

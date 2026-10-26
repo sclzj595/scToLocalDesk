@@ -112,6 +112,10 @@ public:
     /// 控制端键鼠事件出口（Doc18 §4.4）：MouseKeyBody → MOUSE_KEY 帧，Running 红线内
     bool send_input_event(const protocol::MouseKeyBody& mk);
 
+    /// 剪贴板文本同步（PRD P9）：本机剪贴板变化 → CLIPBOARD_SYNC 帧，
+    /// Running 红线内；空文本/超限（kClipboardMaxBytes）丢弃
+    bool send_clipboard(const std::string& text);
+
     void set_file_service(std::shared_ptr<FileService> files);
     void set_stream_service(std::shared_ptr<ScreenStreamService> stream);
     void set_input_service(std::shared_ptr<InputService> input);
