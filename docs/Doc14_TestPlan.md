@@ -61,3 +61,32 @@
 | 安全 | 所有未鉴权注入用例全部通过 |
 | 日志 | 所有高危路径（连接、鉴权、断开、传输失败）日志完整可追溯 |
 | 配置 | Doc17 全量配置项遍历无异常 |
+
+## 4. 实测记录（P4~P5 交付回写，2026-10-26）
+
+### 4.1 单元测试（doctest，tests/）
+
+- 覆盖：protocol（含剪贴板帧）/ bounded_queue / config / trust_store / id_service / file_service（name_safe）
+- 结果：**40 case / 181 断言全绿**（`build-msvc\tests\sc_localdesk_tests.exe`）
+- 说明：Doc14 §1 原定 gtest → 实际落地 doctest（header-only，零依赖），断言口径不变
+
+### 4.2 崩溃捕获（MiniDump）
+
+- `SCLD_CRASH_TEST=1` 注入 0xC0000005 → exe 旁 dumps/ 生成 .dmp + .txt（异常码/地址），验证通过
+
+### 4.3 断网重连（PRD P8）
+
+- 钩子：`SCLD_SMOKE_RECONNECT=<N>`，Running 后 2s 主动断开 → 1s 重连循环
+- 实测：**100/100 轮全部成功**，双端 会话建立=100/关闭=100 对账一致，异常=0
+- 资源：控制端 WS 119MB/句柄 777，被控端 60MB/句柄 507，无泄漏迹象
+
+### 4.4 长稳压测（soak_8h.ps1）
+
+- 首轮 8h 压测于 2026-10-26 00:25 被开发期 E2E 进程清理（taskkill）中止，脚本保护性退出，有效样本 65 行（约 25 分钟）
+- 有效样本摘要：WS 133.6→51.4MB（推流缓冲建立后回落）、句柄 805→821 平稳，无泄漏迹象
+- **遗留：需 8h 空闲窗口重跑完整轮**（重跑时不得并行执行任何 E2E 冒烟）
+
+### 4.5 剪贴板同步（PRD P9）
+
+- 协议往返/截断/超限拒绝：单测覆盖
+- E2E：SCLD_SMOKE_CLIP 钩子单帧同步验证通过；回环防护实测（Windows 剪贴板通知异步且系统全局，QSignalBlocker 无效，最终三重内容去重收敛）

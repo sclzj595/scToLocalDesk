@@ -18,6 +18,16 @@ scToLocalDesk/
 └── logs/（运行日志，滚动）
 ```
 
+打包脚本（P5.1 交付，2026-10-26）：
+
+```
+powershell -File scripts\package.ps1 -Version v1.0.0
+```
+
+- 前置：`cmake --build build-msvc --config Release` 已完成
+- 自动完成：双 exe + FFmpeg 4 dll 收集 → windeployqt（QML qmldir 指向 src/ui/qml）→ config.ini.example 生成 → zip
+- 产物：`build-msvc\dist\scToLocalDesk-<Version>-win64.zip`（当前 ~82 MB）
+
 ## 2. 端口与防火墙放行
 
 | 协议 | 端口 | 用途 |
