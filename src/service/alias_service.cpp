@@ -219,6 +219,9 @@ void AliasService::set_static_map(const std::vector<DeviceInfo>& table) {
     }
     static_set_.clear();
     for (const auto& dev : table) {
+        if (!self_alias_.empty() && dev.alias == self_alias_) {
+            continue;  // 自滤：静态表手填本机别名不入列表（Doc07 §5 同口径）
+        }
         DeviceInfo info = dev;
         info.last_seen_us = now_us();  // 静态条目视为常在（Doc07 §7）
         table_.insert_or_assign(dev.alias, std::move(info));

@@ -95,6 +95,7 @@ bool UdpDiscoveryAdapter::start() {
 void UdpDiscoveryAdapter::stop() {
     timer_.stop();
     socket_.leaveMulticastGroup(QHostAddress(QString::fromStdString(opt_.multicast_addr)));
+    socket_.close();  // 关闭套接字：恢复服务 start() 需干净重 bind
     running_ = false;
 }
 

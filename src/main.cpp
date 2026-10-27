@@ -596,6 +596,9 @@ int main(int argc, char* argv[]) {
                          else if (transport->start_server(
                                       static_cast<uint16_t>(cfg.ws_port))) {
                              service_stopped = false;
+                             if (cfg.multicast_enabled) {
+                                 (void)discovery.start();  // 恢复心跳（停止时一并关停）
+                             }
                              tray.set_service_stopped(false);
                              SCLD_LOG(logger, LogLevel::Info, "tray", "服务已恢复");
                          }
