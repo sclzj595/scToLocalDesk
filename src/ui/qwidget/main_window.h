@@ -8,6 +8,8 @@
 
 #include <QList>
 
+#include <functional>
+
 class QLabel;
 class QMenuBar;
 class QStackedWidget;
@@ -46,6 +48,11 @@ public:
     /// 会话服务注入（PRD P7）：确认弹窗 Accepted 后真正发起 connect_to_peer
     void setSessionService(RemoteSessionService* s) {
         sessions_ = s;
+    }
+
+    /// 设备刷新回调注入（widgets_main 传 discovery.send_heartbeat，主动广播一轮）
+    void set_refresh_devices(std::function<void()> fn) {
+        refresh_devices_ = std::move(fn);
     }
 
     /// 设备列表页访问（widgets_main 装配发现栈后接真数据，Doc18 §3.4）
@@ -95,6 +102,7 @@ private:
     QTimer* toastTimer_{nullptr};
     TrustStore* trust_{nullptr};
     RemoteSessionService* sessions_{nullptr};
+    std::function<void()> refresh_devices_;  ///< 设备列表主动刷新（discovery 心跳）
     AppConfig* cfg_{nullptr};  // 关窗/最小化缩托盘开关（app.minimize_to_tray）
     SettingsPage* settingsPage_{nullptr};
     DeviceListPage* devList_{nullptr};

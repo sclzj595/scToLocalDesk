@@ -7,6 +7,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QIcon>
+#include <QPainter>
 #include <QStyle>
 
 namespace sc::localdesk::platform {
@@ -37,6 +38,7 @@ TrayController::TrayController(QObject* parent)
     if (icon.isNull()) {
         icon = fallback;
     }
+    base_icon_ = icon;
     tray_.setIcon(icon);
 
     connect(show_action_, &QAction::triggered, this,
@@ -60,8 +62,25 @@ void TrayController::show() {
 }
 
 void TrayController::set_unattended_badge(bool on) {
-    // TODO(V1.0): 合成带角标图标（无人值守开启常显，Doc16 §8 风险对策）
+    // 无人值守开启常显徽标（Doc16 §8 风险对策：防"开关忘关长期裸奔"）：
+    // 基础图标右上叠橙点，off 恢复基础图标
     unattended_on_ = on;
+    if (base_icon_.isNull()) {
+        return;  // 无系统图标可合成，退化为 tooltip 提示
+    }
+    if (!on) {
+        tray_.setIcon(base_icon_);
+    }
+    else {
+        QPixmap pm = base_icon_.pixmap(32, 32);
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(QPen(Qt::white, 2));  // 白描边隔离底图
+        p.setBrush(QColor(0xFF, 0x98, 0x00));
+        p.drawEllipse(pm.width() - 11, 1, 10, 10);
+        p.end();
+        tray_.setIcon(QIcon(pm));
+    }
     if (on) {
         tray_.setToolTip(QStringLiteral("SC 邻桌（无人值守开启中）"));
     }

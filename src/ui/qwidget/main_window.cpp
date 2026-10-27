@@ -255,7 +255,10 @@ QWidget* MainWindow::makeTitleBar() {
             applyTheme(!GlassTheme::instance().isDark());
         }
         else {
-            showToast(tr("设备列表已刷新"));   // TODO(V1.0) discovery refresh
+            if (refresh_devices_) {
+                refresh_devices_();  // 主动广播一轮心跳，在线表立即更新
+            }
+            showToast(tr("设备列表已刷新"));
         }
     });
     auto* mTool = makeMenuBtn(tr("工具"));

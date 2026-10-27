@@ -63,6 +63,9 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     auto* grpGen = makeGroupCard(QStringLiteral("通用"), &genBody);
     auto* genForm = new QFormLayout(genBody);
     genForm->setLabelAlignment(Qt::AlignLeft);
+    viewSw_ = new ToggleSwitch();
+    bind_sw(viewSw_, QStringLiteral("general.view_mode"));
+    genForm->addRow(QStringLiteral("IT 视图（显示全部高级配置）"), viewSw_);
     aliasEd_ = new QLineEdit();
     aliasEd_->setFixedWidth(240);
     bind_ed(aliasEd_, QStringLiteral("general.alias"));
@@ -112,6 +115,7 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     netForm->addRow(QStringLiteral("组播发现（关闭走静态映射，重启生效）"), mcSw_);
     netForm->addRow(QStringLiteral("静态映射"), smEd_);
     netForm->addRow(QStringLiteral("心跳间隔（秒）"), hbEd_);
+    grpNet_ = grpNet;
     lay->addWidget(grpNet);
 
     // ---- 会话（Doc17 §3.3） ----
@@ -124,6 +128,7 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     bind_ed(qEd_, QStringLiteral("session.jpeg_quality"));
     sessForm->addRow(QStringLiteral("帧率（fps）"), fpsEd_);
     sessForm->addRow(QStringLiteral("JPEG 画质"), qEd_);
+    grpSess_ = grpSess;
     lay->addWidget(grpSess);
 
     // ---- 文件（Doc17 §3.4） ----
@@ -143,6 +148,7 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     safeSw_ = new ToggleSwitch();
     bind_sw(safeSw_, QStringLiteral("file.safe_path"));
     fileForm->addRow(QStringLiteral("文件名安全校验"), safeSw_);
+    fileForm_ = fileForm;
     lay->addWidget(grpFile);
 
     // ---- 安全（清空信任缓存带即时反馈） ----
@@ -188,6 +194,7 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     logForm->addRow(QStringLiteral("日志级别"), lvEd_);
     logForm->addRow(QStringLiteral("日志上限（MB）"), logMaxEd_);
     logForm->addRow(QStringLiteral("日志文件数"), logFilesEd_);
+    grpLog_ = grpLog;
     lay->addWidget(grpLog);
 
     lay->addStretch();
@@ -222,9 +229,11 @@ void SettingsPage::bind_config(foundation::IniConfig* ini, AppConfig* cfg) {
     confirmSw_->setChecked(cfg_->confirm_before_transfer);
     safeSw_->setChecked(cfg_->file_safe_path);
     unattSw_->setChecked(cfg_->unattended_enabled);
+    viewSw_->setChecked(cfg_->view_mode == "it");
     lvEd_->setText(QString::fromStdString(cfg_->log_level));
     logMaxEd_->setText(QString::number(cfg_->log_max_size_mb));
     logFilesEd_->setText(QString::number(cfg_->log_max_files));
+    apply_view_mode();  // 回放即生效（员工视图启动收起高级行）
 }
 
 void SettingsPage::on_changed(const QString& key, const QString& value) {
@@ -316,6 +325,12 @@ void SettingsPage::on_changed(const QString& key, const QString& value) {
     }
     else if (k == "security.unattended_enabled") {
         cfg_->unattended_enabled = (value == QStringLiteral("true"));
+        emit unattEnabledChanged(cfg_->unattended_enabled);
+    }
+    else if (k == "general.view_mode") {
+        // Doc17 §7 视图权限：bind_sw 传 true/false → 映射 it/employee，热生效
+        cfg_->view_mode = (value == QStringLiteral("true")) ? "it" : "employee";
+        apply_view_mode();
     }
     else if (k == "log.level") {
         if (v != "trace" && v != "debug" && v != "info" && v != "warn" && v != "error") {
@@ -357,6 +372,29 @@ QFrame* SettingsPage::makeGroupCard(const QString& title, QWidget** bodyOut) {
     lay->addWidget(bodyWidget);
     *bodyOut = bodyWidget;
     return card;
+}
+
+void SettingsPage::apply_view_mode() {
+    if (cfg_ == nullptr) {
+        return;
+    }
+    const bool it = (cfg_->view_mode == "it");
+    // Doc17 §7：网络/会话/日志组员工隐藏；文件组仅留接收目录；
+    // 安全组员工可见（无人值守开关+密码，员工也可为自己开启）
+    if (grpNet_ != nullptr) {
+        grpNet_->setVisible(it);
+    }
+    if (grpSess_ != nullptr) {
+        grpSess_->setVisible(it);
+    }
+    if (grpLog_ != nullptr) {
+        grpLog_->setVisible(it);
+    }
+    if (fileForm_ != nullptr) {
+        fileForm_->setRowVisible(chunkEd_, it);
+        fileForm_->setRowVisible(confirmSw_, it);
+        fileForm_->setRowVisible(safeSw_, it);
+    }
 }
 
 }  // namespace sc::localdesk::ui

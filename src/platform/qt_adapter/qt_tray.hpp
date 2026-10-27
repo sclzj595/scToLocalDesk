@@ -41,6 +41,7 @@ private:
     QAction* stop_action_{nullptr};
     QAction* quit_action_{nullptr};
     bool unattended_on_{false};  ///< 徽标状态记忆（会话结束后 tooltip 恢复用）
+    QIcon base_icon_;            ///< 无徽标基础图标（徽标合成/恢复用）
 };
 
 }  // namespace sc::localdesk::platform

@@ -16,6 +16,7 @@
 
 #include "core/interface/iinput_injector.hpp"  // MouseAction（键鼠透传捕获）
 
+class QFormLayout;
 class QGridLayout;
 class QFrame;
 class QKeyEvent;
@@ -242,6 +243,8 @@ signals:
     void themeChanged(bool dark);
     /// 清空信任设备缓存（TrustStore::clear 由主窗口执行，Doc18 §3.2）
     void clearTrustRequested();
+    /// 无人值守开关变更（widgets_main 接线托盘徽标，Doc16 §7）
+    void unattEnabledChanged(bool on);
 
 private:
     /// 控件变更统一入口：校验→更新 AppConfig→落盘（即时生效项在 QML 版由桥接服务）
@@ -249,10 +252,18 @@ private:
     /// 分组卡：卡内含标题 + body 容器（传出供调用方挂 QFormLayout，
     /// 不能对已有布局的卡直接再 setLayout——Qt 会拒绝二设布局）
     QFrame* makeGroupCard(const QString& title, QWidget** bodyOut);
+    /// 视图权限（Doc17 §7）：员工视图隐藏网络/会话/日志组与文件组高级行，
+    /// IT 视图全量；bind_config 回放与 view_mode 切换时调用
+    void apply_view_mode();
 
     foundation::IniConfig* ini_{nullptr};
     AppConfig* cfg_{nullptr};
     AliasService* aliases_{nullptr};
+    ToggleSwitch* viewSw_{nullptr};
+    QFrame* grpNet_{nullptr};
+    QFrame* grpSess_{nullptr};
+    QFrame* grpLog_{nullptr};
+    QFormLayout* fileForm_{nullptr};
     QLineEdit* aliasEd_{nullptr};
     ToggleSwitch* autoStartSw_{nullptr};
     ToggleSwitch* minTraySw_{nullptr};

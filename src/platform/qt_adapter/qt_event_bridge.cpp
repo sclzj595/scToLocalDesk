@@ -568,6 +568,7 @@ void QtEventBridge::settingsSetValue(const QString& key, const QString& value) {
         if (ini_->save()) {
             SCLD_LOG(log_, foundation::LogLevel::Info, "settings",
                      "已保存 " + k + "=" + v + note);
+            emit configKeySaved(key, value);  // UI 层热联动（托盘徽标等）
         }
         else {
             SCLD_LOG(log_, foundation::LogLevel::Error, "settings",

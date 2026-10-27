@@ -355,12 +355,20 @@ int main(int argc, char* argv[]) {
     win.set_config_store(&ini, &cfg);
     win.settingsPage()->set_alias_service(aliases.get());  // 静态映射热生效
     win.setSessionService(sessions.get());  // PRD P7：确认后真正发起拨号
+    // 设备列表刷新按钮（Doc02 §5.4）：主动广播一轮心跳，在线表立即更新
+    win.set_refresh_devices([&discovery] { discovery.send_heartbeat(); });
     win.show();
 
     // 被控端知情权（PRD P4）：Widgets 端补托盘——会话状态项 + 一键断开 +
     // 推流水印（"访客别名 · 时间"，60s 刷新；渲染主线程、混合采集线程）
     sc::localdesk::platform::TrayController tray;
     tray.show();
+    tray.set_unattended_badge(cfg.unattended_enabled);  // 启动装载（Doc16 §8）
+    // 无人值守开关变更 → 托盘徽标热更新（Doc16 §7）
+    QObject::connect(
+        win.settingsPage(),
+        &sc::localdesk::ui::SettingsPage::unattEnabledChanged, &tray,
+        [&tray](bool on) { tray.set_unattended_badge(on); });
     // 托盘三键接线（Doc02 §5.4）：显示主窗 / 停止服务 toggle / 退出程序
     // 显示主窗必须先清 minimized 位再 show：show() 对最小化窗口不还原
     //（经典 Qt 缺陷），保留 maximized/fullscreen 其余状态位

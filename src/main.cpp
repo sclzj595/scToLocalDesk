@@ -577,6 +577,15 @@ int main(int argc, char* argv[]) {
     // 托盘（显示窗口 / 停止服务 / 退出，Doc02 §5.4）
     platform::TrayController tray;
     tray.show();
+    // 无人值守开启常显徽标（Doc16 §8）：启动装载 + 设置页热更新
+    tray.set_unattended_badge(cfg.unattended_enabled);
+    QObject::connect(
+        &bridge, &platform::QtEventBridge::configKeySaved, &tray,
+        [&tray](const QString& key, const QString& value) {
+            if (key == QStringLiteral("security.unattended_enabled")) {
+                tray.set_unattended_badge(value == QStringLiteral("true"));
+            }
+        });
     QObject::connect(&tray, &platform::TrayController::showMainRequested, &tray,
                      raise_main);
     // 停止服务 toggle（Doc02 §5.4）：停监听+停心跳；会话中先礼貌断开

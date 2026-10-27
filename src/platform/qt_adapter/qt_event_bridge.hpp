@@ -135,6 +135,9 @@ signals:
     void aliasConflict(const QString& alias, const QString& conflictIp);  ///< 别名冲突（PRD P5：UI 引导改名）
     // 设置
     void settingsRejected(const QString& key, const QString& why);  ///< 校验拒绝（PRD P5：QML toast）
+    /// 配置项成功落盘（每次 settingsSetValue 走 persist 即发；UI 层热联动挂点，
+    /// 如托盘无人值守徽标 Doc16 §7）
+    void configKeySaved(const QString& key, const QString& value);
     // 会话
     void connectRequest(const QString& alias, const QString& peerIp);  ///< 人工确认弹窗触发（含请求方 IP）
     void connectRequestTimedOut();  ///< 确认弹窗 30s 未响应已自动拒，UI 关弹窗

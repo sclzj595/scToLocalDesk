@@ -12,6 +12,10 @@ import ScLocaldesk 1.0
 Item {
     id: root
 
+    // 视图权限（Doc17 §7）：员工视图隐藏网络/会话/日志组与文件组高级行，
+    // IT 视图全量；切换行在通用组恒显（员工可自行打开）
+    property bool itView: ScLocaldesk.settingsValue("general.view_mode") === "it"
+
     // 7 组字段 ↔ AppConfig（Doc18 §3.3）：初值经 ScLocaldesk.settingsValue 注入，
     // 变更经 settingsSetValue 校验/落盘 config.ini/即时生效项接服务 setter
 
@@ -36,6 +40,14 @@ Item {
             // ---- 通用 ----
             GroupCard {
                 title: qsTr("通用")
+                SwitchRow {
+                    text: qsTr("IT 视图（显示全部高级配置）")
+                    checked: root.itView
+                    onToggled: {
+                        root.itView = !root.itView;
+                        ScLocaldesk.settingsSetValue("general.view_mode", root.itView ? "it" : "employee");
+                    }
+                }
                 TextRow {
                     label: qsTr("本机连接名")
                     value: ScLocaldesk.settingsValue("general.alias")
@@ -74,9 +86,10 @@ Item {
                 }
             }
 
-            // ---- 网络 ----
+            // ---- 网络（员工视图隐藏，Doc17 §7） ----
             GroupCard {
                 title: qsTr("网络")
+                visible: root.itView
                 TextRow {
                     label: qsTr("会话端口")
                     value: ScLocaldesk.settingsValue("network.ws_port")
@@ -106,9 +119,10 @@ Item {
                 }
             }
 
-            // ---- 远程会话 ----
+            // ---- 远程会话（员工视图隐藏） ----
             GroupCard {
                 title: qsTr("远程会话")
+                visible: root.itView
                 TextRow {
                     label: qsTr("帧率（fps）")
                     value: ScLocaldesk.settingsValue("session.fps")
@@ -123,7 +137,7 @@ Item {
                 }
             }
 
-            // ---- 文件传输 ----
+            // ---- 文件传输（员工视图仅接收目录，Doc17 §7） ----
             GroupCard {
                 title: qsTr("文件传输")
                 TextRow {
@@ -133,17 +147,20 @@ Item {
                 }
                 TextRow {
                     label: qsTr("分片大小（KB）")
+                    visible: root.itView
                     value: ScLocaldesk.settingsValue("file.chunk_size_kb")
                     numeric: true
                     onEdited: v => ScLocaldesk.settingsSetValue("file.chunk_size_kb", v)
                 }
                 SwitchRow {
                     text: qsTr("接收前需确认")
+                    visible: root.itView
                     checked: ScLocaldesk.settingsValue("file.confirm_before_transfer") === "true"
                     onToggled: ScLocaldesk.settingsSetValue("file.confirm_before_transfer", checked ? "true" : "false")
                 }
                 SwitchRow {
                     text: qsTr("文件名安全校验（拒收路径穿越等危险名）")
+                    visible: root.itView
                     checked: ScLocaldesk.settingsValue("file.safe_path") !== "false"
                     onToggled: ScLocaldesk.settingsSetValue("file.safe_path", checked ? "true" : "false")
                 }
@@ -166,9 +183,10 @@ Item {
                 }
             }
 
-            // ---- 日志 ----
+            // ---- 日志（员工视图隐藏） ----
             GroupCard {
                 title: qsTr("日志")
+                visible: root.itView
                 TextRow {
                     label: qsTr("日志级别")
                     value: ScLocaldesk.settingsValue("log.level")
