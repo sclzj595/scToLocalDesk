@@ -37,6 +37,13 @@ DeviceListModel::DeviceListModel(std::shared_ptr<foundation::EventBus> bus,
     auto* timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &DeviceListModel::refresh_changed);
     timer->start(kRefreshMs);
+    // 启动回放：静态映射等装载先于本模型构造时上线事件已丢失（订阅时序），
+    // 构造即全量拉取对账一次（与 Widgets device_list_page 全量口径一致）
+    if (aliases_ != nullptr) {
+        for (const auto& dev : aliases_->online_devices()) {
+            on_device_online(dev.alias);
+        }
+    }
 }
 
 DeviceListModel::~DeviceListModel() {
