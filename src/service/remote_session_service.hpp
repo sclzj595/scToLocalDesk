@@ -185,6 +185,7 @@ public:
     std::shared_ptr<FileService> files_;
     std::shared_ptr<ScreenStreamService> stream_;
     std::shared_ptr<InputService> input_;
+    uint64_t input_inj_count_{0};  ///< 注入审计抽点计数（RemoteSession 线程，单写者）
     TrustStore* trust_{nullptr};
     std::shared_ptr<foundation::EventBus> bus_;
     std::shared_ptr<foundation::ILogger> log_;

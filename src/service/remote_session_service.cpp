@@ -110,6 +110,12 @@ RemoteSessionService::~RemoteSessionService() {
 
 void RemoteSessionService::set_file_service(std::shared_ptr<FileService> files) {
     files_ = std::move(files);
+    // 文件出站绑加密链路（PRD §6.2 全载荷加密）：send_business_frame 内部
+    // 按 encrypted_ 状态自动选择明文/密文，密钥协商后文件帧不再裸发
+    if (files_ != nullptr) {
+        files_->set_sender(
+            [this](const std::vector<uint8_t>& f) { return send_business_frame(f); });
+    }
 }
 
 void RemoteSessionService::set_stream_service(std::shared_ptr<ScreenStreamService> stream) {
@@ -423,8 +429,21 @@ void RemoteSessionService::on_transport_message(
         break;
     case protocol::MsgType::MouseKey:
         // 被控端：注入键鼠（控制端收到即丢弃——理论上不会发）
+        // 注入审计（被控知情权）：失败 Warn 即时落盘；成功 100:1 抽点防刷屏
         if (input_ != nullptr) {
-            (void)input_->handle(body, body_len);
+            if (input_->handle(body, body_len)) {
+                if ((++input_inj_count_ % 100) == 1) {
+                    SCLD_LOG(log_, LogLevel::Info, "input",
+                             "[session_id=" + session_id_
+                                 + "] 键鼠注入中 inj_count="
+                                 + std::to_string(input_inj_count_));
+                }
+            }
+            else {
+                SCLD_LOG(log_, LogLevel::Warn, "input",
+                         "[session_id=" + session_id_ + "] 键鼠注入失败 kind="
+                             + std::to_string(static_cast<int>(body[0])));
+            }
         }
         break;
     case protocol::MsgType::ClipboardSync: {

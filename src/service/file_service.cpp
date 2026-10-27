@@ -37,6 +37,13 @@ int64_t now_us() {
         .count();
 }
 
+/// UTF-8 窄串 → filesystem path：MSVC path(std::string) 按 ACP 解释，
+/// Qt 层传来的中文目录/文件名（UTF-8）会建出乱码目录——统一走 u8path。
+/// 约定：本服务全部字符串路径参数为 UTF-8（含 meta.name 协议字段）
+std::filesystem::path fs_path(std::string_view utf8) {
+    return std::filesystem::u8path(utf8);
+}
+
 std::string make_file_id() {
     static thread_local std::mt19937_64 rng{std::random_device{}()};
     std::string hex;
@@ -144,24 +151,27 @@ void FileService::set_event_callback(FileEventCb cb) {
 
 bool FileService::send_file(const std::string& abs_path) {
     std::error_code ec;
-    if (!std::filesystem::is_regular_file(abs_path, ec)) {
+    if (!std::filesystem::is_regular_file(fs_path(abs_path), ec)) {
         SCLD_LOG(log_, LogLevel::Warn, "file", "发送路径非法：" + abs_path);
         return false;
     }
-    const auto size = static_cast<uint64_t>(std::filesystem::file_size(abs_path, ec));
+    const auto size =
+        static_cast<uint64_t>(std::filesystem::file_size(fs_path(abs_path), ec));
     if (ec) {
         return false;
     }
 
     FileMeta meta;
     meta.file_id = make_file_id();
-    meta.name = std::filesystem::path(abs_path).filename().string();
+    meta.name = fs_path(abs_path).filename().u8string();  // 协议字段 UTF-8
     meta.size = size;
     meta.total_chunks = static_cast<uint32_t>((size + chunk_size_ - 1) / chunk_size_);
 
-    if (transport_ != nullptr) {
-        transport_->send_binary(
-            protocol::build_file_meta(meta.file_id, meta.name, meta.size, meta.total_chunks));
+    if (!out_frame(protocol::build_file_meta(meta.file_id, meta.name, meta.size,
+                                             meta.total_chunks))) {
+        SCLD_LOG(log_, LogLevel::Error, "file",
+                 "[file_id=" + meta.file_id + "] META 发送失败（无出站链路）");
+        return false;
     }
     SCLD_LOG(log_, LogLevel::Info, "file",
              "[file_id=" + meta.file_id + "] 发送登记 name=" + meta.name
@@ -184,11 +194,23 @@ bool FileService::send_file(const std::string& abs_path) {
     return true;
 }
 
+bool FileService::out_frame(const std::vector<uint8_t>& frame) {
+    // 出站统一口：注入的加密链路优先（会话加密 PRD §6.2），未注入回落裸发
+    if (send_fn_) {
+        return send_fn_(frame);
+    }
+    if (transport_ != nullptr) {
+        transport_->send_binary(frame);
+        return true;
+    }
+    return false;
+}
+
 void FileService::send_loop(const std::string& abs_path, const FileMeta& meta) {
-    if (transport_ == nullptr) {
+    if (transport_ == nullptr && !send_fn_) {
         return;
     }
-    FILE* fp = foundation::fs_open(std::filesystem::path(abs_path), "rb");
+    FILE* fp = foundation::fs_open(fs_path(abs_path), "rb");
     if (fp == nullptr) {
         SCLD_LOG(log_, LogLevel::Error, "file", "[file_id=" + meta.file_id + "] 打开失败");
         return;
@@ -228,7 +250,12 @@ void FileService::send_loop(const std::string& abs_path, const FileMeta& meta) {
         // 片校验（Doc18 §5：xxH3 首个业务用途；接收端不符即断传）
         append_be64(body, foundation::xxh3_64(buf.data(), n, kChunkSeed));
         body.insert(body.end(), buf.begin(), buf.begin() + static_cast<long>(n));
-        transport_->send_binary(protocol::build_frame(protocol::MsgType::FileChunk, body));
+        if (!out_frame(protocol::build_frame(protocol::MsgType::FileChunk, body))) {
+            SCLD_LOG(log_, LogLevel::Error, "file",
+                     "[file_id=" + meta.file_id + "] 分片发送失败 idx="
+                         + std::to_string(idx));
+            break;
+        }
 
         transferred += n;
         publish_progress(meta.file_id, meta.name, transferred, meta.size, FileDir::Send);
@@ -376,12 +403,13 @@ bool FileService::accept_file(const FileMeta& meta, const std::string& save_dir)
     t.save_dir = save_dir;
     // 保存目录自建（用户任意配置的 save_path 不保证存在，Doc11 §4.4）
     std::error_code ec;
-    std::filesystem::create_directories(std::filesystem::path(save_dir), ec);
-    const std::string part_path = save_dir + "/" + meta.file_id + ".part";
-    t.out = foundation::fs_open(std::filesystem::path(part_path), "wb");
+    std::filesystem::create_directories(fs_path(save_dir), ec);
+    const auto part_path = fs_path(save_dir) / fs_path(meta.file_id + ".part");
+    t.out = foundation::fs_open(part_path, "wb");
     if (t.out == nullptr) {
         SCLD_LOG(log_, LogLevel::Error, "file",
-                 "[file_id=" + meta.file_id + "] 临时文件创建失败：" + part_path);
+                 "[file_id=" + meta.file_id + "] 临时文件创建失败："
+                     + part_path.u8string());
         return false;
     }
     transfers_.emplace(meta.file_id, std::move(t));
@@ -478,7 +506,7 @@ void FileService::finish_receive(Transfer& t, bool ok, FileFailReason reason) {
         // 完整性校验：落盘字节数对账（跳号/丢片/截断兜底，Doc11 §3；SHA256 全量为 V1.0 任务）
         std::error_code ec;
         const auto part_size = static_cast<uint64_t>(
-            std::filesystem::file_size(part_path, ec));
+            std::filesystem::file_size(fs_path(part_path), ec));
         if (!ec && part_size != t.meta.size) {
             SCLD_LOG(log_, LogLevel::Error, "file",
                      "[file_id=" + t.meta.file_id + "] 落盘不完整 part="
@@ -490,17 +518,18 @@ void FileService::finish_receive(Transfer& t, bool ok, FileFailReason reason) {
     if (ok) {
         // 完整性校验：分片计数对账（Doc11 §3；CRC32/SHA256 为 V1.0 任务）
         std::error_code ec;
-        const std::string final_path = t.save_dir + "/" + t.meta.name;
-        std::filesystem::rename(part_path, final_path, ec);
+        const auto final_path = fs_path(t.save_dir) / fs_path(t.meta.name);
+        std::filesystem::rename(fs_path(part_path), final_path, ec);
         if (ec) {
             SCLD_LOG(log_, LogLevel::Error, "file",
-                     "[file_id=" + t.meta.file_id + "] rename 失败：" + final_path);
+                     "[file_id=" + t.meta.file_id + "] rename 失败：" + t.save_dir
+                         + "/" + t.meta.name);
             ok = false;
         }
     }
     if (!ok) {
         std::error_code ec;
-        std::filesystem::remove(part_path, ec);  // 失败清理临时文件（Doc11 §4.4）
+        std::filesystem::remove(fs_path(part_path), ec);  // 失败清理临时文件（Doc11 §4.4）
     }
     if (bus_ != nullptr) {
         if (ok) {

@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -75,6 +76,14 @@ public:
         std::lock_guard<std::mutex> lk(mtx_);
         peer_alias_ = std::move(alias);
     }
+    /// 出站发送器注入（PRD §6.2 全载荷加密）：会话加密激活后 FILE_META/
+    /// FILE_CHUNK 必须走 send_business_frame 加密链路——裸发 transport 的
+    /// 明文帧会被对端 fail-closed 解密层整帧丢弃（加密会话中文件传输失效）
+    /// 未注入回落裸发（headless 自检/无加密会话）
+    void set_sender(std::function<bool(const std::vector<uint8_t>&)> fn) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        send_fn_ = std::move(fn);
+    }
 
 private:
     struct Transfer
@@ -88,6 +97,8 @@ private:
     };
 
     void send_loop(const std::string& abs_path, const FileMeta& meta);
+    /// 出站统一口：send_fn_（加密链路）优先，回落 transport_ 裸发（可空）
+    bool out_frame(const std::vector<uint8_t>& frame);
     /// 调用方已持锁：关句柄 + 清临时文件 + 发布失败事件 + 回收条目；
     /// reason 默认 IoError，片校验失败传 Integrity
     void finish_receive(Transfer& t, bool ok,
@@ -99,6 +110,7 @@ private:
                                  FileDir dir);  ///< 调用方已持锁
 
     std::shared_ptr<ITransport> transport_;
+    std::function<bool(const std::vector<uint8_t>&)> send_fn_;  ///< 加密出站链路（可空）
     std::shared_ptr<foundation::EventBus> bus_;
     std::shared_ptr<foundation::ILogger> log_;
     std::shared_ptr<foundation::ThreadPool> pool_;
