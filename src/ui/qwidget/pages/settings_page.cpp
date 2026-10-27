@@ -4,6 +4,7 @@
 #include "pages.h"
 #include "page_kit.h"
 
+#include <QComboBox>
 #include <QFormLayout>
 #include <QFrame>
 #include <QLabel>
@@ -148,6 +149,16 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     safeSw_ = new ToggleSwitch();
     bind_sw(safeSw_, QStringLiteral("file.safe_path"));
     fileForm->addRow(QStringLiteral("文件名安全校验"), safeSw_);
+    owCombo_ = new QComboBox();
+    owCombo_->setFixedWidth(240);
+    owCombo_->addItem(QStringLiteral("每次询问（推荐）"), QStringLiteral("ask"));
+    owCombo_->addItem(QStringLiteral("直接覆盖"), QStringLiteral("overwrite"));
+    owCombo_->addItem(QStringLiteral("自动重命名 (1)"), QStringLiteral("rename"));
+    connect(owCombo_, &QComboBox::activated, this, [this](int idx) {
+        on_changed(QStringLiteral("file.overwrite"),
+                   owCombo_->itemData(idx).toString());
+    });
+    fileForm->addRow(QStringLiteral("同名覆盖策略"), owCombo_);
     fileForm_ = fileForm;
     lay->addWidget(grpFile);
 
@@ -228,6 +239,14 @@ void SettingsPage::bind_config(foundation::IniConfig* ini, AppConfig* cfg) {
     chunkEd_->setText(QString::number(cfg_->chunk_size_kb));
     confirmSw_->setChecked(cfg_->confirm_before_transfer);
     safeSw_->setChecked(cfg_->file_safe_path);
+    // 覆盖策略回放：按 userData 定位档位（ask/overwrite/rename）
+    const QString ow = QString::fromStdString(cfg_->overwrite);
+    for (int i = 0; i < owCombo_->count(); ++i) {
+        if (owCombo_->itemData(i).toString() == ow) {
+            owCombo_->setCurrentIndex(i);
+            break;
+        }
+    }
     unattSw_->setChecked(cfg_->unattended_enabled);
     viewSw_->setChecked(cfg_->view_mode == "it");
     lvEd_->setText(QString::fromStdString(cfg_->log_level));
@@ -322,6 +341,11 @@ void SettingsPage::on_changed(const QString& key, const QString& value) {
     }
     else if (k == "file.safe_path") {
         cfg_->file_safe_path = (value == QStringLiteral("true"));
+    }
+    else if (k == "file.overwrite") {
+        // 同名覆盖策略（Doc11 §4.2）：热生效走信号（widgets_main 接 files_）
+        cfg_->overwrite = v;
+        emit overwritePolicyChanged(value);
     }
     else if (k == "security.unattended_enabled") {
         cfg_->unattended_enabled = (value == QStringLiteral("true"));

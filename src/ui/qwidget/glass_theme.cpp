@@ -147,6 +147,19 @@ QString GlassTheme::buildQss() const {
                         "QLabel#cardTitle { font-size: 14px; font-weight: 600; color: %1; }\n"
                         "QLabel#hintLabel { font-size: 12px; color: %2; }\n")
              .arg(qcolor(textMain), qcolor(textSecond));
+    // QMessageBox 玻璃化（确认弹窗随主题，Doc13 §13.2 磨砂模拟）：
+    // 标准按钮无名无法 objectName 定制，作用域限 QMessageBox 内
+    q += QStringLiteral(
+             "QMessageBox { background-color: %1; border: 1px solid %2; border-radius: 12px; }\n"
+             "QMessageBox QLabel { color: %3; background: transparent; font-size: 13px; }\n"
+             "QMessageBox QPushButton { background: %4; color: %5; border: 1px solid %6; "
+             "border-radius: 8px; padding: 6px 18px; min-width: 64px; }\n"
+             "QMessageBox QPushButton:hover { background: %7; }\n"
+             "QMessageBox QPushButton:default { background: %8; color: #FFFFFF; border: none; }\n"
+             "QMessageBox QPushButton:default:hover { background: %9; }\n")
+             .arg(qcolor(winBg), qrgba(glassBorder), qcolor(textMain),
+                  qcolor(cardBg), qcolor(textSecond), qrgba(divider),
+                  qrgba(hover), qcolor(primary), qcolor(primaryHover));
     return q;
 }
 

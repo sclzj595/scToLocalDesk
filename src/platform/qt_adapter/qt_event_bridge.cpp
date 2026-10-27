@@ -536,6 +536,9 @@ QString QtEventBridge::settingsValue(const QString& key) const {
     if (k == "file.safe_path") {
         return cfg_->file_safe_path ? QStringLiteral("true") : QStringLiteral("false");
     }
+    if (k == "file.overwrite") {
+        return QString::fromStdString(cfg_->overwrite);
+    }
     if (k == "security.unattended_enabled") {
         return cfg_->unattended_enabled ? QStringLiteral("true") : QStringLiteral("false");
     }
@@ -717,6 +720,18 @@ void QtEventBridge::settingsSetValue(const QString& key, const QString& value) {
         cfg_->file_safe_path = (value == QStringLiteral("true"));
         if (files_ != nullptr) {
             files_->set_safe_path(cfg_->file_safe_path);
+        }
+        persist("");
+    }
+    else if (k == "file.overwrite") {
+        // 同名覆盖策略（Doc11 §4.2）：ask/overwrite/rename，热生效
+        if (v != "ask" && v != "overwrite" && v != "rename") {
+            warn_invalid("ask/overwrite/rename");
+            return;
+        }
+        cfg_->overwrite = v;
+        if (files_ != nullptr) {
+            files_->set_overwrite_policy(v);
         }
         persist("");
     }

@@ -164,6 +164,37 @@ Item {
                     checked: ScLocaldesk.settingsValue("file.safe_path") !== "false"
                     onToggled: ScLocaldesk.settingsSetValue("file.safe_path", checked ? "true" : "false")
                 }
+                // 同名覆盖策略（Doc11 §4.2 / Doc17 §3.5）：热生效
+                RowLayout {
+                    visible: root.itView
+                    Layout.fillWidth: true
+                    Text {
+                        text: qsTr("同名覆盖策略")
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontBody
+                        color: Theme.textMain
+                    }
+                    Item { Layout.fillWidth: true }
+                    ComboBox {
+                        id: owCombo
+                        width: 160
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontBody
+                        textRole: "label"
+                        valueRole: "value"
+                        model: [
+                            { label: qsTr("每次询问（推荐）"), value: "ask" },
+                            { label: qsTr("直接覆盖"), value: "overwrite" },
+                            { label: qsTr("自动重命名 (1)"), value: "rename" }
+                        ]
+                        currentIndex: {
+                            const v = ScLocaldesk.settingsValue("file.overwrite");
+                            const vs = ["ask", "overwrite", "rename"];
+                            return Math.max(0, vs.indexOf(v));
+                        }
+                        onActivated: (idx) => ScLocaldesk.settingsSetValue("file.overwrite", owCombo.valueAt(idx))
+                    }
+                }
             }
 
             // ---- 安全 ----

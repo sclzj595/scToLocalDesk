@@ -55,6 +55,14 @@ public:
     /// 接收前置确认（file.confirm_before_transfer，Doc11 §4.3）；
     /// 开启时对端文件先挂 pending 并发 Evt_FileMetaReceived，等 UI accept/reject
     void set_confirm_enabled(bool enabled);
+    /// 同名覆盖策略（file.overwrite，Doc11 §4.2）：ask（默认，冲突时强制弹窗
+    /// 询问）/ overwrite（覆盖）/ rename（自动加 (N)）；ask 同意后按 rename 落盘
+    void set_overwrite_policy(std::string policy) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (policy == "ask" || policy == "overwrite" || policy == "rename") {
+            overwrite_policy_ = std::move(policy);
+        }
+    }
     /// 危险路径校验开关（file.safe_path，PRD P10；默认开，调试用）
     void set_safe_path(bool enabled) {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -90,6 +98,7 @@ private:
     {
         FileMeta meta;
         std::string save_dir;
+        std::string final_name;         ///< 同名冲突解析后的落盘名（接收端）
         FILE* out{nullptr};             ///< 临时文件句柄（接收端）
         uint32_t received_chunks{0};
         bool aborted{false};
@@ -120,6 +129,7 @@ private:
     std::unordered_map<std::string, FileMeta> pending_;    ///< 待确认（confirm 流程）
     bool confirm_enabled_{true};
     bool safe_path_{true};
+    std::string overwrite_policy_{"ask"};  ///< file.overwrite（Doc11 §4.2）
     FileEventCb event_cb_;
     uint32_t chunk_size_{256 * 1024};  ///< 默认 256KB（Doc05 §5）
     std::string save_dir_{"."};

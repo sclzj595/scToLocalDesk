@@ -16,6 +16,7 @@
 
 #include "core/interface/iinput_injector.hpp"  // MouseAction（键鼠透传捕获）
 
+class QComboBox;
 class QFormLayout;
 class QGridLayout;
 class QFrame;
@@ -245,6 +246,8 @@ signals:
     void clearTrustRequested();
     /// 无人值守开关变更（widgets_main 接线托盘徽标，Doc16 §7）
     void unattEnabledChanged(bool on);
+    /// 同名覆盖策略变更（widgets_main 接线 FileService 热生效，Doc11 §4.2）
+    void overwritePolicyChanged(const QString& policy);
 
 private:
     /// 控件变更统一入口：校验→更新 AppConfig→落盘（即时生效项在 QML 版由桥接服务）
@@ -280,6 +283,7 @@ private:
     QLineEdit* chunkEd_{nullptr};
     ToggleSwitch* confirmSw_{nullptr};
     ToggleSwitch* safeSw_{nullptr};
+    QComboBox* owCombo_{nullptr};
     ToggleSwitch* unattSw_{nullptr};
     QLineEdit* lvEd_{nullptr};
     QLineEdit* logMaxEd_{nullptr};

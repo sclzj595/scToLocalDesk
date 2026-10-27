@@ -326,6 +326,23 @@ bool FileService::name_safe(const std::string& name) {
     return true;
 }
 
+/// 同名冲突自动重命名（Doc11 §4.2 rename 策略）：name(1).ext / name(2).ext，
+/// 返回首个不存在的候选名（无扩展名文件同样适用，ext 为空串）
+std::filesystem::path unique_target(const std::filesystem::path& dir,
+                                    const std::string& name) {
+    const auto p = fs_path(name);
+    const std::string stem = p.stem().u8string();
+    const std::string ext = p.extension().u8string();
+    for (int i = 1; i <= 9999; ++i) {
+        const std::string cand = stem + " (" + std::to_string(i) + ")" + ext;
+        std::error_code ec;
+        if (!std::filesystem::exists(dir / fs_path(cand), ec)) {
+            return fs_path(cand);
+        }
+    }
+    return fs_path(name + ".new");  // 兜底（万级同名几乎不可达）
+}
+
 void FileService::on_file_meta(const uint8_t* body, size_t len) {
     protocol::FileMetaBody m;
     if (!protocol::parse_file_meta(body, len, m)) {
@@ -346,6 +363,13 @@ void FileService::on_file_meta(const uint8_t* body, size_t len) {
         need_confirm = confirm_enabled_;
         dir = save_dir_;
         safe = safe_path_;
+        // 同名冲突策略（Doc11 §4.2）：ask（默认）时冲突强制走确认弹窗——弹窗即
+        // 询问，用户同意后按 rename 落盘（绝不静默覆盖）；overwrite/rename 由
+        // accept_file 解析落盘名
+        if (std::filesystem::exists(fs_path(dir) / fs_path(meta.name))
+            && overwrite_policy_ == "ask") {
+            need_confirm = true;
+        }
     }
     // 危险路径防线（PRD P10）：对端 meta.name 是不可信输入，路径穿越/保留名
     // 一律拒收（save_dir 拼接发生在 accept_file，此为唯一入口）
@@ -353,6 +377,28 @@ void FileService::on_file_meta(const uint8_t* body, size_t len) {
         SCLD_LOG(log_, LogLevel::Warn, "file",
                  "[file_id=" + m.file_id + "] 对端文件名不安全，拒收 name=" + m.name);
         return;
+    }
+    // 磁盘空间预检（Doc11 §4.5）：剩余 < 文件大小 → 直接 Failed 并提示；
+    // save_dir 未建时 space() 失败跳过（accept_file 自建目录后写失败兜底）
+    {
+        std::error_code ec;
+        const auto sp = std::filesystem::space(fs_path(dir), ec);
+        if (!ec && sp.available < meta.size) {
+            SCLD_LOG(log_, LogLevel::Warn, "file",
+                     "[file_id=" + meta.file_id + "] 磁盘空间不足，拒收 需要="
+                         + std::to_string(meta.size) + " 可用="
+                         + std::to_string(sp.available));
+            if (bus_ != nullptr) {
+                Evt_FileFailed e;
+                e.file_id = meta.file_id;
+                e.name = meta.name;
+                e.reason = FileFailReason::DiskFull;
+                e.dir = FileDir::Recv;
+                e.timestamp_us = now_us();
+                bus_->publish(e);
+            }
+            return;
+        }
     }
     if (need_confirm) {
         // 前置确认：挂 pending → UI 弹窗（Doc11 §4.3 / Doc13）。
@@ -404,6 +450,17 @@ bool FileService::accept_file(const FileMeta& meta, const std::string& save_dir)
     // 保存目录自建（用户任意配置的 save_path 不保证存在，Doc11 §4.4）
     std::error_code ec;
     std::filesystem::create_directories(fs_path(save_dir), ec);
+    // 同名冲突解析（Doc11 §4.2）：overwrite 保留原名覆盖；rename/ask 自动 (N)
+    // （ask 已在 meta 阶段弹窗询问，同意后安全重命名绝不静默覆盖）
+    t.final_name = meta.name;
+    const auto final_path = fs_path(save_dir) / fs_path(meta.name);
+    if (std::filesystem::exists(final_path, ec) && overwrite_policy_ != "overwrite") {
+        const auto alt = unique_target(fs_path(save_dir), meta.name);
+        SCLD_LOG(log_, LogLevel::Info, "file",
+                 "[file_id=" + meta.file_id + "] 同名冲突自动重命名 " + meta.name
+                     + " → " + alt.u8string());
+        t.final_name = alt.u8string();
+    }
     const auto part_path = fs_path(save_dir) / fs_path(meta.file_id + ".part");
     t.out = foundation::fs_open(part_path, "wb");
     if (t.out == nullptr) {
@@ -516,15 +573,31 @@ void FileService::finish_receive(Transfer& t, bool ok, FileFailReason reason) {
         }
     }
     if (ok) {
-        // 完整性校验：分片计数对账（Doc11 §3；CRC32/SHA256 为 V1.0 任务）
+        // 落盘转正（Doc11 §4.2/§4.4）：overwrite 策略显式移除旧文件再 rename
+        // （MSVC rename 不保证替换语义，显式 remove 保证跨平台一致）；
+        // rename 失败回退自动重命名（目标被占用等），仍失败 → Failed
         std::error_code ec;
-        const auto final_path = fs_path(t.save_dir) / fs_path(t.meta.name);
+        const auto final_path = fs_path(t.save_dir) / fs_path(t.final_name);
+        if (overwrite_policy_ == "overwrite" && t.final_name == t.meta.name) {
+            std::filesystem::remove(final_path, ec);
+        }
         std::filesystem::rename(fs_path(part_path), final_path, ec);
         if (ec) {
-            SCLD_LOG(log_, LogLevel::Error, "file",
-                     "[file_id=" + t.meta.file_id + "] rename 失败：" + t.save_dir
-                         + "/" + t.meta.name);
-            ok = false;
+            const auto alt = unique_target(fs_path(t.save_dir), t.final_name);
+            std::error_code ec2;
+            std::filesystem::rename(fs_path(part_path), fs_path(t.save_dir) / alt, ec2);
+            if (ec2) {
+                SCLD_LOG(log_, LogLevel::Error, "file",
+                         "[file_id=" + t.meta.file_id + "] rename 失败：" + t.save_dir
+                             + "/" + t.final_name);
+                ok = false;
+            }
+            else {
+                SCLD_LOG(log_, LogLevel::Warn, "file",
+                         "[file_id=" + t.meta.file_id + "] rename 失败已回退重命名 "
+                             + t.final_name + " → " + alt.u8string());
+                t.final_name = alt.u8string();
+            }
         }
     }
     if (!ok) {
@@ -535,7 +608,7 @@ void FileService::finish_receive(Transfer& t, bool ok, FileFailReason reason) {
         if (ok) {
             Evt_FileDone e;
             e.file_id = t.meta.file_id;
-            e.name = t.meta.name;
+            e.name = t.final_name;  // 实际落盘名（冲突重命名后 UI 展示真名）
             e.dir = FileDir::Recv;
             e.timestamp_us = now_us();
             bus_->publish(e);

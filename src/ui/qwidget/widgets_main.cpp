@@ -208,6 +208,7 @@ int main(int argc, char* argv[]) {
     files->set_chunk_size(static_cast<uint32_t>(cfg.chunk_size_kb));
     files->set_confirm_enabled(cfg.confirm_before_transfer);
     files->set_safe_path(cfg.file_safe_path);
+    files->set_overwrite_policy(cfg.overwrite);
     files->set_save_dir(cfg.save_path.empty()
                             ? (QCoreApplication::applicationDirPath().toStdString()
                                + "/received")
@@ -369,6 +370,13 @@ int main(int argc, char* argv[]) {
         win.settingsPage(),
         &sc::localdesk::ui::SettingsPage::unattEnabledChanged, &tray,
         [&tray](bool on) { tray.set_unattended_badge(on); });
+    // 同名覆盖策略变更 → FileService 热生效（Doc11 §4.2）
+    QObject::connect(
+        win.settingsPage(),
+        &sc::localdesk::ui::SettingsPage::overwritePolicyChanged, &win,
+        [files](const QString& policy) {
+            files->set_overwrite_policy(policy.toStdString());
+        });
     // 托盘三键接线（Doc02 §5.4）：显示主窗 / 停止服务 toggle / 退出程序
     // 显示主窗必须先清 minimized 位再 show：show() 对最小化窗口不还原
     //（经典 Qt 缺陷），保留 maximized/fullscreen 其余状态位
