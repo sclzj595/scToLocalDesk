@@ -70,6 +70,11 @@ public:
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    /// 关窗缩托盘（PRD §5.4 / Doc17 app.minimize_to_tray）：true 时隐藏窗口
+    /// 服务常驻，托盘「退出程序」为唯一退出通道；false 保持系统默认
+    void closeEvent(QCloseEvent* e) override;
+    /// 最小化缩托盘：同一开关控制，隐藏而非驻留任务栏
+    void changeEvent(QEvent* e) override;
 
 private:
     QWidget* makeTitleBar();
@@ -90,6 +95,7 @@ private:
     QTimer* toastTimer_{nullptr};
     TrustStore* trust_{nullptr};
     RemoteSessionService* sessions_{nullptr};
+    AppConfig* cfg_{nullptr};  // 关窗/最小化缩托盘开关（app.minimize_to_tray）
     SettingsPage* settingsPage_{nullptr};
     DeviceListPage* devList_{nullptr};
     RemoteViewPage* remoteView_{nullptr};

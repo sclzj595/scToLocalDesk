@@ -5,6 +5,7 @@
 #include "main_window.h"
 
 #include <QApplication>
+#include <QCloseEvent>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -18,6 +19,7 @@
 #include "glass_theme.h"
 #include "pages/pages.h"
 #include "popups/connect_confirm_dialog.h"
+#include "service/app_config.hpp"
 #include "service/trust_store.hpp"
 #include "service/remote_session_service.hpp"
 
@@ -464,9 +466,28 @@ void MainWindow::setTrustStore(TrustStore* ts) {
 }
 
 void MainWindow::set_config_store(foundation::IniConfig* ini, AppConfig* cfg) {
+    cfg_ = cfg;  // 关窗/最小化缩托盘开关消费（closeEvent/changeEvent）
     if (settingsPage_ != nullptr) {
         settingsPage_->bind_config(ini, cfg);
     }
+}
+
+void MainWindow::closeEvent(QCloseEvent* e) {
+    if (cfg_ != nullptr && cfg_->minimize_to_tray) {
+        hide();  // 缩入托盘：服务常驻心跳/监听，托盘「退出程序」唯一退出通道
+        e->ignore();
+        return;
+    }
+    FramelessWindow::closeEvent(e);
+}
+
+void MainWindow::changeEvent(QEvent* e) {
+    if (e->type() == QEvent::WindowStateChange
+        && (windowState() & Qt::WindowMinimized) != 0 && cfg_ != nullptr
+        && cfg_->minimize_to_tray) {
+        hide();  // 最小化缩托盘（PRD §5.4）：不驻留任务栏
+    }
+    FramelessWindow::changeEvent(e);
 }
 
 void MainWindow::showToast(const QString& text) {

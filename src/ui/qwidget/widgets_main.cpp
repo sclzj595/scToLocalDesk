@@ -362,9 +362,14 @@ int main(int argc, char* argv[]) {
     sc::localdesk::platform::TrayController tray;
     tray.show();
     // 托盘三键接线（Doc02 §5.4）：显示主窗 / 停止服务 toggle / 退出程序
+    // 显示主窗必须先清 minimized 位再 show：show() 对最小化窗口不还原
+    //（经典 Qt 缺陷），保留 maximized/fullscreen 其余状态位
     QObject::connect(
         &tray, &sc::localdesk::platform::TrayController::showMainRequested, &tray,
         [&win] {
+            if ((win.windowState() & Qt::WindowMinimized) != 0) {
+                win.setWindowState(win.windowState() & ~Qt::WindowMinimized);
+            }
             win.show();
             win.raise();
             win.activateWindow();

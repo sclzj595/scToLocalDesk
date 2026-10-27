@@ -56,6 +56,16 @@ ApplicationWindow {
         }
     }
 
+    // 关窗缩托盘（PRD §5.4 / Doc17 app.minimize_to_tray）：true 时隐藏窗口
+    // 服务常驻（心跳/监听不停），托盘「退出程序」为唯一退出通道；
+    // false 时接受关闭走系统默认。与 Widgets 版 closeEvent 口径一致
+    onClosing: (close) => {
+        if (ScLocaldesk.settingsValue("app.minimize_to_tray") === "true") {
+            close.accepted = false;
+            window.hide();
+        }
+    }
+
     // 主窗口圆角容器（Doc13 §1.2：20px）
     Rectangle {
         id: shell

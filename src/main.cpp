@@ -554,28 +554,31 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    // 单实例唤起：二次启动把首实例主窗带到前台（可能收拢在托盘）
+    // 单实例唤起：二次启动把首实例主窗带到前台（可能收拢在托盘或最小化）；
+    // show() 对最小化窗口不还原，须先清 minimized 位（保留 maximized 等状态）
     QQuickWindow* main_win =
         qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
+    const auto raise_main = [main_win] {
+        if (main_win == nullptr) {
+            return;
+        }
+        if ((main_win->windowStates() & Qt::WindowMinimized) != 0) {
+            main_win->setWindowStates(main_win->windowStates()
+                                      & ~Qt::WindowMinimized);
+        }
+        main_win->show();
+        main_win->raise();
+        main_win->requestActivate();
+    };
     if (main_win != nullptr) {
-        guard.set_raise_callback([main_win] {
-            main_win->show();
-            main_win->raise();
-            main_win->requestActivate();
-        });
+        guard.set_raise_callback(raise_main);
     }
 
     // 托盘（显示窗口 / 停止服务 / 退出，Doc02 §5.4）
     platform::TrayController tray;
     tray.show();
     QObject::connect(&tray, &platform::TrayController::showMainRequested, &tray,
-                     [main_win] {
-                         if (main_win != nullptr) {
-                             main_win->show();
-                             main_win->raise();
-                             main_win->requestActivate();
-                         }
-                     });
+                     raise_main);
     // 停止服务 toggle（Doc02 §5.4）：停监听+停心跳；会话中先礼貌断开
     //（close_session 内部 Idle 直返，无会话时安全）
     bool service_stopped = false;
