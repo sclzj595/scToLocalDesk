@@ -104,4 +104,29 @@ void CrashReporter::crash_for_test() {
 
 }  // namespace sc::localdesk::platform
 
+#else
+// ============================================================
+// Linux（Doc18 §8-3）：崩溃现场由系统 core dump 承接
+// （systemd-coredump / ulimit -c unlimited；apport 落
+// /var/crash），进程内不做崩溃态采集——崩溃态堆不可信。
+// install 仅确保目录存在（dump_dir 供用户从 core 文件归档）。
+// ============================================================
+#include <cstdio>
+
+namespace sc::localdesk::platform {
+
+bool CrashReporter::install(const std::filesystem::path& dump_dir) {
+    std::error_code ec;
+    std::filesystem::create_directories(dump_dir, ec);
+    return !ec;
+}
+
+void CrashReporter::crash_for_test() {
+    // NPE：SIGSEGV，交系统 core dump 承接（进程无自定义 handler）
+    volatile int* p = nullptr;
+    *p = 1;
+}
+
+}  // namespace sc::localdesk::platform
+
 #endif  // _WIN32

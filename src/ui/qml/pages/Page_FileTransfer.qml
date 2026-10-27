@@ -9,6 +9,7 @@ import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import ".."
+import ScLocaldesk 1.0
 
 Item {
     id: root

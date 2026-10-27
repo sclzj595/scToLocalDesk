@@ -281,9 +281,11 @@ int main(int argc, char* argv[]) {
     sessions->set_file_service(files);
 
     // 被控端推流管线（编码器按 session.encoder 选择：ffmpeg | raw，
-    // FFmpeg 未编入时自动回落 raw 直通；采集器 Linux 侧 P6 落位，暂不装配）
+    // FFmpeg 未编入时自动回落 raw 直通；Linux V1.0 仅控制端（Doc18 §8-2）
+    // ——stream 恒 null，托盘水印接线做空判，set_stream_service 不调）
+    std::shared_ptr<ScreenStreamService> stream;
 #if defined(_WIN32)
-    auto stream = std::make_shared<ScreenStreamService>(bus, logger);
+    stream = std::make_shared<ScreenStreamService>(bus, logger);
 #   if SCLD_HAS_FFMPEG
     if (cfg.encoder == "raw") {
         stream->set_source(std::make_shared<GdiCapturer>(), std::make_shared<RawEncoder>());
@@ -629,8 +631,8 @@ int main(int argc, char* argv[]) {
         auto wm_timer = new QTimer(&tray);
         wm_timer->setInterval(60 * 1000);
         QObject::connect(wm_timer, &QTimer::timeout, [&tray, &stream, current_peer] {
-            if (current_peer->isEmpty()) {
-                return;
+            if (stream == nullptr || current_peer->isEmpty()) {
+                return;  // Linux V1.0 控制端无推流（Doc18 §8-2）
             }
             const QImage wm = platform::render_session_watermark(*current_peer);
             if (!wm.isNull()) {

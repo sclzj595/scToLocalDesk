@@ -65,6 +65,11 @@ target_sources(sc_localdesk_core PRIVATE ${SCLD_CRYPTO_SOURCES})
 
 if(WIN32)
     target_link_libraries(sc_localdesk_core PUBLIC bcrypt)
+else()
+    # Linux/macOS：OpenSSL 后端实现编入即必须链接（头探测只证明可编译；
+    # Debian 拆包 libssl-dev 含头，运行时符号在 libcrypto）
+    find_package(OpenSSL REQUIRED)
+    target_link_libraries(sc_localdesk_core PUBLIC OpenSSL::Crypto)
 endif()
 
 target_include_directories(sc_localdesk_core
@@ -223,11 +228,13 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
                 src/platform/win32/crash_reporter.cpp
             )
         else()
-            # Linux（Doc18 P6）：system_info 走 POSIX 实现；注入器/自启动为占位
+            # Linux（Doc18 P6）：system_info 走 POSIX 实现；注入器/自启动为占位；
+            # CrashReporter 用 core-dump 承接存根（同文件 #else 分支）
             target_sources(scToLocalDesk PRIVATE
                 src/platform/linux/system_info_linux.cpp
                 src/platform/linux/input_injector_linux.cpp
                 src/platform/linux/auto_start_linux.cpp
+                src/platform/win32/crash_reporter.cpp
             )
         endif()
         target_compile_definitions(scToLocalDesk PRIVATE

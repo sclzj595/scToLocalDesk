@@ -79,17 +79,18 @@ public:
         EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
         bool ok = ctx != nullptr
                && EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, key_.data(), iv) == 1;
-        int out_len = 0;
+        int pt_len = 0;  // Update 输出长度（Final_ex 会覆写 out 参数，勿复用同一变量）
         ok = ok && (ct_len == 0
-                    || EVP_DecryptUpdate(ctx, out.data(), &out_len, ct, ct_len) == 1);
+                    || EVP_DecryptUpdate(ctx, out.data(), &pt_len, ct, ct_len) == 1);
         ok = ok && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16,
                                        const_cast<uint8_t*>(tag)) == 1;
-        ok = ok && EVP_DecryptFinal_ex(ctx, out.data() + out_len, &out_len) == 1;
+        int fin_len = 0;
+        ok = ok && EVP_DecryptFinal_ex(ctx, out.data() + pt_len, &fin_len) == 1;
         EVP_CIPHER_CTX_free(ctx);
         if (!ok) {
             return false;  // tag 校验失败 = 数据被篡改
         }
-        plain.assign(out.begin(), out.begin() + out_len);
+        plain.assign(out.begin(), out.begin() + pt_len + fin_len);
         return true;
     }
 
