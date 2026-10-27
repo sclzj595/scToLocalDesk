@@ -4,6 +4,7 @@
 // ============================================================
 #include "service/alias_service.hpp"
 
+#include <algorithm>
 #include <chrono>
 
 #include "core/events.hpp"
@@ -212,20 +213,50 @@ void AliasService::set_offline_timeout(int64_t timeout_us) {
 }
 
 void AliasService::set_static_map(const std::vector<DeviceInfo>& table) {
-    std::lock_guard<std::mutex> lk(mtx_);
-    // replace 语义：先清全部旧静态条目（热更新删除条目需生效），再插入新表
-    for (const auto& alias : static_set_) {
-        table_.erase(alias);
-    }
-    static_set_.clear();
-    for (const auto& dev : table) {
-        if (!self_alias_.empty() && dev.alias == self_alias_) {
-            continue;  // 自滤：静态表手填本机别名不入列表（Doc07 §5 同口径）
+    // 事件一律锁外发布（同 upsert_device）：订阅方回查本服务，锁内 publish 重入死锁
+    std::vector<Evt_DeviceOnline> added;
+    std::vector<std::string> removed;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        // replace 语义：先清全部旧静态条目（热更新删除条目需生效），再插入新表
+        for (const auto& alias : static_set_) {
+            const bool still =
+                std::any_of(table.begin(), table.end(),
+                            [&alias](const DeviceInfo& d) { return d.alias == alias; });
+            if (!still) {
+                removed.push_back(alias);
+            }
+            table_.erase(alias);
         }
-        DeviceInfo info = dev;
-        info.last_seen_us = now_us();  // 静态条目视为常在（Doc07 §7）
-        table_.insert_or_assign(dev.alias, std::move(info));
-        static_set_.insert(dev.alias);
+        static_set_.clear();
+        for (const auto& dev : table) {
+            if (!self_alias_.empty() && dev.alias == self_alias_) {
+                continue;  // 自滤：静态表手填本机别名不入列表（Doc07 §5 同口径）
+            }
+            const auto it = table_.find(dev.alias);
+            const bool is_new = it == table_.end() || it->second.ip != dev.ip
+                             || it->second.port != dev.port;
+            DeviceInfo info = dev;
+            info.last_seen_us = now_us();  // 静态条目视为常在（Doc07 §7）
+            table_.insert_or_assign(dev.alias, std::move(info));
+            static_set_.insert(dev.alias);
+            if (is_new) {
+                added.push_back(make_online_evt(dev));  // 静态条目进设备列表（UI 事件驱动）
+            }
+        }
+    }
+    for (const auto& e : added) {
+        SCLD_LOG(log_, LogLevel::Info, "discovery",
+                 "[alias=" + e.device_alias + "] 静态映射设备上线 ip=" + e.ip);
+        bus_->publish(e);
+    }
+    for (const auto& alias : removed) {
+        Evt_DeviceOffline e;
+        e.device_alias = alias;
+        e.timestamp_us = now_us();
+        bus_->publish(e);
+        SCLD_LOG(log_, LogLevel::Info, "discovery",
+                 "[alias=" + alias + "] 静态映射条目已移除");
     }
 }
 
