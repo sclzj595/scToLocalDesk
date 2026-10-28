@@ -182,6 +182,10 @@ public:
     /// 是否可发起新会话（PRD P7 防重复）：单会话红线，Idle 才可发起
     bool can_start_control() const;
 
+    /// 本端是否控制端（画面页空态分流：Controller 等画面 /
+    /// Controlled 被控提示）；仅 Running 期有实义，Idle 恒 false
+    bool is_controller() const { return role_ == Role::Controller; }
+
     std::shared_ptr<ITransport> transport_;
     std::shared_ptr<IAuthenticator> manual_auth_;
     std::shared_ptr<UnattendedPasswordAuthenticator> unattended_auth_;

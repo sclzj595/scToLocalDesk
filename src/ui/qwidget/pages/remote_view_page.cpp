@@ -53,8 +53,17 @@ void RemoteViewPage::on_frame(const QImage& img) {
     update();  // 触发 paintEvent 重画
 }
 
+void RemoteViewPage::on_session_started(const QString& alias) {
+    session_active_ = true;
+    peer_ = alias;
+    is_controller_ = sessions_ == nullptr || sessions_->is_controller();
+    toolbar_->setVisible(true);  // 无帧会话也恢复（断开必须可用，Doc16 §2.6）
+    update();
+}
+
 void RemoteViewPage::on_session_closed() {
     frame_ = QImage();
+    session_active_ = false;
     toolbar_->hide();
     update();
 }
@@ -64,6 +73,20 @@ void RemoteViewPage::paintEvent(QPaintEvent*) {
     p.fillRect(rect(), QColor(0, 0, 0));
     if (frame_.isNull()) {
         p.setPen(QColor(0x66, 0x66, 0x66));
+        // 空态三分支（与 QML Page_RemoteView 同口径）：无会话占位 /
+        // 控制端等画面 / 被控端提示被控中（会话活着但无帧 ≠ 无会话）
+        if (session_active_) {
+            if (is_controller_) {
+                p.drawText(rect(), Qt::AlignCenter,
+                           QStringLiteral("已连接 %1，等待对方画面…\n（对方未开启画面共享或对方暂无采集能力）")
+                               .arg(peer_));
+            }
+            else {
+                p.drawText(rect(), Qt::AlignCenter,
+                           QStringLiteral("正在被 %1 远程控制").arg(peer_));
+            }
+            return;
+        }
         p.drawText(rect(), Qt::AlignCenter,
                    QStringLiteral("暂未进行远程控制\n从设备列表或连接码页发起会话后，画面将显示在此处"));
         return;

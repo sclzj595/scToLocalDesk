@@ -161,6 +161,10 @@ public slots:
     /// 解码管线输出（queued 跨线程；有帧即走画面分支，无帧走占位文案）
     void on_frame(const QImage& img);
 
+    /// 会话建立（widgets_main 接 Evt_SessionStart）：快照角色/对端 +
+    /// 恢复工具条——无帧会话也必须能断开（控制端无画面场景，实战踩坑）
+    void on_session_started(const QString& alias);
+
     /// 会话关闭复位：清帧回空态、隐藏工具条（widgets_main 接 Evt_SessionClosed）
     void on_session_closed();
 
@@ -179,6 +183,9 @@ private:
     QWidget* toolbar_{nullptr};
     QImage frame_;
     RemoteSessionService* sessions_{nullptr};
+    bool session_active_{false};  ///< 会话进行中（与有帧解耦：无帧也可断开）
+    bool is_controller_{true};    ///< 本端角色（空态文案分流）
+    QString peer_;                ///< 对端别名（空态文案展示）
 };
 
 /// 每行控件引用（QHash 值需完整类型）

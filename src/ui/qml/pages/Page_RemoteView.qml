@@ -17,14 +17,20 @@ Item {
     /// 会话生命周期（MainWindow 桥接 ScLocaldesk.sessionStarted/Closed）：
     /// frameSize 在会话关闭后保持末帧，须叠加本状态才能正确回空态
     property bool sessionActive: false
+    /// 本端角色 + 对端别名（onSessionStarted 快照）：空态文案分流——
+    /// 控制端无帧（对方未开画面/无采集）≠ 被控端（提示被控中）
+    property bool imController: true
+    property string peerAlias: ""
 
     /// 会话中判定：有帧（frameSize 非 0）且会话未关闭
     readonly property bool inSession: sessionActive && VideoPipeline.frameSize.width > 0
 
     Connections {
         target: ScLocaldesk
-        function onSessionStarted() {
+        function onSessionStarted(alias) {
             root.sessionActive = true;
+            root.peerAlias = alias;
+            root.imController = ScLocaldesk.isController();
         }
         function onSessionClosed() {
             root.sessionActive = false;
@@ -43,11 +49,16 @@ Item {
             pipeline: VideoPipeline
         }
 
-        // 无会话空态：无帧时的占位提示（禁止无提示黑屏）
+        // 空态三分支（禁止无提示黑屏）：无会话占位 / 控制端等画面 /
+        // 被控端提示被控中（会话活着但无帧 ≠ 无会话）
         Text {
             anchors.centerIn: parent
             visible: !root.inSession
-            text: qsTr("暂未进行远程控制\n从设备列表或连接码页发起会话后，画面将显示在此处")
+            text: !root.sessionActive
+                  ? qsTr("暂未进行远程控制\n从设备列表或连接码页发起会话后，画面将显示在此处")
+                  : root.imController
+                      ? qsTr("已连接 %1，等待对方画面…\n（对方未开启画面共享或对方暂无采集能力）").arg(root.peerAlias)
+                      : qsTr("正在被 %1 远程控制").arg(root.peerAlias)
             horizontalAlignment: Text.AlignHCenter
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
@@ -69,12 +80,12 @@ Item {
         }
 
         // 底部悬浮工具条：半透底 + 描边（内容区禁模糊，Doc13 红线2）；
-        // 无会话隐藏（断开按钮在无会话时不可用）
+        // 会话期恒显（无帧会话也必须能断开，Doc16 §2.6 一键断开红线）
         Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 20
-            visible: root.inSession
+            visible: root.sessionActive
             width: toolRow.implicitWidth + 32
             height: 44
             radius: Theme.cardRadius

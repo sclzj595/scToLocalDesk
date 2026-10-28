@@ -69,6 +69,9 @@ public:
     Q_INVOKABLE void cancelConnect();
     /// 最近一次成功发起的别名（重连按钮数据源）；无则空
     Q_INVOKABLE QString lastPeerAlias() const;
+    /// 本端是否控制端（画面页空态分流：Controller 等画面 / Controlled
+    /// 被控提示）；仅 Running 期有实义，无会话恒 false
+    Q_INVOKABLE bool isController() const;
     bool sessionBusy() const;
     Q_INVOKABLE bool startControl(const QString& alias, bool unattended,
                                   const QString& password);

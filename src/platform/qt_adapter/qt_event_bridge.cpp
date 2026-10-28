@@ -224,6 +224,10 @@ void QtEventBridge::approve() {
     }
 }
 
+bool QtEventBridge::isController() const {
+    return sessions_ != nullptr && sessions_->is_controller();
+}
+
 void QtEventBridge::reject() {
     if (sessions_ != nullptr) {
         sessions_->reject();

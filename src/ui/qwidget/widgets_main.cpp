@@ -520,6 +520,15 @@ int main(int argc, char* argv[]) {
             QMetaObject::invokeMethod(rv, &sc::localdesk::ui::RemoteViewPage::on_session_closed,
                                       Qt::QueuedConnection);
         });
+        // 会话建立：角色/对端快照 + 工具条恢复（无帧会话断开可用，实战踩坑）
+        bus->subscribe<Evt_SessionStart>([rv](const Evt_SessionStart& e) {
+            QMetaObject::invokeMethod(
+                rv,
+                [rv, alias = QString::fromStdString(e.device_alias)] {
+                    rv->on_session_started(alias);
+                },
+                Qt::QueuedConnection);
+        });
     }
 
     // 文件传输接线（Doc18 §5）：Evt_File* → 行卡 + 发送入口 + 接收确认
