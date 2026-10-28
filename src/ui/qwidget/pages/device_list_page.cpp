@@ -336,12 +336,11 @@ bool DeviceListPage::eventFilter(QObject* watched, QEvent* e) {
     auto* card = qobject_cast<QFrame*>(watched);
     if (card != nullptr && card->property("devCode").isValid()) {
         if (e->type() == QEvent::MouseButtonRelease) {
+            // 无对端连接码（纯静态条目）也可点（对齐 QML）：连接走 alias 寻址
             const QString code = card->property("devCode").toString();
-            if (!code.isEmpty()) {  // 旧包无码不可点（对齐 QML enabled 守卫）
-                emit connectRequested(card->property("devName").toString(),
-                                      code,
-                                      card->property("devTrusted").toBool());
-            }
+            emit connectRequested(card->property("devName").toString(),
+                                  code,
+                                  card->property("devTrusted").toBool());
         }
     }
     return QWidget::eventFilter(watched, e);

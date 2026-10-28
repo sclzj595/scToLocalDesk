@@ -48,7 +48,14 @@ std::vector<DeviceInfo> parse_static_map(std::string_view text) {
             || eq == 0 || colon < eq + 2 || colon + 2 > item.size()) {
             continue;  // 畸形条目跳过（Doc07 §7）
         }
-        const auto port_str = item.substr(colon + 1);
+        // 端口段到第二冒号（可选 code 段分隔符）或串尾：
+        // alias=ip:port 或 alias=ip:port:code（第三段 = 9 位连接码，静态条目
+        // 直显对端码且信任缓存可用；心跳可达时心跳码优先覆盖）
+        auto port_end = item.find(':', colon + 1);
+        if (port_end == std::string_view::npos) {
+            port_end = item.size();
+        }
+        const auto port_str = item.substr(colon + 1, port_end - colon - 1);
         if (port_str.empty()
             || port_str.find_first_not_of("0123456789") != std::string_view::npos) {
             continue;
@@ -66,6 +73,21 @@ std::vector<DeviceInfo> parse_static_map(std::string_view text) {
         dev.alias.assign(item.substr(0, eq));
         dev.ip.assign(item.substr(eq + 1, colon - eq - 1));
         dev.port = static_cast<uint16_t>(port);
+        if (port_end < item.size()) {
+            const auto code_str = item.substr(port_end + 1);
+            if (!code_str.empty() && code_str.find_first_not_of("0123456789")
+                                        == std::string_view::npos) {
+                uint32_t code = 0;
+                for (const char c : code_str) {
+                    code = code * 10 + static_cast<uint32_t>(c - '0');
+                    if (code > 999999999u) {
+                        code = 0;
+                        break;
+                    }
+                }
+                dev.code = code;  // 非法 code 静默降级为 0（无码可点但弹窗提示待交换）
+            }
+        }
         if (!dev.alias.empty() && !dev.ip.empty() && dev.port != 0) {
             out.push_back(std::move(dev));
         }

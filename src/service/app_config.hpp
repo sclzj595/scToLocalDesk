@@ -26,7 +26,7 @@ struct AppConfig {
     // [discovery]
     bool multicast_enabled{true};
     std::string multicast_addr{"239.255.88.99"};
-    std::string static_map;  // alias=ip:port;...
+    std::string static_map;  // alias=ip:port[:code];...（code 可选=对端 9 位连接码）
     // [session]
     std::string encoder{"mjpeg"};
     std::string capture{"auto"};

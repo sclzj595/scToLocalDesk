@@ -91,7 +91,8 @@ ConnectConfirmDialog::ConnectConfirmDialog(QWidget* parent) : QDialog(parent) {
 void ConnectConfirmDialog::setPeer(const QString& alias, const QString& ip,
                                    const QString& code) {
     text_->setText(alias + tr(" 请求远程协助本机"));
-    codeLbl_->setText(code);
+    // 静态映射条目连接码未交换时兜底提示（连接走 alias 不受阻）
+    codeLbl_->setText(code.isEmpty() ? tr("待连接后交换") : code);
     ip_->setText(QStringLiteral("IP：") + ip);
 }
 

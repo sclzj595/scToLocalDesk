@@ -325,7 +325,8 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    enabled: model.codeRaw !== ""
+                    // 无对端连接码（纯静态条目）也可点：连接走 alias 寻址，
+                    // 码仅用于信任核对，弹窗对空码显示「待连接后交换」
                     onClicked: root.connectRequested(model.name, model.codeRaw, model.trusted)
                 }
             }

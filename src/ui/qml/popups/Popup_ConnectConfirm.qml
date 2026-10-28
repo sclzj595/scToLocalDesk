@@ -74,12 +74,13 @@ Popup {
                     Layout.fillWidth: true
                 }
                 Text {
-                    text: root.peerCode
+                    // 静态映射条目连接码未交换时兜底提示（连接走 alias 不受阻）
+                    text: root.peerCode === "" ? qsTr("待连接后交换") : root.peerCode
                     font.family: Theme.fontFamily
-                    font.pixelSize: 18
+                    font.pixelSize: root.peerCode === "" ? 13 : 18
                     font.weight: Font.DemiBold
                     font.letterSpacing: 2
-                    color: Theme.primary
+                    color: root.peerCode === "" ? Theme.textHint : Theme.primary
                 }
             }
         }
