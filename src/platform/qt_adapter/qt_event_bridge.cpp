@@ -204,7 +204,11 @@ QString QtEventBridge::deviceCode(const QString& alias) const {
     }
     for (const auto& dev : aliases_->online_devices()) {
         if (QString::fromStdString(dev.alias) == alias) {
-            return QString::fromStdString(IdService::format_code(dev.code));
+            // code==0（纯静态条目未交换码）返回空，勿落 format_code(0)="000000000"
+            // 垃圾码进信任缓存（实战踩坑：07:55 入站确认存出 000 000 000）
+            return dev.code == 0
+                       ? QString()
+                       : QString::fromStdString(IdService::format_code(dev.code));
         }
     }
     return {};

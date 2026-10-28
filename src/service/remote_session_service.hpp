@@ -47,6 +47,7 @@ struct MouseKeyBody;
 
 /// 人工确认弹窗超时（PRD 确认三件套）：超时自动拒绝，对端收 REJECT(Timeout)
 constexpr int kConfirmTimeoutSec = 30;
+constexpr int kOutboundWaitSec = 35;  // 控制端等确认上限：>对端 30s 看门狗，让其 REJECT 先到
 
 // 协议枚举直接以短名暴露给服务层
 using protocol::CloseReason;
@@ -166,6 +167,10 @@ private:
     /// 武装确认看门狗（PRD 确认三件套）：kConfirmTimeoutSec 内弹窗未消费
     /// 则自动拒绝。前置：调用方不持锁（内部 join 旧线程需让路）
     void arm_confirm_watchdog(uint64_t my_seq);
+    /// 武装控制端出站看门狗：发起协助后 kOutboundWaitSec 内未收到
+    /// Approved/Rejected（对端忙/离线/REJECT 丢失）则复位 Idle，
+    /// 根治「没连接但一直提示有会话」卡死（2026-10-28 双机实战踩坑）
+    void arm_outbound_watchdog(uint64_t my_seq);
 
 public:
     /// 控制端取消连接（PRD P7）：拨号/等确认期可取消；Running 不响应

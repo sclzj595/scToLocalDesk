@@ -194,6 +194,17 @@ bool RemoteSessionService::connect_to_peer(const std::string& alias, bool unatte
         SCLD_LOG(log_, LogLevel::Warn, "session", "[alias=" + alias + "] 内网未找到该设备");
         return false;
     }
+    // 自连拦截二道防线（别名口径，先于 IP 判定）：连接名=本机（如信任缓存
+    // 存了自己的历史垃圾条目）直接拒绝，不依赖 IP/端口推导
+    if (alias == aliases_->self_alias()) {
+        SCLD_LOG(log_, LogLevel::Warn, "session",
+                 "[alias=" + alias + "] 目标为本机别名，拒绝连接");
+        Evt_ConnectDenied e;
+        e.device_alias = alias;
+        e.reason = "不允许连接本机";
+        bus_->publish(e);
+        return false;
+    }
     // 自连拦截（PRD 连接黑名单）：目标 IP 属本机网卡集合 且 端口=本机监听端口
     // → 本地拒绝不发网络包；同机双实例（端口不同）/虚拟机均放行
     if (self_ip_checker_ && self_ip_checker_(peer.ip, peer.port)) {
@@ -232,6 +243,17 @@ bool RemoteSessionService::connect_to_peer(const std::string& alias, bool unatte
         e.timestamp_us = now_us();
         bus_->publish(e);
     }
+    // 出站看门狗：拨号失败/对端忙/REJECT 丢失 → 35s 复位 Idle，
+    // 根治「明明没连接但一直提示有会话」状态卡死（双机实战踩坑）。
+    // 换代次须在锁内，join 旧线程须在锁外（旧线程退出前要抢锁查 pred，
+    // 持锁 join = 等自己放锁，死锁）
+    uint64_t my_seq = 0;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        ++confirm_seq_;  // 作废旧代次看门狗
+        my_seq = confirm_seq_;
+    }
+    arm_outbound_watchdog(my_seq);
     return true;
 }
 
@@ -964,6 +986,35 @@ void RemoteSessionService::arm_confirm_watchdog(uint64_t my_seq) {
             Evt_ConnectRequestTimeout e;
             e.timestamp_us = now_us();
             bus_->publish(e);  // UI 关弹窗 + 提示
+        }
+    });
+}
+
+void RemoteSessionService::arm_outbound_watchdog(uint64_t my_seq) {
+    // 前置：调用方不持锁。代次已由调用方在锁内递增，旧看门狗 pred 已成立，
+    // 此处锁外 notify+join 让其自然退出，再拉起新线程
+    confirm_cv_.notify_all();
+    if (confirm_watchdog_.joinable()) {
+        confirm_watchdog_.join();
+    }
+    confirm_watchdog_ = std::thread([this, my_seq] {
+        std::unique_lock<std::mutex> lk(mtx_);
+        // Approved/Rejected/取消/新发起任一发生（seq 变更或离开 WaitForUser）即退
+        const bool consumed = confirm_cv_.wait_for(
+            lk, std::chrono::seconds(kOutboundWaitSec), [this, my_seq] {
+                return confirm_seq_ != my_seq || state_ != SessState::WaitForUser;
+            });
+        if (consumed || state_ != SessState::WaitForUser) {
+            return;
+        }
+        reset_to_idle();  // 持锁调用安全（stop 均非阻塞）
+        SCLD_LOG(log_, LogLevel::Warn, "session",
+                 "等待对方确认 " + std::to_string(kOutboundWaitSec)
+                     + "s 超时（对端忙或离线），连接已取消");
+        if (bus_ != nullptr) {
+            Evt_ConnectRequestTimeout e;
+            e.timestamp_us = now_us();
+            bus_->publish(e);  // UI 收连接状态条 + 提示
         }
     });
 }
