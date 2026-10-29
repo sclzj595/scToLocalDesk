@@ -15,6 +15,14 @@ RemoteInputItem::RemoteInputItem(QQuickItem* parent) : QQuickItem(parent) {
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton | Qt::MiddleButton);
     setAcceptTouchEvents(false);
     setKeepMouseGrab(true);
+    move_timer_.setSingleShot(true);
+    move_timer_.setInterval(10);
+    QObject::connect(&move_timer_, &QTimer::timeout, this, [this] {
+        if (move_pending_) {
+            move_pending_ = false;
+            send_mouse(MouseAction::Move, pending_move_);
+        }
+    });
 }
 
 void RemoteInputItem::send_mouse(MouseAction action, const QPointF& local, int wheel) {
@@ -36,7 +44,12 @@ void RemoteInputItem::send_key(int qt_key, bool down) {
 }
 
 void RemoteInputItem::hoverMoveEvent(QHoverEvent* e) {
-    send_mouse(MouseAction::Move, e->position());
+    // 节流合并：只记最新坐标，10ms 定时器统一发（中间坐标无意义，丢弃）
+    pending_move_ = e->position();
+    if (!move_pending_) {
+        move_pending_ = true;
+        move_timer_.start();
+    }
     e->accept();
 }
 

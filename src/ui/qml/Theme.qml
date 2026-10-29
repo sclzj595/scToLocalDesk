@@ -70,6 +70,8 @@ QtObject {
 
     function toggleDark() {
         isDark = !isDark;
+        // C++ 侧 GlassTheme 同步（托盘菜单取色源，qt_tray 双端共用）
+        ScLocaldesk.setUiTheme(isDark);
         // TODO(V1.0): 写回 config.ini appearance.theme（Doc17 §3.1）
     }
 }

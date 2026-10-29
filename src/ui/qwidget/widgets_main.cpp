@@ -37,6 +37,7 @@
         #include "platform/win32/system_info.hpp"
         #include "service/alias_service.hpp"
         #include "service/app_config.hpp"
+        #include "service/blacklist_store.hpp"
         #include "service/file_service.hpp"
         #include "service/id_service.hpp"
         #include "service/input_service.hpp"
@@ -44,16 +45,22 @@
         #include "service/screen_stream_service.hpp"
         #include "service/trust_store.hpp"
 
+        #include "foundation/logger/audit_logger.hpp"
+
         #include "platform/qt_adapter/qt_tray.hpp"
         #include "platform/qt_adapter/watermark_painter.hpp"
         #include "ui/qwidget/glass_theme.h"
         #include "ui/qwidget/main_window.h"
         #include "ui/qwidget/pages/pages.h"
+        #include "ui/qwidget/popups/glass_dialog.hpp"
 
-        #include <QMessageBox>
         #include <QMetaObject>
 
 namespace {
+// 弹窗门面（sc::localdesk::ui::GlassDialog）在本文件以短名调用；
+// 别名仅引入这一个名字，不污染全局
+namespace GlassDialog = sc::localdesk::ui::GlassDialog;
+
 sc::localdesk::foundation::LogLevel parse_log_level(const std::string& s) {
     using sc::localdesk::foundation::LogLevel;
     if (s == "debug") return LogLevel::Debug;
@@ -119,6 +126,17 @@ int main(int argc, char* argv[]) {
         QCoreApplication::applicationDirPath().toStdWString() + L"\\trust.json",
         logger.get());
 
+    // 黑名单（Doc19 §3.4，P0）：exe 旁 blacklist.json，入站命中静默丢弃
+    sc::localdesk::BlacklistStore blacklist_store(
+        QCoreApplication::applicationDirPath().toStdWString() + L"\\blacklist.json",
+        logger.get());
+
+    // 审计分流（Doc19 §6，P0）：logs/audit.log 独立文件，七列固定格式
+    // （时间|本机码|对端码|事件|结果|IP|备注），连接/审批/黑名单/会话起止全量
+    sc::localdesk::foundation::AuditLogger audit_logger(
+        QCoreApplication::applicationDirPath().toStdWString() + L"\\logs\\audit.log",
+        id_service.self_code());
+
     // 发现栈（Doc18 §3.4）：组播心跳 → AliasService 在线表 → 设备页快照对账
     auto bus = std::make_shared<sc::localdesk::foundation::EventBus>();
     auto aliases = std::make_shared<sc::localdesk::AliasService>(bus, logger);
@@ -174,6 +192,8 @@ int main(int argc, char* argv[]) {
     });
     sessions->set_stream_params(cfg.fps, cfg.jpeg_quality);
     sessions->set_trust_store(&trust_store);  // 已信任设备免确认直连（Doc18 §3.2）
+    sessions->set_blacklist(&blacklist_store);  // 黑名单命中静默丢弃（Doc19 §3.4）
+    sessions->set_audit_logger(&audit_logger);  // 审计分流 audit.log（Doc19 §6）
     // 自连拦截（PRD 连接黑名单）：本机网卡 IP 集合 + 本机监听端口双条件
     const std::vector<std::string> local_ips = sys.ips;
     const uint16_t local_port = static_cast<uint16_t>(cfg.ws_port);
@@ -232,15 +252,12 @@ int main(int argc, char* argv[]) {
         QMetaObject::invokeMethod(
             &win,
             [&win, bad_port] {
-                QMessageBox box(QMessageBox::Warning,
-                                QObject::tr("被控监听失败"),
-                                QObject::tr("会话端口 %1 被占用或无法监听，"
-                                               "对方将无法连接本机。\n请在 "
-                                               "设置→网络 修改 WS 端口后重启。")
-                                    .arg(bad_port),
-                                QMessageBox::Ok, &win);
-                box.setWindowFlag(Qt::WindowStaysOnTopHint, true);
-                box.show();  // 非模态：不阻塞主窗口交互
+                GlassDialog::warningNonModalTopmost(
+                    &win, QObject::tr("被控监听失败"),
+                    QObject::tr("会话端口 %1 被占用或无法监听，"
+                                   "对方将无法连接本机。\n请在 "
+                                   "设置→网络 修改 WS 端口后重启。")
+                        .arg(bad_port));
             },
             Qt::QueuedConnection);
     }
@@ -252,7 +269,7 @@ int main(int argc, char* argv[]) {
             [&win, &logger, e] {
                 SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn,
                          "smoke", "connect denied " + e.reason);
-                QMessageBox::warning(&win, QObject::tr("无法发起协助"),
+                GlassDialog::warning(&win, QObject::tr("无法发起协助"),
                                      QString::fromStdString(e.reason));
             },
             Qt::QueuedConnection);
@@ -294,32 +311,10 @@ int main(int argc, char* argv[]) {
                         sessions->approve();
                         return;
                     }
-                    auto* box = new QMessageBox(&win);
-                    box->setAttribute(Qt::WA_DeleteOnClose);
-                    box->setWindowTitle(QObject::tr("连接请求"));
-                    box->setText(e.peer_ip.empty()
-                                     ? QObject::tr("对方请求远程协助本机，是否同意？")
-                                     : QObject::tr("对方（%1）请求远程协助本机，是否同意？")
-                                           .arg(QString::fromStdString(e.peer_ip)));
-                    box->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-                    box->setWindowFlag(Qt::WindowStaysOnTopHint, true);  // PRD 确认三件套：置顶
-                    active_confirm = box;
-                    QObject::connect(box, &QMessageBox::finished, box,
-                                     [sessions, box](int r) {
-                                         if (box == nullptr) {
-                                             return;
-                                         }
-                                         if (r == QMessageBox::Yes) {
-                                             sessions->approve();
-                                         }
-                                         else {
-                                             // 含超时自动拒后的收尾 close()：
-                                             // state 已被看门狗迁移，reject() 幂等
-                                             sessions->reject();
-                                         }
-                                     });
-                    box->show();
-                    QApplication::alert(box);  // 任务栏闪烁（被控端可能无人盯屏幕）
+                    active_confirm = GlassDialog::confirmIncoming(
+                        &win, QString::fromStdString(e.peer_ip),
+                        [sessions] { sessions->approve(); },
+                        [sessions] { sessions->reject(); });
                 },
                 Qt::QueuedConnection);
         });
@@ -343,7 +338,7 @@ int main(int argc, char* argv[]) {
                     SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn,
                              "alias", "别名冲突 alias=" + e.device_alias
                                           + " ip=" + e.conflict_ip);
-                    QMessageBox::warning(
+                    GlassDialog::warning(
                         &win, QObject::tr("别名冲突"),
                         QObject::tr("检测到其他设备使用别名「%1」（%2），"
                                        "请在设置中修改本机连接名")
@@ -353,6 +348,7 @@ int main(int argc, char* argv[]) {
                 Qt::QueuedConnection);
         });
     win.setTrustStore(&trust_store);
+    win.setBlacklistStore(&blacklist_store);  // 设置页黑名单管理（Doc19 §3.4）
     win.set_config_store(&ini, &cfg);
     win.settingsPage()->set_alias_service(aliases.get());  // 静态映射热生效
     win.setSessionService(sessions.get());  // PRD P7：确认后真正发起拨号
@@ -572,7 +568,7 @@ int main(int argc, char* argv[]) {
                                               smoke_file](const Evt_FileMetaReceived& e) {
             QMetaObject::invokeMethod(
                 &win,
-                [files, &logger, smoke_file, e] {
+                [&win, files, &logger, smoke_file, e] {
                     if (smoke_file) {
                         (void)files->accept_pending(e.file_id);
                         SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "smoke",
@@ -581,13 +577,13 @@ int main(int argc, char* argv[]) {
                     }
                     const QString alias = QString::fromStdString(e.device_alias);
                     const QString name = QString::fromStdString(e.name);
-                    auto ret = QMessageBox::question(
-                        nullptr, QObject::tr("文件接收请求"),
-                        QObject::tr("%1 向本机发送文件：\n%2（%3 字节）\n是否接收？")
-                            .arg(alias.isEmpty() ? QObject::tr("对方") : alias, name)
-                            .arg(e.size),
-                        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-                    if (ret == QMessageBox::Yes) {
+                    // parent 挂主窗（门面修复点）：原 nullptr 使模态框
+                    // 不以主窗为父，层叠时可能落到主窗后面
+                    if (GlassDialog::question(
+                            &win, QObject::tr("文件接收请求"),
+                            QObject::tr("%1 向本机发送文件：\n%2（%3 字节）\n是否接收？")
+                                .arg(alias.isEmpty() ? QObject::tr("对方") : alias, name)
+                                .arg(e.size))) {
                         (void)files->accept_pending(e.file_id);
                         SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "file",
                                  "接收确认 file_id=" + e.file_id);

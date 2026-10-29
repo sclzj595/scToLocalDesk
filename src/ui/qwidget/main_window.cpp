@@ -12,6 +12,7 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QStackedWidget>
+#include <QStyle>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -19,6 +20,7 @@
 #include "glass_theme.h"
 #include "pages/pages.h"
 #include "popups/connect_confirm_dialog.h"
+#include "popups/glass_dialog.hpp"
 #include "service/app_config.hpp"
 #include "service/trust_store.hpp"
 #include "service/remote_session_service.hpp"
@@ -210,7 +212,9 @@ QWidget* MainWindow::makeTitleBar() {
         return btn;
     };
     auto attachMenu = [](QToolButton* btn, std::initializer_list<QAction*> acts) {
-        auto* m = new QMenu(btn);
+        // 弹窗门面统一出口：令牌 QSS + Win11 DWM 圆角/描边都收敛在
+        // makeGlassMenu（与页面右键菜单同源，形态一致性单点保证）
+        auto* m = GlassDialog::makeGlassMenu(btn);
         for (auto* a : acts) {
             m->addAction(a);
         }
@@ -241,26 +245,42 @@ QWidget* MainWindow::makeTitleBar() {
             setDockIndex(1);
         }
         else {
+            // 对齐 QML conn.close：真断开 + toast，而非仅切页
+            if (sessions_ != nullptr) {
+                sessions_->close_session();
+            }
             setDockIndex(0);
+            showToast(tr("会话已断开"));
         }
     });
     auto* mView = makeMenuBtn(tr("视图"));
     auto* actTheme = new QAction(tr("切换主题"), mView);
+    auto* actReduce = new QAction(tr("降低透明度"), mView);
     attachMenu(mView, {
         new QAction(tr("刷新设备列表"), mView),
         actTheme,
+        actReduce,   // 对齐 QML view.reduce：玻璃面板↔不透明
     });
-    connect(mView->menu(), &QMenu::triggered, this, [this, actTheme](QAction* a) {
-        if (a == actTheme) {
-            applyTheme(!GlassTheme::instance().isDark());
-        }
-        else {
-            if (refresh_devices_) {
-                refresh_devices_();  // 主动广播一轮心跳，在线表立即更新
-            }
-            showToast(tr("设备列表已刷新"));
-        }
-    });
+    connect(mView->menu(), &QMenu::triggered, this,
+            [this, actTheme, actReduce](QAction* a) {
+                if (a == actTheme) {
+                    applyTheme(!GlassTheme::instance().isDark());
+                }
+                else if (a == actReduce) {
+                    auto& t = GlassTheme::instance();
+                    t.setReduced(!t.isReduced());
+                    qApp->setStyleSheet(t.buildQss());  // 玻璃面板随 QSS 重刷
+                    updateDockStyle();
+                    update();
+                    showToast(t.isReduced() ? tr("已降低透明度") : tr("已恢复毛玻璃"));
+                }
+                else {
+                    if (refresh_devices_) {
+                        refresh_devices_();  // 主动广播一轮心跳，在线表立即更新
+                    }
+                    showToast(tr("设备列表已刷新"));
+                }
+            });
     auto* mTool = makeMenuBtn(tr("工具"));
     auto* actSettings = new QAction(tr("设置…"), mTool);
     attachMenu(mTool, {
@@ -279,7 +299,12 @@ QWidget* MainWindow::makeTitleBar() {
         }
     });
     auto* mHelp = makeMenuBtn(tr("帮助"));
-    attachMenu(mHelp, {new QAction(tr("关于 SC 邻桌"), mHelp)});
+    auto* actAbout = new QAction(tr("关于 SC 邻桌"), mHelp);
+    attachMenu(mHelp, {actAbout});
+    // 对齐 QML help.about：版本信息 toast（原为无动作死菜单项）
+    connect(mHelp->menu(), &QMenu::triggered, this, [this](QAction*) {
+        showToast(tr("SC 邻桌 v0.1.0 · 企业内网远程协助"));
+    });
     lay->addWidget(mFile);
     lay->addWidget(mConn);
     lay->addWidget(mView);
@@ -297,25 +322,33 @@ QWidget* MainWindow::makeTitleBar() {
     themeBtn_->installEventFilter(this);
     lay->addWidget(themeBtn_);
 
-    auto makeWinBtn = [](const QString& glyph, bool isClose) {
+    // winAction 属性而非 glyph 匹配：最大化态 glyph 会切换（□↔❐），
+    // 按 glyph 找动作会在还原图标下失灵
+    auto makeWinBtn = [](const QString& glyph, const char* action, bool isClose) {
         auto* btn = new QLabel(glyph);
         btn->setObjectName(isClose ? QStringLiteral("winBtnClose")
                                    : QStringLiteral("winBtn"));
+        btn->setProperty("winAction", QString::fromLatin1(action));
         btn->setFixedSize(30, 24);
         btn->setAlignment(Qt::AlignCenter);
         return btn;
     };
-    auto* btnMin = makeWinBtn(QStringLiteral("─"), false);
-    auto* btnMax = makeWinBtn(QStringLiteral("□"), false);
-    auto* btnClose = makeWinBtn(QStringLiteral("✕"), true);
+    auto* btnMin = makeWinBtn(QStringLiteral("─"), "min", false);
+    auto* btnMax = makeWinBtn(QStringLiteral("□"), "max", false);
+    auto* btnClose = makeWinBtn(QStringLiteral("✕"), "close", true);
+    btnMax_ = btnMax;  // changeEvent 切换 □/❐
     lay->addWidget(btnMin);
     lay->addWidget(btnMax);
     lay->addWidget(btnClose);
 
     // 窗口按钮动作 + 拖拽：标题栏空白区按下即拖拽（FramelessWindow 统一处理）
     for (auto* b : {btnMin, btnMax, btnClose}) {
+        b->setCursor(Qt::PointingHandCursor);
         b->installEventFilter(this);
     }
+    btnMin->setToolTip(tr("最小化"));
+    btnMax->setToolTip(tr("最大化"));
+    btnClose->setToolTip(tr("关闭"));
     bar->installEventFilter(this);
     bar->setProperty("isTitleBar", true);
 
@@ -422,17 +455,16 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* e) {
     else if (e->type() == QEvent::HoverLeave && w->property("baseQss").isValid()) {
         w->setStyleSheet(w->property("baseQss").toString());
     }
-    // 窗口按钮点击
+    // 窗口按钮点击：winAction 属性路由（glyph 随最大化状态切换，不可作键）
     else if (e->type() == QEvent::MouseButtonRelease) {
-        auto* lbl = qobject_cast<QLabel*>(w);
-        const QString g = lbl ? lbl->text() : QString();
-        if (g == QStringLiteral("─")) {
+        const QString act = w->property("winAction").toString();
+        if (act == QLatin1String("min")) {
             showMinimized();
         }
-        else if (g == QStringLiteral("□")) {
+        else if (act == QLatin1String("max")) {
             isMaximized() ? showNormal() : showMaximized();
         }
-        else if (g == QStringLiteral("✕")) {
+        else if (act == QLatin1String("close")) {
             close();
         }
         else if (w->property("pageIndex").isValid()) {
@@ -443,10 +475,21 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* e) {
         }
     }
     // 标题栏拖拽
-    else if (e->type() == QEvent::MouseButtonPress
-             && w->property("isTitleBar").isValid()) {
-        auto* me = static_cast<QMouseEvent*>(e);
-        beginWindowDrag(me->globalPosition().toPoint());
+    else if (e->type() == QEvent::MouseButtonPress) {
+        // 可点击 QLabel 吞掉按下（对齐 QML 按钮自吞按下的语义）：否则 press
+        // 被 QLabel 忽略后冒泡到标题栏 GlassPanel 触发 beginWindowDrag，
+        // 隐式鼠标抓取随之转移到标题栏——释放事件到不了按钮，最小化/
+        // 最大化/关闭/主题切换全部失灵（"最小化点不起"根因）。
+        // 消费按下后抓取留在按钮上，释放必达下方 Release 分支。
+        if (w->property("pageIndex").isValid()
+            || w->objectName() == QLatin1String("winBtn")
+            || w->objectName() == QLatin1String("winBtnClose")) {
+            return true;
+        }
+        if (w->property("isTitleBar").isValid()) {
+            auto* me = static_cast<QMouseEvent*>(e);
+            beginWindowDrag(me->globalPosition().toPoint());
+        }
     }
     return FramelessWindow::eventFilter(watched, e);
 }
@@ -468,6 +511,12 @@ void MainWindow::setTrustStore(TrustStore* ts) {
     }
 }
 
+void MainWindow::setBlacklistStore(BlacklistStore* bl) {
+    if (settingsPage_ != nullptr) {
+        settingsPage_->set_blacklist_store(bl);
+    }
+}
+
 void MainWindow::set_config_store(foundation::IniConfig* ini, AppConfig* cfg) {
     cfg_ = cfg;  // 关窗/最小化缩托盘开关消费（closeEvent/changeEvent）
     if (settingsPage_ != nullptr) {
@@ -485,6 +534,20 @@ void MainWindow::closeEvent(QCloseEvent* e) {
 }
 
 void MainWindow::changeEvent(QEvent* e) {
+    if (e->type() == QEvent::WindowStateChange) {
+        // 还原图标形状差异（对齐 QML）：最大化态 ❐/还原，常态 □/最大化
+        if (btnMax_ != nullptr) {
+            const bool maxed = isMaximized();
+            btnMax_->setText(maxed ? QStringLiteral("❐") : QStringLiteral("□"));
+            btnMax_->setToolTip(maxed ? tr("还原") : tr("最大化"));
+        }
+        // contentRoot 右缘圆角：最大化时置方（QSS 属性选择器 + 重抛光）
+        if (stack_ != nullptr) {
+            stack_->setProperty("maximized", isMaximized());
+            stack_->style()->unpolish(stack_);
+            stack_->style()->polish(stack_);
+        }
+    }
     if (e->type() == QEvent::WindowStateChange
         && (windowState() & Qt::WindowMinimized) != 0 && cfg_ != nullptr
         && cfg_->minimize_to_tray) {

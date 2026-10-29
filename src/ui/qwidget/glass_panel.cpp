@@ -33,8 +33,10 @@ void FramelessWindow::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     // 20px 圆角底（Doc13 §1.2）+ 1px 半透描边（红线5）
+    // 最大化时置方（Win32 规范：全屏窗口无圆角），圆角底随状态重绘
+    const int radius = isMaximized() ? 0 : GlassTheme::kWinRadius;
     QPainterPath path;
-    path.addRoundedRect(rect(), GlassTheme::kWinRadius, GlassTheme::kWinRadius);
+    path.addRoundedRect(rect(), radius, radius);
     p.fillPath(path, GlassTheme::instance().winBg());
     p.setPen(QPen(GlassTheme::instance().glassBorder(), 1));
     p.drawPath(path);
@@ -61,8 +63,9 @@ void FramelessWindow::mouseReleaseEvent(QMouseEvent* e) {
 }
 
 void FramelessWindow::changeEvent(QEvent* e) {
-    // 主题切换或状态变化时重绘圆角底
-    if (e->type() == QEvent::PaletteChange || e->type() == QEvent::StyleChange) {
+    // 主题切换或状态变化时重绘圆角底；最大化切换时圆角↔直角必须重绘
+    if (e->type() == QEvent::PaletteChange || e->type() == QEvent::StyleChange
+        || e->type() == QEvent::WindowStateChange) {
         update();
     }
     QWidget::changeEvent(e);

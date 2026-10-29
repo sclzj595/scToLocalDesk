@@ -15,6 +15,7 @@ class AliasService;
 class RemoteSessionService;
 class FileService;
 class TrustStore;
+class BlacklistStore;  ///< 设备黑名单（Doc19 §3.4）
 class AppConfig;
 class UnattendedPasswordAuthenticator;
 
@@ -100,8 +101,24 @@ public:
     /// 设置设备备注（PRD P6）：条目存在返回 true
     Q_INVOKABLE bool setTrustNote(const QString& code, const QString& note);
     Q_INVOKABLE void clearTrust();
+    Q_INVOKABLE void refreshDevices();   ///< 主动广播心跳（菜单 视图→刷新设备列表）
+    /// QML 主题状态 → C++ 侧 GlassTheme 同步（托盘菜单等 C++ 绘制的
+    /// 弹层取色源）；Theme.qml toggleDark 每次切换调用
+    Q_INVOKABLE void setUiTheme(bool dark);
     /// 信任全表（连接码页"最近连接"真数据源）：[{code9, name, time}]
     Q_INVOKABLE QVariantList listTrusted() const;
+
+    // ---------------- 黑名单（Doc19 §3.4，P0） ----------------
+    /// 注入黑名单存储（main.cpp 装配）；可空=QML 侧无黑名单入口
+    void set_blacklist(BlacklistStore* bl);
+    /// 黑名单全表（设置页列表数据源）：[{code 三段展示, note, blocked_at}]
+    Q_INVOKABLE QVariantList listBlacklist() const;
+    /// 拉黑连接码（信任列表/设备操作入口）：入站命中即静默丢弃
+    Q_INVOKABLE void blockCode(const QString& code, const QString& note);
+    /// 移出黑名单（设置页条目级删除）
+    Q_INVOKABLE void unblock(const QString& code);
+    /// 清空黑名单
+    Q_INVOKABLE void clearBlacklist();
 
     /// 设置页接线（Doc18 §3.3）：7 组字段 ↔ AppConfig，变更即落盘 config.ini
     void set_config_store(foundation::IniConfig* ini, AppConfig* cfg);
@@ -169,6 +186,7 @@ private:
     RemoteSessionService* sessions_{nullptr};
     FileService* files_{nullptr};
     TrustStore* trust_{nullptr};
+    BlacklistStore* blacklist_{nullptr};  ///< 黑名单（Doc19 §3.4，可空）
     foundation::IniConfig* ini_{nullptr};
     AppConfig* cfg_{nullptr};
     UdpDiscoveryAdapter* discovery_{nullptr};

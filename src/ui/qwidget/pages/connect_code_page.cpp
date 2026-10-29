@@ -9,7 +9,6 @@
 #include <QEvent>
 #include <QFont>
 #include <QHBoxLayout>
-#include <QInputDialog>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
@@ -22,6 +21,7 @@
 #include <QVBoxLayout>
 
 #include "../glass_theme.h"
+#include "../popups/glass_dialog.hpp"
 #include "service/trust_store.hpp"
 
 namespace sc::localdesk::ui {
@@ -105,22 +105,23 @@ ConnectCodePage::ConnectCodePage(QWidget* parent) : QWidget(parent) {
                     return;
                 }
                 const QString code = it->data(Qt::UserRole).toString();
-                QMenu menu(hist_list_);
+                // 弹窗门面统一出口：令牌 QSS + DWM 圆角/描边（与主窗菜单同源）
+                QMenu* menu = GlassDialog::makeGlassMenu(hist_list_);
                 QAction* act_note =
-                    menu.addAction(QStringLiteral("修改备注"));
-                QAction* act_del = menu.addAction(QStringLiteral("删除此记录"));
+                    menu->addAction(QStringLiteral("修改备注"));
+                QAction* act_del = menu->addAction(QStringLiteral("删除此记录"));
                 QAction* picked =
-                    menu.exec(hist_list_->mapToGlobal(pos));
+                    menu->exec(hist_list_->mapToGlobal(pos));
+                menu->deleteLater();
                 if (picked == act_del) {
                     trust_->untrust(code.toStdString());
                     reload_history();
                 }
                 else if (picked == act_note) {
                     bool ok = false;
-                    const QString note = QInputDialog::getText(
+                    const QString note = GlassDialog::getText(
                         this, QStringLiteral("设备备注"),
                         QStringLiteral("标注对方是谁（可空）："),
-                        QLineEdit::Normal,
                         it->data(Qt::UserRole + 1).toString(), &ok);
                     if (ok) {
                         trust_->set_note(code.toStdString(), note.toStdString());

@@ -50,9 +50,10 @@ QString GlassTheme::buildQss() const {
              .arg(qcolor(textMain));
     // 窗口底色（内容区纯色，红线2：无任何模糊/渐变）
     // 右缘两角 20px 内圆角：与 FramelessWindow 自绘圆角对齐，
-    // 否则方形白底盖住窗口右下/右上圆角
+    // 否则方形白底盖住窗口右下/右上圆角；最大化时置方（Win32 规范）
     q += QStringLiteral("QWidget#contentRoot { background: %1; "
-                        "border-top-right-radius: 20px; border-bottom-right-radius: 20px; }\n")
+                        "border-top-right-radius: 20px; border-bottom-right-radius: 20px; }\n"
+                        "QWidget#contentRoot[maximized=\"true\"] { border-radius: 0px; }\n")
              .arg(qcolor(winBg));
     // 玻璃面板（QSS 模拟磨砂：半透底 + 1px 半透描边 + 圆角）
     q += QStringLiteral("QFrame#glassPanel { background: %1; border: 1px solid %2; border-radius: 0px; }\n")
@@ -129,19 +130,21 @@ QString GlassTheme::buildQss() const {
              "QScrollBar::handle:vertical { background: %1; border-radius: 4px; min-height: 32px; }\n"
              "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }\n")
              .arg(qrgba(divider));
-    // 菜单
+    // 菜单（Windows 上圆角/描边走 DWM 原生路径，见 MainWindow attachMenu：
+    // WA_Translucent+QSS 圆角在 Win11 有黑框缺陷——这里只管底色与条目）
     q += QStringLiteral(
              "QMenuBar { background: %1; border-bottom: none; padding-left: 8px; }\n"
              "QMenuBar::item { color: %2; padding: 6px 10px; border-radius: 6px; "
              "margin: 2px 1px; }\n"
              "QMenuBar::item:selected { background: %3; }\n"
-             "QMenu { background: %1; border: 1px solid %4; border-radius: 8px; padding: 6px; }\n"
-             "QMenu::item { color: %2; height: 28px; padding: 4px 24px 4px 10px; "
-             "border-radius: 6px; margin: 1px; }\n"
+             "QMenu { background: %1; border: none; padding: 6px; }\n"
+             "QMenu::item { color: %2; height: 30px; padding: 4px 26px 4px 12px; "
+             "border-radius: 6px; margin: 1px 2px; background: transparent; }\n"
              "QMenu::item:selected { background: %3; }\n"
-             "QMenu::separator { height: 1px; background: %5; margin: 4px 6px; }\n")
+             "QMenu::item:disabled { color: %6; }\n"
+             "QMenu::separator { height: 1px; background: %5; margin: 4px 8px; }\n")
              .arg(qrgba(glass), qcolor(textMain), qrgba(hover), qrgba(glassBorder),
-                  qrgba(divider));
+                  qrgba(divider), qcolor(textSecond));
     // 标签
     q += QStringLiteral("QLabel#titleLabel { font-size: 16px; font-weight: 600; color: %1; }\n"
                         "QLabel#cardTitle { font-size: 14px; font-weight: 600; color: %1; }\n"
@@ -157,6 +160,19 @@ QString GlassTheme::buildQss() const {
              "QMessageBox QPushButton:hover { background: %7; }\n"
              "QMessageBox QPushButton:default { background: %8; color: #FFFFFF; border: none; }\n"
              "QMessageBox QPushButton:default:hover { background: %9; }\n")
+             .arg(qcolor(winBg), qrgba(glassBorder), qcolor(textMain),
+                  qcolor(cardBg), qcolor(textSecond), qrgba(divider),
+                  qrgba(hover), qcolor(primary), qcolor(primaryHover));
+    // QInputDialog 玻璃化（与 QMessageBox 同规则族）：此前无任何规则，
+    // 设备备注等输入弹窗是原生灰，与主题脱节
+    q += QStringLiteral(
+             "QInputDialog { background-color: %1; border: 1px solid %2; border-radius: 12px; }\n"
+             "QInputDialog QLabel { color: %3; background: transparent; font-size: 13px; }\n"
+             "QInputDialog QPushButton { background: %4; color: %5; border: 1px solid %6; "
+             "border-radius: 8px; padding: 6px 18px; min-width: 64px; }\n"
+             "QInputDialog QPushButton:hover { background: %7; }\n"
+             "QInputDialog QPushButton:default { background: %8; color: #FFFFFF; border: none; }\n"
+             "QInputDialog QPushButton:default:hover { background: %9; }\n")
              .arg(qcolor(winBg), qrgba(glassBorder), qcolor(textMain),
                   qcolor(cardBg), qcolor(textSecond), qrgba(divider),
                   qrgba(hover), qcolor(primary), qcolor(primaryHover));

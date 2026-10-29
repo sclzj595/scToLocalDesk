@@ -5,7 +5,7 @@
 
 #include <chrono>
 
-#if SCLD_HAS_FFMPEG && defined(_WIN32)
+#if SCLD_HAS_FFMPEG
     #include "implement/decoder/ffmpeg_decoder.hpp"
 #endif
 
@@ -31,7 +31,7 @@ VideoPipeline::VideoPipeline(std::shared_ptr<foundation::EventBus> bus,
     : QObject(parent),
       bus_(std::move(bus)),
       log_(std::move(logger)) {
-#if SCLD_HAS_FFMPEG && defined(_WIN32)
+#if SCLD_HAS_FFMPEG
     decoder_ = std::make_unique<FfmpegDecoder>();
 #endif
     if (bus_ != nullptr) {
@@ -51,6 +51,11 @@ void VideoPipeline::start() {
     running_.store(true, std::memory_order_release);
     decode_thread_ = std::thread(&VideoPipeline::decode_loop, this);
     SCLD_LOG(log_, LogLevel::Info, "video", "解码管线已启动");
+#if !SCLD_HAS_FFMPEG
+    // 兜底哨兵：无解码器时收帧将静默丢弃（此次教训——必须开机即告警）
+    SCLD_LOG(log_, LogLevel::Warn, "video",
+             "MJPEG 解码器未编入（FFmpeg 缺失），收到的画面帧将被丢弃");
+#endif
 }
 
 void VideoPipeline::stop() {
@@ -97,7 +102,7 @@ void VideoPipeline::decode_loop() {
         const auto& px = *task.payload;
         QImage img;
         if (is_jpeg(px)) {
-#if SCLD_HAS_FFMPEG && defined(_WIN32)
+#if SCLD_HAS_FFMPEG
             std::vector<uint8_t> bgra;
             uint32_t w = 0;
             uint32_t h = 0;

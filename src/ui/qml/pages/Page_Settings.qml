@@ -236,6 +236,80 @@ Item {
                     onEdited: v => ScLocaldesk.settingsSetValue("log.max_files", v)
                 }
             }
+
+            // ---- 黑名单（Doc19 §3.4，P0；IT 视图） ----
+            // 命中即静默丢弃（不弹窗不回包），仅审计——入口保持最小可用：
+            // 列表展示 + 条目移除 + 一键清空；拉黑动作从信任列表/设备操作加
+            GroupCard {
+                id: blCard
+                title: qsTr("黑名单设备（连接请求直接丢弃）")
+                visible: root.itView
+
+                function reload() {
+                    blRepeater.model = ScLocaldesk.listBlacklist();
+                    blEmpty.visible = blRepeater.count === 0;
+                }
+                onVisibleChanged: reload()
+                Component.onCompleted: reload()
+
+                Text {
+                    id: blEmpty
+                    text: qsTr("暂无黑名单设备")
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontHint
+                    color: Theme.textHint
+                    visible: true
+                }
+
+                Repeater {
+                    id: blRepeater
+                    model: []
+                    delegate: RowLayout {
+                        required property var modelData
+                        width: blCard.width - 48
+                        spacing: 8
+                        Text {
+                            text: modelData.code
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontBody
+                            font.weight: Font.DemiBold
+                            color: Theme.textMain
+                        }
+                        Text {
+                            text: modelData.note === "" ? "—" : modelData.note
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontHint
+                            color: Theme.textHint
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            text: modelData.blocked_at
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontHint
+                            color: Theme.textHint
+                        }
+                        Button {
+                            text: qsTr("移除")
+                            font.family: Theme.fontFamily
+                            onClicked: {
+                                ScLocaldesk.unblock(modelData.code);
+                                blCard.reload();
+                            }
+                        }
+                    }
+                }
+
+                Button {
+                    text: qsTr("清空黑名单")
+                    font.family: Theme.fontFamily
+                    visible: blRepeater.count > 0
+                    onClicked: {
+                        ScLocaldesk.clearBlacklist();
+                        blCard.reload();
+                    }
+                }
+            }
         }
     }
 

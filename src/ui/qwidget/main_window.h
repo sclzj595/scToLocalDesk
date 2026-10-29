@@ -17,6 +17,7 @@ class QTimer;
 
 namespace sc::localdesk {
 class TrustStore;
+class BlacklistStore;  ///< 设备黑名单（Doc19 §3.4）
 class RemoteSessionService;
 struct AppConfig;  // 定义处为 struct，声明须一致
 namespace foundation {
@@ -41,6 +42,8 @@ public:
     /// 信任缓存注入（widgets_main 构造后调用，Doc18 §3.2）；
     /// 转发连接码页刷新"最近连接"真数据
     void setTrustStore(TrustStore* ts);
+    /// 黑名单注入（Doc19 §3.4）：转发设置页黑名单管理区块
+    void setBlacklistStore(BlacklistStore* bl);
 
     /// 配置注入（Doc18 §3.3）：转发设置页，解锁控件真值回放与落盘
     void set_config_store(foundation::IniConfig* ini, AppConfig* cfg);
@@ -95,6 +98,7 @@ private:
     void applyTheme(bool dark);
 
     QLabel* themeBtn_{nullptr};
+    QLabel* btnMax_{nullptr};  ///< 最大化/还原图标随窗口状态切换
     QStackedWidget* stack_{nullptr};
     QList<QLabel*> dockBtns_;
     QList<QLabel*> dockBars_;

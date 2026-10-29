@@ -10,10 +10,16 @@
 #include <QPainter>
 #include <QStyle>
 
+#include "ui/qwidget/popups/glass_dialog.hpp"
+
 namespace sc::localdesk::platform {
 
 TrayController::TrayController(QObject* parent)
     : QObject(parent) {
+    // 托盘菜单与站内菜单同源（GlassDialog 门面）：令牌 QSS + Win11
+    // DWM 圆角/描边；主题明暗随 GlassTheme 单例实时取值（QML 端经
+    // setUiTheme 桥接同步，两端形态一致）
+    sc::localdesk::ui::GlassDialog::styleGlassMenu(&menu_);
     show_action_ = menu_.addAction(QStringLiteral("显示主窗口"));
     menu_.addSeparator();
     // 会话知情权（PRD P4）：状态项只读展示，断开项默认隐藏

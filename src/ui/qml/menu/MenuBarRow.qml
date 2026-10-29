@@ -150,8 +150,11 @@ Item {
         }
         WindowToolButton {
             anchors.verticalCenter: parent.verticalCenter
-            glyph: "□"
-            tip: qsTr("最大化")
+            // 最大化/还原形状差异（对齐 Widgets ❐/□）：绑定窗口可见态
+            property bool maxed: root.Window.window
+                                     && root.Window.window.visibility === Window.Maximized
+            glyph: maxed ? "❐" : "□"
+            tip: maxed ? qsTr("还原") : qsTr("最大化")
             onClicked: {
                 const w = root.Window.window;
                 w.visibility === Window.Maximized ? w.showNormal() : w.showMaximized();

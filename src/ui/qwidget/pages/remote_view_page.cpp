@@ -4,12 +4,14 @@
 #include <QColor>
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
+#include "../glass_theme.h"
 #include "core/interface/iinput_injector.hpp"
 #include "platform/qt_adapter/input_bridge.hpp"
 #include "service/remote_session_service.hpp"
@@ -29,11 +31,33 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
     toolbar_->setFixedSize(240, 44);
     auto* toolLay = new QHBoxLayout(toolbar_);
     toolLay->setContentsMargins(16, 6, 16, 6);
+    toolLay->setSpacing(8);
     auto* fullBtn = new QPushButton(QStringLiteral("⛶ 全屏"));
     fullBtn->setObjectName(QStringLiteral("secondaryBtn"));
+    // 对齐 QML fullBtn：全屏/还原切换（原为未接 clicked 的死按钮）
+    connect(fullBtn, &QPushButton::clicked, this, [this] {
+        QWidget* w = window();
+        if (w->isFullScreen()) {
+            w->showNormal();
+        }
+        else {
+            w->showFullScreen();
+        }
+    });
     auto* discBtn = new QPushButton(QStringLiteral("断开连接"));
     discBtn->setObjectName(QStringLiteral("dangerBtn"));
+    // NoFocus 红线：按钮不吃键盘焦点——点击后 Space/Enter 激活按钮、
+    // Tab 走焦点导航，远端收不到这些键（与 QML 版 Page_RemoteView 同修）
+    fullBtn->setFocusPolicy(Qt::NoFocus);
+    discBtn->setFocusPolicy(Qt::NoFocus);
     toolLay->addWidget(fullBtn);
+    // 分隔线：对齐 QML 工具条两钮间的 1px divider
+    auto* sep = new QLabel(toolbar_);
+    sep->setFixedSize(1, 20);
+    sep->setStyleSheet(QStringLiteral(
+        "background: %1;")
+        .arg(GlassTheme::instance().divider().name(QColor::HexRgb)));
+    toolLay->addWidget(sep);
     toolLay->addWidget(discBtn);
     connect(discBtn, &QPushButton::clicked, this, &RemoteViewPage::disconnected);
     toolbar_->hide();  // 无会话默认隐藏（断开按钮不可用），on_frame 恢复

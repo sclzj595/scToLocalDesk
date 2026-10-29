@@ -36,8 +36,10 @@ class InputService;
 namespace foundation {
 class EventBus;
 class ILogger;
+class AuditLogger;  ///< 安全审计独立分流（Doc19 §6，audit.log）
 }
 class TrustStore;
+class BlacklistStore;  ///< 设备黑名单（Doc19 §3.4，与 TrustStore 互斥黑优先）
 
 namespace protocol {
 struct RequestConnectBody;
@@ -126,6 +128,19 @@ public:
         trust_ = ts;
     }
 
+    /// 黑名单注入（Doc19 §3.4）：被控端入站 REQUEST_CONNECT 命中即静默
+    /// 丢弃——不弹窗、不回 REJECT（不向拉黑方暴露存在性），仅审计。
+    /// 可空（未注入则不过滤）。黑优先：先查黑再查白
+    void set_blacklist(BlacklistStore* bl) {
+        blacklist_ = bl;
+    }
+
+    /// 审计日志注入（Doc19 §6）：入站请求/审批/信任直通/黑名单命中/
+    /// 会话起止七列格式落 audit.log。可空（未注入则仅主日志 Warn）
+    void set_audit_logger(foundation::AuditLogger* audit) {
+        audit_ = audit;
+    }
+
     /// 自连拦截（PRD 连接黑名单）：注入本机判定回调（IP 属本机集合 且 端口==本机监听端口）；
     /// connect_to_peer 拨号前比对，命中即本地拒绝不发网络包。
     /// 双实例同机（端口不同）不算自连，放行保 E2E 回环
@@ -164,6 +179,11 @@ private:
     void enter_running(bool unattended);
     void reset_to_idle();
     void publish_request_event(const std::string& peer_alias, bool auto_approved);
+    /// 审计事件统一出口（Doc19 §6）：audit_ 为空时仅主日志 Warn 摘要，
+    /// 注入后 audit.log 七列全量落盘（线程安全，可锁内调用）
+    void audit_event(const std::string& event, const std::string& result,
+                     const std::string& peer_code, const std::string& peer_ip,
+                     const std::string& note);
     /// 武装确认看门狗（PRD 确认三件套）：kConfirmTimeoutSec 内弹窗未消费
     /// 则自动拒绝。前置：调用方不持锁（内部 join 旧线程需让路）
     void arm_confirm_watchdog(uint64_t my_seq);
@@ -196,6 +216,10 @@ public:
     std::shared_ptr<InputService> input_;
     uint64_t input_inj_count_{0};  ///< 注入审计抽点计数（RemoteSession 线程，单写者）
     TrustStore* trust_{nullptr};
+    BlacklistStore* blacklist_{nullptr};          ///< 黑名单（可空，黑优先过滤）
+    foundation::AuditLogger* audit_{nullptr};     ///< 审计分流（可空）
+    std::string peer_code_str_;  ///< 当前对端 9 位码（审计列；持锁写，Idle 清）
+    std::string peer_ip_;        ///< 当前对端 IP（审计列；入站时缓存，持锁写）
     std::shared_ptr<foundation::EventBus> bus_;
     std::shared_ptr<foundation::ILogger> log_;
 

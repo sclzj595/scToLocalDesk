@@ -42,6 +42,7 @@ set(SCLD_CORE_SOURCES
     src/core/protocol/tlv.cpp
     src/core/auth/unattended_authenticator.cpp
     src/service/alias_service.cpp
+    src/service/blacklist_store.cpp
     src/service/app_config.cpp
     src/service/id_service.cpp
     src/service/remote_session_service.cpp
@@ -127,7 +128,7 @@ endif()
 # 存在即启用 MJPEG 编码（sws 色彩转换）；缺失自动降级 RawEncoder。
 # Linux 侧（P6：Ubuntu 22.04 基准，Debian 系）走 pkg-config 探测
 # 系统源 libavcodec-dev（FFmpeg 4.4，本编码器仅用稳定 API，可编译）
-if(EXISTS "${SCLD_TP_DIR}/ffmpeg/include/libavcodec/avcodec.h")
+if(WIN32 AND EXISTS "${SCLD_TP_DIR}/ffmpeg/include/libavcodec/avcodec.h")
     target_include_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/ffmpeg/include")
     target_link_directories(sc_localdesk_core PUBLIC "${SCLD_TP_DIR}/ffmpeg/lib")
     target_link_libraries(sc_localdesk_core PUBLIC avcodec avutil swscale)
@@ -149,6 +150,21 @@ if(EXISTS "${SCLD_TP_DIR}/ffmpeg/include/libavcodec/avcodec.h")
         add_custom_command(TARGET sc_localdesk_core POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${SCLD_FFMPEG_DLLS} $<TARGET_FILE_DIR:sc_localdesk_core>)
+    endif()
+elseif(UNIX)
+    # Linux（Ubuntu 22.04 基准）：系统源 libavcodec-dev 走 pkg-config 探测，
+    # 命中即编入 FFmpeg 编解码（控制端 MJPEG 解码必需——缺失则收帧静默丢弃）
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(SCLD_FFMPEG_PC QUIET IMPORTED_TARGET
+            libavcodec libavutil libswscale)
+    endif()
+    if(SCLD_FFMPEG_PC_FOUND)
+        target_link_libraries(sc_localdesk_core PUBLIC PkgConfig::SCLD_FFMPEG_PC)
+        target_compile_definitions(sc_localdesk_core PUBLIC SCLD_HAS_FFMPEG=1)
+        target_sources(sc_localdesk_core PRIVATE
+            src/implement/encoder/ffmpeg_encoder.cpp
+            src/implement/decoder/ffmpeg_decoder.cpp)
     endif()
 endif()
 
@@ -196,6 +212,8 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
             src/ui/qml.qrc
             src/platform/qt_adapter/qt_event_bridge.cpp
             src/platform/qt_adapter/device_list_model.cpp
+            src/ui/qwidget/glass_theme.cpp
+            src/ui/qwidget/popups/glass_dialog.cpp
             src/platform/qt_adapter/qt_udp_discovery.cpp
             src/platform/qt_adapter/video_pipeline.cpp
             src/platform/qt_adapter/video_surface.cpp
@@ -228,8 +246,9 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
                 src/platform/win32/crash_reporter.cpp
             )
         else()
-            # Linux（Doc18 P6）：system_info 走 POSIX 实现；注入器/自启动为占位；
-            # CrashReporter 用 core-dump 承接存根（同文件 #else 分支）
+            # Linux（Doc18 P6）：system_info 走 POSIX 实现；注入器 XTest
+            # （dlopen libXtst 运行时加载）；自启动 .desktop；CrashReporter
+            # 用 core-dump 承接存根（同文件 #else 分支）
             target_sources(scToLocalDesk PRIVATE
                 src/platform/linux/system_info_linux.cpp
                 src/platform/linux/input_injector_linux.cpp
@@ -247,7 +266,18 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
         if(WIN32)
             target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS} iphlpapi advapi32 dbghelp)
         else()
-            # Linux：OpenSSL 链接随 sc_localdesk_core PUBLIC 传递
+            # Linux：OpenSSL 链接随 sc_localdesk_core PUBLIC 传递；
+            # X11+Xext 为被控端采集（XShm 函数在 Xext）所需，
+            # XTest 注入器运行时 dlopen libXtst 无构建期依赖
+            find_package(PkgConfig QUIET)
+            if(PkgConfig_FOUND)
+                pkg_check_modules(SCLD_X11 QUIET IMPORTED_TARGET x11 xext)
+            endif()
+            if(SCLD_X11_FOUND)
+                target_link_libraries(scToLocalDesk PRIVATE PkgConfig::SCLD_X11)
+            else()
+                target_link_libraries(scToLocalDesk PRIVATE X11 Xext)
+            endif()
             target_link_libraries(scToLocalDesk PRIVATE ${SCLD_QML_LIBS})
         endif()
     else()
@@ -281,6 +311,7 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
             src/ui/qwidget/pages/file_transfer_page.cpp
             src/ui/qwidget/pages/settings_page.cpp
             src/ui/qwidget/popups/connect_confirm_dialog.cpp
+            src/ui/qwidget/popups/glass_dialog.cpp
             src/platform/qt_adapter/qt_event_bridge.cpp
             src/platform/qt_adapter/qt_udp_discovery.cpp
             src/platform/qt_adapter/video_pipeline.cpp

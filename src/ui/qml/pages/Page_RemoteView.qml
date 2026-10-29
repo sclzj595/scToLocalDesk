@@ -85,6 +85,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 20
+            z: 10  // 压过键鼠捕获层：工具条点击必达（历史“点不动”防御）
             visible: root.sessionActive
             width: toolRow.implicitWidth + 32
             height: 44
@@ -99,11 +100,22 @@ Item {
                 anchors.centerIn: parent
                 spacing: 8
 
+                // NoFocus 红线：按钮不吃键盘焦点——否则点击后 Space/Enter
+                // 变成激活按钮、Tab 在按钮间导航，远端收不到这些键
+                //（“空格回车 tab 有时卡顿”真因）
                 ToolButton {
                     id: fullBtn
+                    focusPolicy: Qt.NoFocus
                     text: qsTr("⛶ 全屏")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontBody
+                    onClicked: {
+                        const w = root.Window.window;
+                        if (w) {
+                            w.visibility === Window.FullScreen
+                                ? w.showNormal() : w.showFullScreen();
+                        }
+                    }
                     contentItem: Text {
                         text: fullBtn.text
                         font: fullBtn.font
@@ -130,6 +142,7 @@ Item {
 
                 Button {
                     id: discBtn
+                    focusPolicy: Qt.NoFocus
                     text: qsTr("断开连接")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontBody

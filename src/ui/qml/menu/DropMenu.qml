@@ -21,10 +21,33 @@ Popup {
     modal: false
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-    background: GlobalGlass {
-        glassSource: root.glassSource
-        radiusPx: Theme.cardRadius
-        shadowed: true
+    background: Item {
+        // 弹出层形态强化（用户实测反馈：GlobalGlass 半透底与浅色页面同源
+        // 采样，白叠白「看不出是菜单」）。改实底 + 描边 + 近似阴影：
+        // 严禁 import QtQuick.Effects（6.2 远程 Linux 无模块，GlobalGlass 注）
+        property color solidBg: Theme.isDark ? Qt.rgba(0.13, 0.14, 0.17, 0.98)
+                                             : Qt.rgba(1, 1, 1, 1)
+        // 近似阴影：外扩两层递减透明度（6.2 兼容，替代 blur16/12% 弱阴影）
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -5
+            radius: Theme.cardRadius + 5
+            color: Qt.rgba(0, 0, 0, 0.05)
+        }
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -2
+            radius: Theme.cardRadius + 2
+            color: Qt.rgba(0, 0, 0, 0.07)
+        }
+        // 实底面板：浅色纯白/深色近黑，与页面拉开对比；令牌 1px 描边
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.cardRadius
+            color: parent.solidBg
+            border.color: Theme.glassBorder
+            border.width: 1
+        }
     }
 
     contentItem: Column {

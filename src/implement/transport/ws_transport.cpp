@@ -6,7 +6,9 @@
 // ============================================================
 #include "implement/transport/ws_transport.hpp"
 
+#include <QAbstractSocket>
 #include <QNetworkProxy>
+#include <QTcpSocket>
 #include <QTimer>
 #include <QUrl>
 
@@ -23,6 +25,15 @@ constexpr qint64 kSendWatermarkBytes = 4 * 1024 * 1024;
 constexpr int kPingIntervalMs = 5000;     ///< KEEPALIVE ping 周期（Doc08 §6）
 constexpr int kPingMaxMiss = 3;           ///< 连续无 pong 上限，超出判链路死亡
 constexpr int kNonScreenWaitMs = 100;     ///< 非画面帧入队限时
+
+/// 键鼠小包低延迟红线：Nagle 会攒小包 + 延迟确认（40~200ms）——孤立按键包
+/// 首当其冲（鼠标活动时反而正常，即"空格/回车有时卡顿"特征）。视频大帧
+/// 不受 Nagle 影响（MSS 满包直发）。须在 socket 建立后调用
+void enable_low_latency(QWebSocket* sock) {
+    for (auto* tcp : sock->findChildren<QTcpSocket*>()) {
+        tcp->setSocketOption(QAbstractSocket::LowDelayOption, 1);
+    }
+}
 }  // namespace
 
 WsTransport::WsTransport(const QString& server_name)
@@ -54,6 +65,7 @@ bool WsTransport::start_server(uint16_t port) {
                              peer_->deleteLater();  // 单会话红线：新连接顶替旧连接
                          }
                          peer_ = sock;
+                         enable_low_latency(sock);  // 被控端收键鼠：小包即时达
                          ping_miss_ = 0;
                          tx_.clear();
                          tx_.reopen();
@@ -111,7 +123,8 @@ void WsTransport::connect_client(const std::string& host, uint16_t port) {
         std::lock_guard<std::mutex> lk(cb_mtx_);
         peer_addr_ = host;  // client 模式：对端即拨号目标
     }
-    QObject::connect(sock, &QWebSocket::connected, [this] {
+    QObject::connect(sock, &QWebSocket::connected, [this, sock] {
+        enable_low_latency(sock);  // 控制端发键鼠：小包即时达
         set_state(TransportState::Connected);
     });
     QObject::connect(sock, &QWebSocket::binaryMessageReceived,

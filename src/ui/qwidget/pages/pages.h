@@ -34,6 +34,7 @@ class QWheelEvent;
 namespace sc::localdesk {
 struct AppConfig;  // 注意：定义处为 struct，前向声明必须一致（否则 MSVC 改名冲突）
 class AliasService;
+class BlacklistStore;  ///< 设备黑名单（Doc19 §3.4）
 class RemoteSessionService;
 class TrustStore;
 namespace foundation {
@@ -246,6 +247,11 @@ public:
         aliases_ = a;
     }
 
+    /// 黑名单注入（Doc19 §3.4，P0）：设置页黑名单管理区块数据源
+    void set_blacklist_store(BlacklistStore* bl) {
+        blacklist_ = bl;
+    }
+
 signals:
     /// 深色主题开关切换（主窗口统一 applyTheme：QSS + Dock 染色 + glyph）
     void themeChanged(bool dark);
@@ -265,10 +271,14 @@ private:
     /// 视图权限（Doc17 §7）：员工视图隐藏网络/会话/日志组与文件组高级行，
     /// IT 视图全量；bind_config 回放与 view_mode 切换时调用
     void apply_view_mode();
+    /// 黑名单列表重载（blacklist.json → QListWidget；构造与变更后调用）
+    void refresh_blacklist(QListWidget* list);
 
     foundation::IniConfig* ini_{nullptr};
     AppConfig* cfg_{nullptr};
     AliasService* aliases_{nullptr};
+    BlacklistStore* blacklist_{nullptr};  ///< 黑名单（Doc19 §3.4，可空）
+    QListWidget* bl_list_{nullptr};       ///< 黑名单列表控件（变更后重载）
     ToggleSwitch* viewSw_{nullptr};
     QFrame* grpNet_{nullptr};
     QFrame* grpSess_{nullptr};

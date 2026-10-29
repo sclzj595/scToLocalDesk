@@ -15,8 +15,10 @@
 #include "core/interface/types.hpp"
 #include "core/protocol/tlv.hpp"
 #include "foundation/event_bus.hpp"
+#include "foundation/logger/audit_logger.hpp"
 #include "foundation/logger/ilogger.hpp"
 #include "service/alias_service.hpp"
+#include "service/blacklist_store.hpp"
 #include "service/file_service.hpp"
 #include "service/input_service.hpp"
 #include "service/screen_stream_service.hpp"
@@ -300,6 +302,8 @@ void RemoteSessionService::approve() {
     if (transport_ != nullptr) {
         transport_->send_binary(protocol::build_ctrl(protocol::CtrlSubType::Approved));
     }
+    // 审批审计（Doc19 §6）：同意即放行键鼠/画面，追溯刚需
+    audit_event("Approve", "OK", peer_code_str_, peer_ip_, "人工确认同意");
     enter_running(false);
 }
 
@@ -313,6 +317,11 @@ void RemoteSessionService::reject(RejectReason reason) {
     if (transport_ != nullptr) {
         transport_->send_binary(protocol::build_reject(reason));
     }
+    // 拒绝审计（含看门狗超时自动拒）：超时 reason=Timeout 与手动拒绝区分
+    audit_event("Reject",
+                reason == RejectReason::Timeout ? "Timeout" : "Denied",
+                peer_code_str_, peer_ip_,
+                reason == RejectReason::Timeout ? "看门狗超时自动拒" : "人工拒绝");
     reset_to_idle();
 }
 
@@ -326,6 +335,9 @@ void RemoteSessionService::close_session(CloseReason reason,
         }
         state_ = SessState::Closing;
         sid = session_id_;  // reset_to_idle 会清，事件先拷
+        // 会话结束审计（Doc19 §6）：reset_to_idle 清缓存前取列值
+        audit_event("SessionEnd", "OK", peer_code_str_, peer_ip_,
+                    "close_reason=" + std::to_string(static_cast<int>(reason)));
     }
     if (transport_ != nullptr) {
         transport_->send_binary(protocol::build_close(reason));
@@ -630,7 +642,56 @@ void RemoteSessionService::handle_session_ctrl(const uint8_t* body, size_t len) 
     }
 }
 
+void RemoteSessionService::audit_event(const std::string& event,
+                                       const std::string& result,
+                                       const std::string& peer_code,
+                                       const std::string& peer_ip,
+                                       const std::string& note) {
+    // audit.log 全量（七列，Doc19 §6）；主日志 Warn 摘要同步保留
+    //（spdlog flush_on(Warn) 即时落盘，现场排障无需换文件）
+    if (audit_ != nullptr) {
+        audit_->audit(event, result, peer_code, peer_ip, note);
+    }
+    SCLD_LOG(log_, LogLevel::Warn, "audit",
+             event + " result=" + result + " peer=" + (peer_code.empty() ? "-" : peer_code)
+                 + " ip=" + (peer_ip.empty() ? "-" : peer_ip) + " " + note);
+}
+
 void RemoteSessionService::handle_request_connect(const protocol::RequestConnectBody& req) {
+    // 对端连接码反查（黑名单/信任/审计共用一次）：走在线表，对端未上报
+    // code（旧心跳）或不在表内则空串——三处判定统一按"未知即放行/人工"
+    uint32_t peer_code = 0;
+    if (aliases_ != nullptr) {
+        for (const auto& dev : aliases_->online_devices()) {
+            if (dev.alias == req.alias) {
+                peer_code = dev.code;
+                break;
+            }
+        }
+    }
+    const std::string code_str =
+        peer_code != 0 ? std::to_string(peer_code) : "";
+    const std::string req_ip =
+        transport_ != nullptr ? transport_->peer_address() : "";
+
+    // 黑名单过滤（Doc19 §3.4，P0）：命中即静默丢弃——不弹窗、不回
+    // REJECT（不向拉黑方暴露存在性），仅审计。黑优先于单会话红线，
+    // 占用中也不回 SessionBusy，彻底沉默
+    if (blacklist_ != nullptr && !code_str.empty()
+        && blacklist_->is_blocked(code_str)) {
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            peer_code_str_ = code_str;
+            peer_ip_ = req_ip;
+        }
+        SCLD_LOG(log_, LogLevel::Warn, "session",
+                 "[alias=" + req.alias + "][code=" + code_str
+                     + "] 黑名单设备连接请求，已静默丢弃");
+        audit_event("BlacklistHit", "Denied", code_str, req_ip,
+                    "alias=" + req.alias);
+        return;
+    }
+
     // 单会话红线：占用中直接 REJECT(0x02)（Doc09 §3.4）
     {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -641,25 +702,26 @@ void RemoteSessionService::handle_request_connect(const protocol::RequestConnect
             }
             SCLD_LOG(log_, LogLevel::Warn, "session",
                      "[alias=" + req.alias + "] 会话占用，拒绝新请求");
+            audit_event("Request", "Busy", code_str, req_ip,
+                        "alias=" + req.alias);
             return;
         }
+        // 入站上下文缓存（审批/会话起止审计列数据源）
+        peer_code_str_ = code_str;
+        peer_ip_ = req_ip;
     }
 
     session_id_ = make_session_id();
     peer_alias_ = req.alias;
 
+    // 入站请求审计（Doc19 §6）：audit.log 全量 + 主日志 Warn 摘要
+    audit_event("Request", "Pending", code_str, req_ip, "alias=" + req.alias);
+
     // 信任缓存直连（Doc18 §3.2）：对端连接码已记忆 → 免人工确认直接放行。
     // alias→code 反查走在线表；对端未上报 code（旧心跳）或不在表内则
     // 自然降级人工确认——信任判定永远以本机 trust.json 为准，不扩协议
-    if (trust_ != nullptr) {
-        uint32_t peer_code = 0;
-        for (const auto& dev : aliases_->online_devices()) {
-            if (dev.alias == req.alias) {
-                peer_code = dev.code;
-                break;
-            }
-        }
-        if (peer_code != 0 && trust_->is_trusted(std::to_string(peer_code))) {
+    if (trust_ != nullptr && peer_code != 0) {
+        if (trust_->is_trusted(std::to_string(peer_code))) {
             std::lock_guard<std::mutex> lk(mtx_);
             if (transport_ != nullptr) {
                 transport_->send_binary(
@@ -670,6 +732,8 @@ void RemoteSessionService::handle_request_connect(const protocol::RequestConnect
             SCLD_LOG(log_, LogLevel::Info, "session",
                      "[session_id=" + session_id_ + "][alias=" + req.alias
                          + "] 已信任设备，自动放行 code=" + std::to_string(peer_code));
+            audit_event("AutoApprove", "OK", code_str, req_ip,
+                        "trust直连 alias=" + req.alias);
             return;
         }
     }
@@ -857,6 +921,9 @@ void RemoteSessionService::finish_auth_proof(bool ok, const std::string& challen
 void RemoteSessionService::enter_running(bool unattended) {
     // 前置：调用方已持锁且 state_ 已迁移
     state_ = SessState::Running;
+    // 会话开始审计（Doc19 §6）：双角色（控制发起/被控接入）统一记
+    audit_event("SessionStart", "OK", peer_code_str_, peer_ip_,
+                unattended ? "无人值守接入" : "人工确认接入");
     // 会话密钥协商（PRD 会话加密）：生成 ECDH 临时密钥对 + 16B nonce。
     // 控制端立即发 KEY_SYNC（此刻仍明文）；被控端等对端 KEY_SYNC 到达后
     // 明文应答再激活加密（handle_key_sync）。失败降级明文并 Warn 审计
@@ -942,6 +1009,10 @@ void RemoteSessionService::reset_to_idle() {
     peer_alias_.clear();
     pending_connect_ = {};
     session_id_.clear();
+    // 对端审计缓存同步清（防下次会话前残留串号；approve→enter_running
+    // 链条不经过本函数，不受影响）
+    peer_code_str_.clear();
+    peer_ip_.clear();
 }
 
 void RemoteSessionService::publish_request_event(const std::string& peer, bool auto_approved) {

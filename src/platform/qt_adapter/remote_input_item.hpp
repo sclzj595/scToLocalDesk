@@ -6,7 +6,10 @@
 // ============================================================
 #pragma once
 
+#include <QElapsedTimer>
+#include <QPoint>
 #include <QQuickItem>
+#include <QTimer>
 
 #include "platform/qt_adapter/input_bridge.hpp"
 
@@ -49,6 +52,13 @@ private:
     void send_key(int qt_key, bool down);
 
     QSizeF video_size_;
+
+    // 移动节流（远控手感优化）：hover 移动事件可 500+/s，直接转发会灌爆
+    // 对端 X socket——按键事件排在移动洪流后 = 打字发滞。合并为最新坐标、
+    // 10ms 定时器统一发送（≤100Hz），点击/按键不受节流影响
+    QTimer move_timer_;
+    QPointF pending_move_;
+    bool move_pending_{false};
 };
 
 }  // namespace sc::localdesk::platform

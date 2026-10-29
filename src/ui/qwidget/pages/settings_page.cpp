@@ -7,8 +7,10 @@
 #include <QComboBox>
 #include <QFormLayout>
 #include <QFrame>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
@@ -19,6 +21,7 @@
 #include "../glass_theme.h"
 #include "service/alias_service.hpp"
 #include "service/app_config.hpp"
+#include "service/blacklist_store.hpp"
 #include "foundation/config_parser.hpp"
 
 namespace sc::localdesk::ui {
@@ -188,6 +191,43 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
         });
     });
     secForm->addRow(QString(), trustBtn);
+
+    // ---- 黑名单管理（Doc19 §3.4，P0）：列表+移除+清空，拉黑动作后续从
+    // 信任列表右键加——入口保持最小可用，命中行为在会话层（静默丢弃）
+    auto* blList = new QListWidget();
+    blList->setFixedHeight(120);
+    blList->setToolTip(QStringLiteral("名单内设备发起的连接请求将被直接丢弃（不提示对方）"));
+    auto* blBtnRow = new QHBoxLayout();
+    auto* blRemoveBtn = new QPushButton(QStringLiteral("移除选中"));
+    blRemoveBtn->setObjectName(QStringLiteral("secondaryBtn"));
+    blRemoveBtn->setCursor(Qt::PointingHandCursor);
+    auto* blClearBtn = new QPushButton(QStringLiteral("清空黑名单"));
+    blClearBtn->setObjectName(QStringLiteral("secondaryBtn"));
+    blClearBtn->setCursor(Qt::PointingHandCursor);
+    connect(blRemoveBtn, &QPushButton::clicked, this, [this, blList] {
+        auto* it = blList->currentItem();
+        if (it != nullptr && blacklist_ != nullptr) {
+            blacklist_->unblock(it->data(Qt::UserRole).toString().toStdString());
+            refresh_blacklist(blList);
+        }
+    });
+    connect(blClearBtn, &QPushButton::clicked, this, [this, blList] {
+        if (blacklist_ != nullptr) {
+            blacklist_->clear();
+            refresh_blacklist(blList);
+        }
+    });
+    blBtnRow->addStretch();
+    blBtnRow->addWidget(blRemoveBtn);
+    blBtnRow->addWidget(blClearBtn);
+    auto* blWrap = new QWidget();
+    auto* blLay = new QVBoxLayout(blWrap);
+    blLay->setContentsMargins(0, 0, 0, 0);
+    blLay->addWidget(blList);
+    blLay->addLayout(blBtnRow);
+    secForm->addRow(QStringLiteral("黑名单设备"), blWrap);
+    bl_list_ = blList;
+    refresh_blacklist(blList);
     lay->addWidget(grpSec);
 
     // ---- 日志（Doc17 §3.6） ----
@@ -396,6 +436,36 @@ QFrame* SettingsPage::makeGroupCard(const QString& title, QWidget** bodyOut) {
     lay->addWidget(bodyWidget);
     *bodyOut = bodyWidget;
     return card;
+}
+
+void SettingsPage::refresh_blacklist(QListWidget* list) {
+    if (list == nullptr) {
+        return;
+    }
+    list->clear();
+    if (blacklist_ == nullptr) {
+        return;
+    }
+    for (const auto& e : blacklist_->list()) {
+        // 9 位裸码 → "xxx xxx xxx" 三段展示（与 QML/信任列表同口径）
+        const QString raw = QString::fromStdString(e.code);
+        QString grouped;
+        for (int i = 0; i < raw.size(); ++i) {
+            if (i > 0 && i % 3 == 0) {
+                grouped += QLatin1Char(' ');
+            }
+            grouped += raw.at(i);
+        }
+        QString line = grouped;
+        if (!e.note.empty()) {
+            line += QStringLiteral("　%1").arg(QString::fromStdString(e.note));
+        }
+        if (!e.blocked_at.empty()) {
+            line += QStringLiteral("　(%1)").arg(QString::fromStdString(e.blocked_at));
+        }
+        auto* it = new QListWidgetItem(line, list);
+        it->setData(Qt::UserRole, grouped);  // unblock 反查键（normalize 去空格后命中）
+    }
 }
 
 void SettingsPage::apply_view_mode() {

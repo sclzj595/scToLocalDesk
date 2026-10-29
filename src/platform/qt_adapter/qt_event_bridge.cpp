@@ -32,6 +32,9 @@
 #include <service/id_service.hpp>
 #include <service/remote_session_service.hpp>
 #include <service/trust_store.hpp>
+#include <service/blacklist_store.hpp>
+
+#include <ui/qwidget/glass_theme.h>
 
 namespace sc::localdesk::platform {
 
@@ -376,6 +379,56 @@ void QtEventBridge::set_trust_store(TrustStore* ts) {
     trust_ = ts;
 }
 
+// ---------------- 黑名单（Doc19 §3.4，P0） ----------------
+
+void QtEventBridge::set_blacklist(BlacklistStore* bl) {
+    blacklist_ = bl;
+}
+
+QVariantList QtEventBridge::listBlacklist() const {
+    QVariantList out;
+    if (blacklist_ == nullptr) {
+        return out;
+    }
+    for (const auto& e : blacklist_->list()) {
+        // 9 位裸码 → "xxx xxx xxx" 三段展示（与信任列表同口径）
+        const QString raw = QString::fromStdString(e.code);
+        QString grouped;
+        for (int i = 0; i < raw.size(); ++i) {
+            if (i > 0 && i % 3 == 0) {
+                grouped += QLatin1Char(' ');
+            }
+            grouped += raw.at(i);
+        }
+        out.append(QVariantMap{
+            {"code", grouped},
+            {"note", QString::fromStdString(e.note)},
+            {"blocked_at", QString::fromStdString(e.blocked_at)}});
+    }
+    return out;
+}
+
+void QtEventBridge::blockCode(const QString& code, const QString& note) {
+    if (blacklist_ != nullptr) {
+        blacklist_->block(code.toStdString(), note.toStdString());
+        SCLD_LOG(log_, foundation::LogLevel::Warn, "blacklist",
+                 "拉黑 code=" + code.toStdString()
+                     + " note=" + note.toStdString());
+    }
+}
+
+void QtEventBridge::unblock(const QString& code) {
+    if (blacklist_ != nullptr) {
+        blacklist_->unblock(code.toStdString());
+    }
+}
+
+void QtEventBridge::clearBlacklist() {
+    if (blacklist_ != nullptr) {
+        blacklist_->clear();
+    }
+}
+
 bool QtEventBridge::isTrusted(const QString& code) {
     return trust_ != nullptr && trust_->is_trusted(code.toStdString());
 }
@@ -390,6 +443,19 @@ void QtEventBridge::clearTrust() {
     if (trust_ != nullptr) {
         trust_->clear();
     }
+}
+
+void QtEventBridge::refreshDevices() {
+    // 对齐 Widgets view.refresh：主动广播一轮心跳，在线表立即更新
+    if (discovery_ != nullptr) {
+        discovery_->send_heartbeat();
+    }
+}
+
+void QtEventBridge::setUiTheme(bool dark) {
+    // QML Theme.qml 的明暗状态镜像进 C++ 单例：托盘菜单（qt_tray）
+    // 弹出时经 GlassTheme 取令牌色，保证与站内弹层同源同明暗
+    sc::localdesk::ui::GlassTheme::instance().setDark(dark);
 }
 
 QVariantList QtEventBridge::listTrusted() const {

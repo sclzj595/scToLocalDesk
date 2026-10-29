@@ -16,6 +16,8 @@
         <file>qml/pages/Page_RemoteView.qml</file>
         <file>qml/pages/Page_FileTransfer.qml</file>
         <file>qml/pages/Page_Settings.qml</file>
+        <file>qml/popups/AppDialog.qml</file>
+        <file>qml/popups/AppButton.qml</file>
         <file>qml/popups/Popup_ConnectConfirm.qml</file>
         <file>qml/popups/Popup_UnattendedPassword.qml</file>
         <file>qml/popups/Popup_FileConfirm.qml</file>

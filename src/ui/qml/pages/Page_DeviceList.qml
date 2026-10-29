@@ -169,7 +169,8 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             cellWidth: 292
-            cellHeight: 108
+            cellHeight: 116  // 内容实需 96（margins 28+头像 40+间距 6+码行 22），
+                             // 108 时容器仅 92 底部贴边裁字
             clip: true
             model: DeviceListModel
 

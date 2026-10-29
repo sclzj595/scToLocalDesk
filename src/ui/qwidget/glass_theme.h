@@ -38,6 +38,15 @@ public:
         setDark(!dark_);
     }
 
+    // ---------------- 降低透明度（对齐 QML view.reduce） ----------------
+    /// true 时玻璃面板取不透明混合底（无洞见内容），弹层令牌不受影响
+    bool isReduced() const {
+        return reduced_;
+    }
+    void setReduced(bool r) {
+        reduced_ = r;
+    }
+
     // ---------------- 主色调（Doc13 §2.1） ----------------
     QColor primary() const {
         return {"#9D4EDD"};
@@ -66,7 +75,9 @@ public:
     /// 明度差：QML 玻璃采样真实桌面天然带灰调，与内容区分界清晰；纯白半透
     /// 叠在 winBg 上会同色无界，Dock 视觉上渗入内容区
     QColor glassBg() const {
-        return dark_ ? QColor(30, 33, 40, 217) : QColor(236, 239, 243, 242);
+        const QColor base = dark_ ? QColor(30, 33, 40, 217) : QColor(236, 239, 243, 242);
+        // 降低透明度：预混合成不透明（观感=纯色面板，无透视）
+        return reduced_ ? blend(base, winBg()) : base;
     }
     QColor glassBorder() const {
         return dark_ ? QColor(255, 255, 255, 90) : QColor(255, 255, 255, 191);
@@ -93,12 +104,40 @@ public:
         return dark_ ? QColor(255, 255, 255, 20) : QColor(0, 0, 0, 15);
     }
 
+    // 弹出层不透明令牌：popup 窗口的 WA_TranslucentBackground 在 Windows 上
+    // 不可靠（QTBUG-94923 系），QSS 半透底会叠出原生灰——预混合成不透明色
+    QColor menuBg() const {
+        return blend(glassBg(), winBg());
+    }
+    QColor menuBorder() const {
+        return blend(glassBorder(), winBg());
+    }
+    QColor menuHover() const {
+        return blend(hoverBg(), menuBg());
+    }
+    QColor menuDivider() const {
+        return blend(divider(), menuBg());
+    }
+    /// 弹出层 DWM 描边（不透明，供 DWMWA_BORDER_COLOR）：
+    /// menuBorder 混合后近白，在浅色页面上无边界感——这里给可见实用值
+    QColor menuFrame() const {
+        return dark_ ? QColor{"#4A4E58"} : QColor{"#D9DEE7"};
+    }
+
     /// 全局 QSS（一次性 setStyleSheet 到 QApplication）
     QString buildQss() const;
 
 private:
     GlassTheme() = default;
     bool dark_{false};
+    bool reduced_{false};
+
+    static QColor blend(const QColor& top, const QColor& base) {
+        const qreal a = top.alphaF();
+        return QColor::fromRgbF(top.redF() * a + base.redF() * (1 - a),
+                                top.greenF() * a + base.greenF() * (1 - a),
+                                top.blueF() * a + base.blueF() * (1 - a));
+    }
 };
 
 }  // namespace sc::localdesk::ui

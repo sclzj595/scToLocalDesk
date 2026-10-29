@@ -37,10 +37,12 @@
     #include "foundation/thread_pool.hpp"
 #ifdef _WIN32
     #include "implement/capture/gdi_capture.hpp"
+#elif defined(__linux__)
+    #include "platform/linux/x11_capture.hpp"
 #endif
     #include "implement/crypto/crypto_factory.hpp"
     #include "implement/encoder/raw_encoder.hpp"
-#if SCLD_HAS_FFMPEG && defined(_WIN32)
+#if SCLD_HAS_FFMPEG
     #include "implement/decoder/ffmpeg_decoder.hpp"
     #include "implement/encoder/ffmpeg_encoder.hpp"
 #endif
@@ -69,6 +71,8 @@
     #include "service/remote_session_service.hpp"
     #include "service/screen_stream_service.hpp"
     #include "service/trust_store.hpp"
+    #include "service/blacklist_store.hpp"
+    #include "foundation/logger/audit_logger.hpp"
 
 using namespace sc::localdesk;
 #if SCLD_HAS_SPDLOG
@@ -222,6 +226,16 @@ int main(int argc, char* argv[]) {
                                + "/trust.json",
                            logger.get());
 
+    // 黑名单（Doc19 §3.4，P0）：exe 旁 blacklist.json，入站命中静默丢弃
+    BlacklistStore blacklist_store(QApplication::applicationDirPath().toStdString()
+                                       + "/blacklist.json",
+                                   logger.get());
+
+    // 审计分流（Doc19 §6，P0）：logs/audit.log 独立文件，七列固定格式
+    foundation::AuditLogger audit_logger(
+        QApplication::applicationDirPath().toStdString() + "/logs/audit.log",
+        id_service.self_code());
+
     auto crypto = make_default_crypto();
     auto pool = std::make_shared<ThreadPool>(4);
 
@@ -250,6 +264,8 @@ int main(int argc, char* argv[]) {
         transport, manualAuth, unattendedAuth, crypto, aliases, bus, logger);
     sessions->set_stream_params(cfg.fps, cfg.jpeg_quality);
     sessions->set_trust_store(&trust_store);  // 已信任设备免确认直连（Doc18 §3.2）
+    sessions->set_blacklist(&blacklist_store);  // 黑名单命中静默丢弃（Doc19 §3.4）
+    sessions->set_audit_logger(&audit_logger);  // 审计分流 audit.log（Doc19 §6）
     // 自连拦截（PRD 连接黑名单）：本机网卡 IP 集合 + 本机监听端口双条件
     {
         const std::vector<std::string> local_ips = sys.ips;
@@ -281,8 +297,8 @@ int main(int argc, char* argv[]) {
     sessions->set_file_service(files);
 
     // 被控端推流管线（编码器按 session.encoder 选择：ffmpeg | raw，
-    // FFmpeg 未编入时自动回落 raw 直通；Linux V1.0 仅控制端（Doc18 §8-2）
-    // ——stream 恒 null，托盘水印接线做空判，set_stream_service 不调）
+    // FFmpeg 未编入时自动回落 raw 直通；Linux 被控端 V1.0 豁免已解除
+    // ——X11 采集（Xorg 会话）+ FFmpeg MJPEG，Wayland 会话采集黑屏降级 raw）
     std::shared_ptr<ScreenStreamService> stream;
 #if defined(_WIN32)
     stream = std::make_shared<ScreenStreamService>(bus, logger);
@@ -295,6 +311,19 @@ int main(int argc, char* argv[]) {
     }
 #   else
     stream->set_source(std::make_shared<GdiCapturer>(), std::make_shared<RawEncoder>());
+#   endif
+    sessions->set_stream_service(stream);
+#elif defined(__linux__)
+    stream = std::make_shared<ScreenStreamService>(bus, logger);
+#   if SCLD_HAS_FFMPEG
+    if (cfg.encoder == "raw") {
+        stream->set_source(std::make_shared<X11Capturer>(), std::make_shared<RawEncoder>());
+    }
+    else {
+        stream->set_source(std::make_shared<X11Capturer>(), std::make_shared<FfmpegEncoder>());
+    }
+#   else
+    stream->set_source(std::make_shared<X11Capturer>(), std::make_shared<RawEncoder>());
 #   endif
     sessions->set_stream_service(stream);
 #endif
@@ -320,6 +349,7 @@ int main(int argc, char* argv[]) {
     platform::QtEventBridge bridge;
     bridge.init(bus.get(), aliases.get(), sessions.get(), files.get(), logger.get());
     bridge.set_trust_store(&trust_store);
+    bridge.set_blacklist(&blacklist_store);  // 黑名单 QML 入口（Doc19 §3.4）
     bridge.set_config_store(&ini, &cfg);
     bridge.set_discovery(&discovery);
     bridge.set_self_code(id_service.code_number());

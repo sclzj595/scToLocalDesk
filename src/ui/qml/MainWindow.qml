@@ -66,11 +66,11 @@ ApplicationWindow {
         }
     }
 
-    // 主窗口圆角容器（Doc13 §1.2：20px）
+    // 主窗口圆角容器（Doc13 §1.2：20px）；最大化置方（Win32 规范，对齐 Widgets）
     Rectangle {
         id: shell
         anchors.fill: parent
-        radius: Theme.winRadius
+        radius: window.visibility === Window.Maximized ? 0 : Theme.winRadius
         color: Theme.winBg
         border.color: Theme.glassBorder
         border.width: 1
@@ -258,7 +258,10 @@ ApplicationWindow {
                 id: dockBar
                 anchors.fill: parent
                 glassSource: shell
-                onPageRequested: idx => pageStack.currentIndex = idx
+                // 只写 dockBar.currentIndex（绑之源），pageStack 经声明式
+                // 绑定跟随——直接写 pageStack 会摧毁绑定，此后会话建立/
+                // 断开的自动切页全部失效（只能手点 dock 才动，历史 bug）
+                onPageRequested: idx => dockBar.currentIndex = idx
             }
         }
     }
@@ -345,6 +348,7 @@ ApplicationWindow {
             toast.show(qsTr("会话已断开"));
             break;
         case "view.refresh":
+            ScLocaldesk.refreshDevices();   // 主动广播心跳（对齐 Widgets，原只弹 toast 不刷新）
             toast.show(qsTr("设备列表已刷新"));
             break;
         case "view.theme":
