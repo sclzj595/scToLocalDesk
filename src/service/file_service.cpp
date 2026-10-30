@@ -167,15 +167,48 @@ bool FileService::send_file(const std::string& abs_path) {
     meta.size = size;
     meta.total_chunks = static_cast<uint32_t>((size + chunk_size_ - 1) / chunk_size_);
 
+    // 出站队列（Doc19 §5 P2）：活跃数 < 上限立即启动，超出串行排队
+    bool immediate = false;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (active_sends_ < max_parallel_) {
+            ++active_sends_;
+            immediate = true;
+        }
+        else {
+            send_queue_.push_back(QueuedSend{abs_path, meta});
+        }
+    }
+    if (immediate) {
+        // META 失败时计数回退与补位已在 begin_send 内完成
+        return begin_send(abs_path, meta);
+    }
+
+    // 排队登记：仅发 UI 事件（不发 FILE_META 不占传输表，取消即出队零残留）
+    publish_queued(meta.file_id, meta.name, size);
+    SCLD_LOG(log_, LogLevel::Info, "file",
+             "[file_id=" + meta.file_id + "] 发送排队 name=" + meta.name
+                 + " size=" + std::to_string(size));
+    return true;
+}
+
+// 出队启动（Doc19 §5 P2）：发 FILE_META → 登记 → 线程池分片发送。
+// META 失败 = 出站链路失效：发布发送侧失败事件后回退计数并补位下一个
+bool FileService::begin_send(const std::string& abs_path, const FileMeta& meta) {
     if (!out_frame(protocol::build_file_meta(meta.file_id, meta.name, meta.size,
                                              meta.total_chunks))) {
         SCLD_LOG(log_, LogLevel::Error, "file",
                  "[file_id=" + meta.file_id + "] META 发送失败（无出站链路）");
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            publish_send_failed_nolock(meta.file_id, meta.name, FileFailReason::IoError);
+        }
+        backfill_send_slot();  // 失败自动补位：下一个排队任务顶上
         return false;
     }
     SCLD_LOG(log_, LogLevel::Info, "file",
              "[file_id=" + meta.file_id + "] 发送登记 name=" + meta.name
-                 + " size=" + std::to_string(size));
+                 + " size=" + std::to_string(meta.size));
 
     // 发送条目注册：cancel/stop_all 置 aborted 后 send_loop 下片即退出（Doc11 §4.4）
     {
@@ -194,6 +227,30 @@ bool FileService::send_file(const std::string& abs_path) {
     return true;
 }
 
+// 补位（Doc19 §5 P2）：活跃 send 回退计数后，上限内弹队首启动。
+// 启动再失败经 begin_send → 本函数递归（每层出队一条，快速排空整队）
+void FileService::backfill_send_slot() {
+    std::string abs_path;
+    FileMeta meta;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (active_sends_ > 0) {
+            --active_sends_;
+        }
+        if (active_sends_ >= max_parallel_ || send_queue_.empty()) {
+            return;
+        }
+        QueuedSend q = std::move(send_queue_.front());
+        send_queue_.pop_front();
+        abs_path = std::move(q.abs_path);
+        meta = std::move(q.meta);
+        ++active_sends_;
+    }
+    SCLD_LOG(log_, LogLevel::Info, "file",
+             "[file_id=" + meta.file_id + "] 出队启动 name=" + meta.name);
+    (void)begin_send(abs_path, meta);
+}
+
 bool FileService::out_frame(const std::vector<uint8_t>& frame) {
     // 出站统一口：注入的加密链路优先（会话加密 PRD §6.2），未注入回落裸发
     if (send_fn_) {
@@ -208,11 +265,13 @@ bool FileService::out_frame(const std::vector<uint8_t>& frame) {
 
 void FileService::send_loop(const std::string& abs_path, const FileMeta& meta) {
     if (transport_ == nullptr && !send_fn_) {
+        backfill_send_slot();  // 出站链路缺失：判负收尾并补位（Doc19 §5）
         return;
     }
     FILE* fp = foundation::fs_open(fs_path(abs_path), "rb");
     if (fp == nullptr) {
         SCLD_LOG(log_, LogLevel::Error, "file", "[file_id=" + meta.file_id + "] 打开失败");
+        backfill_send_slot();  // 打开失败：收尾补位（Doc19 §5）
         return;
     }
     std::vector<uint8_t> buf(chunk_size_);
@@ -281,6 +340,7 @@ void FileService::send_loop(const std::string& abs_path, const FileMeta& meta) {
     SCLD_LOG(log_, aborted ? LogLevel::Warn : LogLevel::Info, "file",
              "[file_id=" + meta.file_id + "] 发送" + (aborted ? "中止" : "完成")
                  + " transferred=" + std::to_string(transferred));
+    backfill_send_slot();  // 队列补位（Doc19 §5 P2）：成功/失败/取消均弹下一个
 }
 
 // ---------------- 接收 ----------------
@@ -647,6 +707,17 @@ bool FileService::reject_file(const std::string& file_id) {
 
 void FileService::cancel(const std::string& file_id) {
     std::lock_guard<std::mutex> lk(mtx_);
+    // 排队任务取消（Doc19 §5 P2）：出队即清理——未发 FILE_META 未登记，零残留
+    for (auto it = send_queue_.begin(); it != send_queue_.end(); ++it) {
+        if (it->meta.file_id == file_id) {
+            const std::string name = it->meta.name;
+            send_queue_.erase(it);
+            publish_send_failed_nolock(file_id, name, FileFailReason::Cancelled);
+            SCLD_LOG(log_, LogLevel::Warn, "file",
+                     "[file_id=" + file_id + "] 排队任务已取消 name=" + name);
+            return;
+        }
+    }
     const auto it = transfers_.find(file_id);
     if (it == transfers_.end()) {
         return;
@@ -673,6 +744,12 @@ void FileService::stop_all() {
             finish_receive(it->second, false);  // 关句柄 + 清临时文件 + erase
         }
     }
+    // 出站排队清理（Doc19 §5 P2，会话级不持久化）：逐条发取消事件后清空
+    while (!send_queue_.empty()) {
+        QueuedSend q = std::move(send_queue_.front());
+        send_queue_.pop_front();
+        publish_send_failed_nolock(q.meta.file_id, q.meta.name, FileFailReason::Cancelled);
+    }
     pending_.clear();
     SCLD_LOG(log_, LogLevel::Info, "file", "会话回收：全部传输已中止");
 }
@@ -681,6 +758,49 @@ void FileService::publish_progress(const std::string& file_id, const std::string
                                    uint64_t transferred, uint64_t total, FileDir dir) {
     std::lock_guard<std::mutex> lk(mtx_);
     publish_progress_nolock(file_id, name, transferred, total, dir);
+}
+
+void FileService::publish_queued(const std::string& file_id, const std::string& name,
+                                 uint64_t size) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    if (bus_ != nullptr) {
+        Evt_FileQueued e;
+        e.file_id = file_id;
+        e.name = name;
+        e.size = size;
+        e.dir = FileDir::Send;
+        e.timestamp_us = now_us();
+        bus_->publish(e);
+    }
+    if (event_cb_) {
+        FileEvent fe;
+        fe.file_id = file_id;
+        fe.kind = FileEventKind::Queued;
+        fe.total = size;
+        event_cb_(fe);
+    }
+}
+
+void FileService::publish_send_failed_nolock(const std::string& file_id,
+                                             const std::string& name,
+                                             FileFailReason reason) {
+    // 调用方已持有 mtx_：本函数全程不得再加锁（nolock 语义）
+    if (bus_ != nullptr) {
+        Evt_FileFailed e;
+        e.file_id = file_id;
+        e.name = name;
+        e.reason = reason;
+        e.dir = FileDir::Send;
+        e.timestamp_us = now_us();
+        bus_->publish(e);
+    }
+    if (event_cb_) {
+        FileEvent fe;
+        fe.file_id = file_id;
+        fe.kind = FileEventKind::Failed;
+        fe.reason = static_cast<uint32_t>(reason);
+        event_cb_(fe);
+    }
 }
 
 void FileService::publish_progress_nolock(const std::string& file_id, const std::string& name,

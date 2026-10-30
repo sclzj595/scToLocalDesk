@@ -136,6 +136,15 @@ struct Evt_FileProgress final : IEvent {
     FileDir dir{FileDir::Send};
 };
 
+/// 出站发送排队登记（Doc19 §5 P2）：send_file 超出并行上限入队即发；
+/// UI 插「排队中」行，出队启动后由 FILE_META/progress 事件接管
+struct Evt_FileQueued final : IEvent {
+    std::string file_id;
+    std::string name;
+    uint64_t size{0};
+    FileDir dir{FileDir::Send};
+};
+
 struct Evt_FileDone final : IEvent {
     std::string file_id;
     std::string name;

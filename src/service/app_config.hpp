@@ -34,6 +34,9 @@ struct AppConfig {
     std::string quality{"medium"};
     int jpeg_quality{80};
     int session_request_timeout_s{30};
+    /// 会话内剪贴板文本同步总开关（Doc19 §5 P2）：同一键两端读——
+    /// 关=不发不收（隐私红线：被控端由本机设置控制），默认开
+    bool clipboard_sync{true};
     // [file]
     std::string save_path;  // 空 = 桌面（main 解析 %USERPROFILE%）
     bool confirm_before_transfer{true};
@@ -41,6 +44,8 @@ struct AppConfig {
     bool file_safe_path{true};
     int chunk_size_kb{256};
     std::string overwrite{"ask"};
+    /// 出站发送并行上限（Doc19 §5 P2）：1~8，默认 3；超出的 send_file 串行排队
+    int max_parallel{3};
     // [security]（Doc16 §6）
     bool unattended_enabled{false};
     std::string unattended_salt;          // 16B hex

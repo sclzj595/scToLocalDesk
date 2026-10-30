@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -68,6 +69,14 @@ public:
         std::lock_guard<std::mutex> lk(mtx_);
         safe_path_ = enabled;
     }
+    /// 出站发送并行上限（file.max_parallel，Doc19 §5 P2；范围 1~8，默认 3）：
+    /// 超出的 send_file 请求串行排队，活跃任务收尾/失败/取消后自动补位
+    void set_max_parallel(int n) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (n >= 1 && n <= 8) {
+            max_parallel_ = static_cast<size_t>(n);
+        }
+    }
 
     /// 对端文件名安全校验（PRD P10 危险路径防线）：禁路径分隔/盘符/通配符/
     /// 父目录/控制符/隐藏名/Windows 保留设备名；on_file_meta 唯一拦截入口
@@ -105,7 +114,21 @@ private:
         bool awaiting_confirm{false};   ///< 前置确认预建：confirm 窗口内片照收，拒绝即清理
     };
 
+    /// 出站排队条目（Doc19 §5 P2）：meta 为入队时快照（file_id 作取消索引，
+    /// 分片数定版）；出队时直接启动，无需重扫磁盘
+    struct QueuedSend
+    {
+        std::string abs_path;
+        FileMeta meta;
+    };
+
     void send_loop(const std::string& abs_path, const FileMeta& meta);
+    /// 出队启动：发 FILE_META → 登记条目 → 线程池分片发送（原 send_file 启动段
+    /// 抽出，供 send_file 与队列补位复用）；META 失败回退计数并自动补位
+    bool begin_send(const std::string& abs_path, const FileMeta& meta);
+    /// 队列补位（Doc19 §5 P2）：活跃 send 收尾/失败后回退计数，上限内弹队首
+    /// 启动；未持锁（内部加锁）。启动再失败经 begin_send 递归补位快速排空
+    void backfill_send_slot();
     /// 出站统一口：send_fn_（加密链路）优先，回落 transport_ 裸发（可空）
     bool out_frame(const std::vector<uint8_t>& frame);
     /// 调用方已持锁：关句柄 + 清临时文件 + 发布失败事件 + 回收条目；
@@ -117,6 +140,12 @@ private:
     void publish_progress_nolock(const std::string& file_id, const std::string& name,
                                  uint64_t transferred, uint64_t total,
                                  FileDir dir);  ///< 调用方已持锁
+    /// 排队登记事件（send_file 入队后调用，内部加锁）：UI 插「排队中」行
+    void publish_queued(const std::string& file_id, const std::string& name,
+                        uint64_t size);
+    /// 调用方已持锁：发送侧失败事件（排队取消/启动失败；发送路径此前无失败事件）
+    void publish_send_failed_nolock(const std::string& file_id, const std::string& name,
+                                    FileFailReason reason);
 
     std::shared_ptr<ITransport> transport_;
     std::function<bool(const std::vector<uint8_t>&)> send_fn_;  ///< 加密出站链路（可空）
@@ -127,6 +156,9 @@ private:
     mutable std::mutex mtx_;
     std::unordered_map<std::string, Transfer> transfers_;  ///< file_id -> 状态
     std::unordered_map<std::string, FileMeta> pending_;    ///< 待确认（confirm 流程）
+    std::deque<QueuedSend> send_queue_;  ///< 出站发送队列（Doc19 §5 P2，会话级不持久化）
+    size_t active_sends_{0};             ///< 已启动未收尾的 send_loop 数（含待调度）
+    size_t max_parallel_{3};             ///< 并行上限（file.max_parallel，默认 3）
     bool confirm_enabled_{true};
     bool safe_path_{true};
     std::string overwrite_policy_{"ask"};  ///< file.overwrite（Doc11 §4.2）

@@ -195,6 +195,9 @@ private:
     void audit_event(const std::string& event, const std::string& result,
                      const std::string& peer_code, const std::string& peer_ip,
                      const std::string& note);
+    /// 剪贴板首次同步审计（Doc19 §5 P2）：会话内收/发首帧 CLIPBOARD_SYNC 记
+    /// 一条（note=剪贴板同步开启），后续不刷屏；reset_to_idle 复位
+    void audit_clipboard_once();
     /// 武装确认看门狗（PRD 确认三件套）：kConfirmTimeoutSec 内弹窗未消费
     /// 则自动拒绝。前置：调用方不持锁（内部 join 旧线程需让路）
     void arm_confirm_watchdog(uint64_t my_seq);
@@ -263,6 +266,7 @@ public:
     // 会话密钥协商（PRD 会话加密）：Running 时生成临时密钥对 + nonce，
     // KEY_SYNC 交换派生 AES-256-GCM 会话密钥；encrypted_ 为收发激活开关
     std::atomic<bool> encrypted_{false};
+    std::atomic<bool> clipboard_audit_done_{false};  ///< 首次剪贴板同步已审计（收发共用，会话级去重）
     std::vector<uint8_t> key_pub_;   ///< 本端 ECDH 裸公钥（64B，持锁读写）
     std::vector<uint8_t> key_nonce_; ///< 本端 16B nonce（持锁读写）
 

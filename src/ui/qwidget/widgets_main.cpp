@@ -31,6 +31,7 @@
 #endif
         #include "implement/transport/ws_transport.hpp"
         #include "platform/qt_adapter/qt_udp_discovery.hpp"
+        #include "platform/qt_adapter/qt_event_bridge.hpp"
         #include "platform/qt_adapter/single_instance_guard.hpp"
         #include "platform/qt_adapter/video_pipeline.hpp"
         #include "platform/win32/crash_reporter.hpp"
@@ -233,6 +234,7 @@ int main(int argc, char* argv[]) {
     files->set_confirm_enabled(cfg.confirm_before_transfer);
     files->set_safe_path(cfg.file_safe_path);
     files->set_overwrite_policy(cfg.overwrite);
+    files->set_max_parallel(cfg.max_parallel);  // 出站并行上限（Doc19 §5 P2）
     files->set_save_dir(cfg.save_path.empty()
                             ? (QCoreApplication::applicationDirPath().toStdString()
                                + "/received")
@@ -520,6 +522,7 @@ int main(int argc, char* argv[]) {
                          &sc::localdesk::platform::VideoPipeline::placeholderReady,
                          rv, &sc::localdesk::ui::RemoteViewPage::on_placeholder);
         rv->set_session(sessions.get());  // 键鼠透传出口（Doc18 §4.4）
+        rv->bind_clipboard(&ini, &cfg);  // 剪贴板同步开关（Doc19 §5 P2）
         // 会话关闭复位：清帧回空态、隐藏工具条（无会话不可点断开）
         bus->subscribe<Evt_SessionClosed>([rv](const Evt_SessionClosed&) {
             QMetaObject::invokeMethod(rv, &sc::localdesk::ui::RemoteViewPage::on_session_closed,
@@ -548,6 +551,11 @@ int main(int argc, char* argv[]) {
                                  }
                              }
                          });
+        // 排队中条目取消（Doc19 §5 P2）：排队态出队即清，传输中走既有 abort 路径
+        QObject::connect(fp, &sc::localdesk::ui::FileTransferPage::cancelRequested, fp,
+                         [files](const QString& fid) {
+                             files->cancel(fid.toStdString());
+                         });
         bus->subscribe<Evt_FileProgress>([fp](const Evt_FileProgress& e) {
             QMetaObject::invokeMethod(fp, [fp, e] {
                 fp->on_file_progress(QString::fromStdString(e.file_id),
@@ -569,6 +577,14 @@ int main(int argc, char* argv[]) {
                 fp->on_file_failed(QString::fromStdString(e.file_id),
                                    QString::fromStdString(e.name),
                                    e.dir == FileDir::Recv ? 1 : 0);
+            }, Qt::QueuedConnection);
+        });
+        // 出站排队登记（Doc19 §5 P2）：行卡显示「排队中」
+        bus->subscribe<Evt_FileQueued>([fp](const Evt_FileQueued& e) {
+            QMetaObject::invokeMethod(fp, [fp, e] {
+                fp->on_file_queued(QString::fromStdString(e.file_id),
+                                   QString::fromStdString(e.name),
+                                   static_cast<qint64>(e.size));
             }, Qt::QueuedConnection);
         });
         // 接收前置确认（Doc11 §4.3）：QMessageBox 问询（玻璃化随 P4 专项）；
@@ -654,56 +670,15 @@ int main(int argc, char* argv[]) {
         });
     }
 
-    // 剪贴板文本同步（PRD P9）：装配同 main.cpp（内容三重去重防回环）
-    {
-        QClipboard* clip = QApplication::clipboard();
-        auto echo_mtx = std::make_shared<std::mutex>();
-        auto last_remote = std::make_shared<QString>();
-        auto last_sent = std::make_shared<QString>();
-        bus->subscribe<Evt_ClipboardReceived>(
-            [&logger, clip, echo_mtx, last_remote](const Evt_ClipboardReceived& e) {
-                {
-                    std::lock_guard<std::mutex> lk(*echo_mtx);
-                    *last_remote = QString::fromUtf8(QByteArray::fromStdString(e.text));
-                }
-                QMetaObject::invokeMethod(
-                    qApp,
-                    [&logger, clip, e] {
-                        const QString text =
-                            QString::fromUtf8(QByteArray::fromStdString(e.text));
-                        if (text.isEmpty()) {
-                            return;
-                        }
-                        clip->setText(text);
-                        SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn,
-                                 "clipboard",
-                                 "远端文本已写入本机剪贴板 len="
-                                     + std::to_string(e.text.size())
-                                     + " head=" + e.text.substr(0, 24));
-                    });
-            });
-        QObject::connect(clip, &QClipboard::dataChanged, qApp,
-                         [clip, &sessions, &logger, echo_mtx, last_remote, last_sent] {
-                             const QString text = clip->text();
-                             if (text.isEmpty()) {
-                                 return;
-                             }
-                             {
-                                 std::lock_guard<std::mutex> lk(*echo_mtx);
-                                 if (text == *last_remote || text == *last_sent) {
-                                     return;  // 回声：远端写入 / 本端已发，不再同步
-                                 }
-                                 *last_sent = text;
-                             }
-                             if (sessions->send_clipboard(text.toStdString())) {
-                                 SCLD_LOG(logger,
-                                          sc::localdesk::foundation::LogLevel::Info,
-                                          "clipboard",
-                                          "本机剪贴板已同步 len="
-                                              + std::to_string(text.toStdString().size()));
-                             }
-                         });
-    }
+    // 剪贴板文本同步（Doc19 §5 P2）：监视/接收/回环防抖/节流收敛进
+    // QtEventBridge（与 QML 版同一实现）。Widgets 版无常驻桥，此处挂轻量
+    // 实例仅做剪贴板监视 + 配置读取；须活到 app.exec() 退出
+    //（EventBus 订阅持 this 裸指针），故声明在 main 作用域
+    sc::localdesk::platform::QtEventBridge clip_bridge;
+    clip_bridge.init(bus.get(), aliases.get(), sessions.get(), files.get(),
+                     logger.get());
+    clip_bridge.set_config_store(&ini, &cfg);
+    clip_bridge.start_clipboard_monitor();
     // 单实例唤起：二次启动把首实例主窗带到前台
     guard.set_raise_callback([&win] {
         win.showNormal();

@@ -138,18 +138,54 @@ FileRow& FileTransferPage::upsert_row(const QString& file_id, const QString& nam
     stLbl->setStyleSheet(QStringLiteral("font-size: 12px;"));
     row->addWidget(stLbl);
 
+    // 排队态取消按钮（Doc19 §5 P2）：仅「排队中」显示，其余态隐藏
+    auto* cancelBtn = new QPushButton(QStringLiteral("取消"), card);
+    cancelBtn->setFixedSize(44, 24);
+    cancelBtn->setCursor(Qt::PointingHandCursor);
+    cancelBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background: transparent; border: 1px solid %1; border-radius: 4px;"
+        " font-size: 11px; color: %2; padding: 0; }"
+        "QPushButton:hover { border-color: %3; color: %3; }")
+        .arg(GlassTheme::instance().divider().name(QColor::HexRgb),
+             GlassTheme::instance().textHint().name(QColor::HexRgb),
+             GlassTheme::instance().accentRed().name(QColor::HexRgb)));
+    row->addWidget(cancelBtn);
+    const QString fid = file_id;
+    QObject::connect(cancelBtn, &QPushButton::clicked, card, [this, fid] {
+        emit cancelRequested(fid);
+    });
+    cancelBtn->hide();
+
     // 插到 stretch 之前
     auto* host_lay = static_cast<QVBoxLayout*>(host_->layout());
     host_lay->insertWidget(host_lay->count() - 1, card);
     drag_hint_->hide();
     empty_->hide();
     host_->show();
-    return *rows_.insert(file_id, FileRow{bar, stLbl, sizeLbl});
+    auto& r = *rows_.insert(file_id, FileRow{bar, stLbl, sizeLbl});
+    r.cancel = cancelBtn;
+    return r;
+}
+
+void FileTransferPage::on_file_queued(const QString& file_id, const QString& name,
+                                      qint64 total) {
+    FileRow& r = upsert_row(file_id, name, 0);
+    r.size->setText(human_size(total));
+    r.bar->setValue(0);
+    r.status->setText(QStringLiteral("排队中"));
+    r.status->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
+                                .arg(GlassTheme::instance().textHint().name(QColor::HexRgb)));
+    if (r.cancel != nullptr) {
+        r.cancel->show();
+    }
 }
 
 void FileTransferPage::on_file_progress(const QString& file_id, const QString& name,
                                         qint64 transferred, qint64 total, int dir) {
     FileRow& r = upsert_row(file_id, name, dir);
+    if (r.cancel != nullptr) {
+        r.cancel->hide();  // 出队启动：清排队态（Doc19 §5 P2）
+    }
     r.size->setText(human_size(total));
     const int pct = total > 0 ? static_cast<int>(transferred * 100 / total) : 0;
     r.bar->setValue(pct);
@@ -171,6 +207,9 @@ void FileTransferPage::on_file_progress(const QString& file_id, const QString& n
 
 void FileTransferPage::on_file_done(const QString& file_id, const QString& name, int dir) {
     FileRow& r = upsert_row(file_id, name, dir);
+    if (r.cancel != nullptr) {
+        r.cancel->hide();
+    }
     r.bar->setValue(100);
     r.status->setText(QStringLiteral("已完成"));
     r.status->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
@@ -179,6 +218,9 @@ void FileTransferPage::on_file_done(const QString& file_id, const QString& name,
 
 void FileTransferPage::on_file_failed(const QString& file_id, const QString& name, int dir) {
     FileRow& r = upsert_row(file_id, name, dir);
+    if (r.cancel != nullptr) {
+        r.cancel->hide();
+    }
     r.status->setText(QStringLiteral("失败"));
     r.status->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
                                 .arg(GlassTheme::instance().accentRed().name(QColor::HexRgb)));

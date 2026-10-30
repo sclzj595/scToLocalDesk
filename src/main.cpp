@@ -298,6 +298,7 @@ int main(int argc, char* argv[]) {
     files->set_confirm_enabled(cfg.confirm_before_transfer);
     files->set_safe_path(cfg.file_safe_path);
     files->set_overwrite_policy(cfg.overwrite);
+    files->set_max_parallel(cfg.max_parallel);  // 出站并行上限（Doc19 §5 P2）
     const QString save_dir = cfg.save_path.empty()
         ? QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)
         : QString::fromStdString(cfg.save_path);
@@ -522,58 +523,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // 剪贴板文本同步（PRD P9）：远端文本写本机剪贴板 + 本机复制变化上行。
-    // Windows 剪贴板通知异步且系统全局（对端写入也触发本进程 dataChanged，
-    // QSignalBlocker 无效），回环靠内容三重去重：远端刚写入/本端刚发送的
-    // 文本不再同步——内容等值跳过对同步语义无损
-    {
-        QClipboard* clip = QApplication::clipboard();
-        auto echo_mtx = std::make_shared<std::mutex>();
-        auto last_remote = std::make_shared<QString>();
-        auto last_sent = std::make_shared<QString>();
-        bus->subscribe<Evt_ClipboardReceived>(
-            [&logger, clip, echo_mtx, last_remote](const Evt_ClipboardReceived& e) {
-                {
-                    std::lock_guard<std::mutex> lk(*echo_mtx);
-                    // 收帧即标记（subscribe 在 IO 线程）：赶在本端 dataChanged
-                    // 回声触发前生效，竞态窗口缩至网络在途
-                    *last_remote = QString::fromUtf8(QByteArray::fromStdString(e.text));
-                }
-                QMetaObject::invokeMethod(
-                    qApp,
-                    [&logger, clip, e] {
-                        const QString text =
-                            QString::fromUtf8(QByteArray::fromStdString(e.text));
-                        if (text.isEmpty()) {
-                            return;
-                        }
-                        clip->setText(text);
-                        SCLD_LOG(logger, LogLevel::Warn, "clipboard",
-                                 "远端文本已写入本机剪贴板 len="
-                                     + std::to_string(e.text.size())
-                                     + " head=" + e.text.substr(0, 24));
-                    });
-            });
-        QObject::connect(clip, &QClipboard::dataChanged, qApp,
-                         [clip, &sessions, &logger, echo_mtx, last_remote, last_sent] {
-                             const QString text = clip->text();
-                             if (text.isEmpty()) {
-                                 return;
-                             }
-                             {
-                                 std::lock_guard<std::mutex> lk(*echo_mtx);
-                                 if (text == *last_remote || text == *last_sent) {
-                                     return;  // 回声：远端写入 / 本端已发，不再同步
-                                 }
-                                 *last_sent = text;
-                             }
-                             if (sessions->send_clipboard(text.toStdString())) {
-                                 SCLD_LOG(logger, LogLevel::Info, "clipboard",
-                                          "本机剪贴板已同步 len="
-                                              + std::to_string(text.toStdString().size()));
-                             }
-                         });
-    }
+    // 剪贴板文本同步（Doc19 §5 P2）：监视/接收/回环防抖/500ms 节流已收敛进
+    // QtEventBridge（本进程唯一 QClipboard 数据入口），此处仅装配启动
+    bridge.start_clipboard_monitor();
     // 冒烟钩子 5（默认关）：SCLD_SMOKE_CLIP=1 时 Running 后 2s 写本机剪贴板，
     // dataChanged 自动同步对端（PRD P9 E2E）
     if (qEnvironmentVariable("SCLD_SMOKE_CLIP") == "1") {

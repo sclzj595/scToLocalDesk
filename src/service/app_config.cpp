@@ -32,6 +32,7 @@ void AppConfig::load(const foundation::IniConfig& ini) {
     jpeg_quality = ini.get_int("session", "jpeg_quality", jpeg_quality);
     session_request_timeout_s =
         ini.get_int("session", "session_request_timeout_s", session_request_timeout_s);
+    clipboard_sync = ini.get_bool("session", "clipboard_sync", clipboard_sync);
 
     save_path = ini.get_str("file", "save_path", save_path);
     confirm_before_transfer =
@@ -39,6 +40,10 @@ void AppConfig::load(const foundation::IniConfig& ini) {
     chunk_size_kb = ini.get_int("file", "chunk_size_kb", chunk_size_kb);
     overwrite = ini.get_str("file", "overwrite", overwrite);
     file_safe_path = ini.get_bool("file", "safe_path", file_safe_path);
+    max_parallel = ini.get_int("file", "max_parallel", max_parallel);
+    if (max_parallel < 1 || max_parallel > 8) {
+        max_parallel = 3;  // 范围校验兜底（Doc19 §5 P2）
+    }
 
     unattended_enabled = ini.get_bool("security", "unattended_enabled", unattended_enabled);
     unattended_salt = ini.get_str("security", "unattended_salt", unattended_salt);
@@ -80,12 +85,14 @@ void AppConfig::save(foundation::IniConfig& ini) const {
     ini.set_str("session", "quality", quality);
     ini.set_int("session", "jpeg_quality", jpeg_quality);
     ini.set_int("session", "session_request_timeout_s", session_request_timeout_s);
+    ini.set_bool("session", "clipboard_sync", clipboard_sync);
 
     ini.set_str("file", "save_path", save_path);
     ini.set_bool("file", "confirm_before_transfer", confirm_before_transfer);
     ini.set_int("file", "chunk_size_kb", chunk_size_kb);
     ini.set_str("file", "overwrite", overwrite);
     ini.set_bool("file", "safe_path", file_safe_path);
+    ini.set_int("file", "max_parallel", max_parallel);
 
     ini.set_bool("security", "unattended_enabled", unattended_enabled);
     ini.set_str("security", "unattended_salt", unattended_salt);

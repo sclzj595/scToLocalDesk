@@ -12,6 +12,7 @@
 namespace sc::localdesk {
 
 enum class FileEventKind {
+    Queued,    ///< 出站排队登记（Doc19 §5 P2）：入队未启动，取消即出队零残留
     Progress,
     Done,
     Failed,

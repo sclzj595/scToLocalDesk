@@ -155,6 +155,11 @@ public:
     /// DI：控制会话服务（键鼠事件发送出口），画面装配后调用
     void set_session(RemoteSessionService* s) { sessions_ = s; }
 
+    /// 剪贴板同步开关配置注入（Doc19 §5 P2）：读写 config
+    /// session.clipboard_sync（默认开）；widgets_main 装配后调用，
+    /// 回放持久化真值到按钮 checked 态
+    void bind_clipboard(foundation::IniConfig* ini, AppConfig* cfg);
+
 signals:
     void disconnected();
 
@@ -191,6 +196,9 @@ private:
 
     QWidget* toolbar_{nullptr};
     QLabel* ro_badge_{nullptr};  ///< 只读徽标（顶部居中，对端未授权键鼠时显示）
+    QPushButton* clip_btn_{nullptr};      ///< 剪贴板同步开关（工具条内，checkable）
+    foundation::IniConfig* clip_ini_{nullptr};  ///< 开关落盘（bind_clipboard 注入）
+    AppConfig* clip_cfg_{nullptr};              ///< 开关真值（bind_clipboard 注入）
     QImage frame_;
     bool placeholder_{false};        ///< 占位帧激活（画灰底+提示，不画图像）
     bool placeholder_locked_{false}; ///< 占位分支：锁屏文案 / 驱动异常文案
@@ -205,6 +213,7 @@ struct FileRow {
     QProgressBar* bar{nullptr};
     QLabel* status{nullptr};
     QLabel* size{nullptr};
+    QPushButton* cancel{nullptr};  ///< 排队态取消按钮（Doc19 §5 P2，仅排队中显示）
     // 速度显示（PRD P10）：两次进度差/时间差 + 指数平滑
     qint64 last_x{0};
     qint64 last_t_ms{0};
@@ -222,9 +231,12 @@ public:
 signals:
     /// 选中/拖入的本地文件列表（widgets_main 转桥 sendFile）
     void filesPicked(const QStringList& paths);
+    /// 排队中条目取消（Doc19 §5 P2，widgets_main 转 FileService.cancel）
+    void cancelRequested(const QString& file_id);
 
 public slots:
     /// Evt_File* → 桥接信号（dir: 0 发送 1 接收）
+    void on_file_queued(const QString& file_id, const QString& name, qint64 total);
     void on_file_progress(const QString& file_id, const QString& name,
                           qint64 transferred, qint64 total, int dir);
     void on_file_done(const QString& file_id, const QString& name, int dir);

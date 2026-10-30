@@ -9,8 +9,9 @@
 #include <QString>
 #include <QVariant>
 
-namespace sc::localdesk {
+class QTimer;  // Qt 全局命名空间前向声明（勿入 platform：遮蔽真型致 C2079）
 
+namespace sc::localdesk {
 class AliasService;
 class RemoteSessionService;
 class FileService;
@@ -77,6 +78,8 @@ public:
     Q_INVOKABLE bool startControl(const QString& alias, bool unattended,
                                   const QString& password);
     Q_INVOKABLE bool sendFile(const QString& absPath);
+    /// 取消传输（Doc19 §5 P2）：排队中任务出队即清零残留，传输中走既有 abort 路径
+    Q_INVOKABLE bool cancelFile(const QString& fileId);
     /// 会话 Running 判定（发送文件前置：文件走会话业务帧通道）
     Q_INVOKABLE bool sessionRunning() const;
     Q_INVOKABLE bool acceptFile(const QString& fileId);   ///< 接收确认弹窗【同意】
@@ -138,6 +141,14 @@ public:
     Q_INVOKABLE QString deviceCode(const QString& alias) const;
     /// 剪贴板纯文本（连接码三段输入的粘贴分发，QML 无剪贴板访问能力）
     Q_INVOKABLE QString clipboardText() const;
+    /// 剪贴板同步总开关（Doc19 §5 P2，config session.clipboard_sync，默认开）：
+    /// 远程画面页开关按钮读写；同一键两端读——关=不发不收（隐私红线）
+    Q_INVOKABLE bool clipboardSyncEnabled() const;
+    Q_INVOKABLE void setClipboardSyncEnabled(bool on);
+    /// 启动剪贴板双向同步监视（Doc19 §5 P2）：本机剪贴板变化 → 500ms 尾沿
+    /// 节流 + 回环防抖 → 会话出站；远端 CLIPBOARD_SYNC 帧 → 写本机剪贴板。
+    /// 仅会话 Running 且开关开启时生效；两个 exe 装配末尾各调一次
+    void start_clipboard_monitor();
     /// 被控监听启动结果（端口占用 UI 提示，Doc18 风险清单 P1 顺带项）
     void set_listening(bool on) {
         listening_ = on;
@@ -176,6 +187,8 @@ signals:
     void sessionReadOnly(bool readOnly);
     void sessionClosed(const QString& reasonText);
     // 文件（dir: 0 发送 1 接收；name 供 UI 首次插条目）
+    /// 出站排队登记（Doc19 §5 P2）：UI 插「排队中」行，progress 接管后清排队态
+    void fileQueued(const QString& fileId, const QString& name, qint64 size);
     void fileProgress(const QString& fileId, const QString& name, qint64 transferred,
                       qint64 total, int dir);
     void fileDone(const QString& fileId, const QString& name, int dir);
@@ -202,6 +215,14 @@ private:
     uint32_t self_code_{0};
     bool unattended_{false};
     bool listening_{false};
+
+    // ---------------- 剪贴板同步（Doc19 §5 P2，start_clipboard_monitor 使用） ----------------
+    void flush_clipboard();  ///< 节流尾沿：把挂起文本真正出站（主线程）
+    QTimer* clip_timer_{nullptr};  ///< 500ms 单发节流器（尾沿合并连发）
+    QString clip_pending_;   ///< 节流窗口内挂起的最新文本
+    QString clip_last_out_;  ///< 本端最近成功出站文本（回声过滤）
+    QString clip_last_in_;   ///< 最近从远端写入本机文本（回声过滤）
+    bool clip_session_running_{false};  ///< 会话 Running 才监听发送（init 生命周期维护）
 };
 
 }  // namespace platform

@@ -87,6 +87,7 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
     });
     bus->subscribe<Evt_SessionStart>([this](const Evt_SessionStart& e) {
         QMetaObject::invokeMethod(this, [this, e] {
+            clip_session_running_ = true;  // 剪贴板发送监听激活（Doc19 §5 P2）
             emit sessionBusyChanged();
             emit sessionStarted(QString::fromStdString(e.device_alias));
             emit sessionReadOnly(e.read_only);  // 只读徽标（控制端知情）
@@ -94,6 +95,8 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
     });
     bus->subscribe<Evt_SessionClosed>([this](const Evt_SessionClosed& e) {
         QMetaObject::invokeMethod(this, [this, e] {
+            clip_session_running_ = false;  // 会话断开即停发（监听静默，Doc19 §5 P2）
+            clip_pending_.clear();
             emit sessionBusyChanged();
             static constexpr const char* kText[] = {
                 "协助已结束", "对方拒绝了协助", "访问密码不正确",
@@ -145,6 +148,13 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
                             e.dir == FileDir::Recv ? 1 : 0);
         }, Qt::QueuedConnection);
     });
+    bus->subscribe<Evt_FileQueued>([this](const Evt_FileQueued& e) {
+        QMetaObject::invokeMethod(this, [this, e] {
+            emit fileQueued(QString::fromStdString(e.file_id),
+                            QString::fromStdString(e.name),
+                            static_cast<qint64>(e.size));
+        }, Qt::QueuedConnection);
+    });
     bus->subscribe<Evt_FileMetaReceived>([this](const Evt_FileMetaReceived& e) {
         QMetaObject::invokeMethod(this, [this, e] {
             emit fileMetaReceived(QString::fromStdString(e.file_id),
@@ -190,6 +200,99 @@ QString QtEventBridge::deviceAlias(const QString& code) const {
 QString QtEventBridge::clipboardText() const {
     const QClipboard* cb = QGuiApplication::clipboard();
     return cb != nullptr ? cb->text(QClipboard::Clipboard) : QString();
+}
+
+// ---------------- 剪贴板同步（Doc19 §5 P2） ----------------
+
+bool QtEventBridge::clipboardSyncEnabled() const {
+    return cfg_ == nullptr || cfg_->clipboard_sync;  // 未注入配置按默认开
+}
+
+void QtEventBridge::setClipboardSyncEnabled(bool on) {
+    if (cfg_ == nullptr || ini_ == nullptr || cfg_->clipboard_sync == on) {
+        return;
+    }
+    cfg_->clipboard_sync = on;
+    cfg_->save(*ini_);
+    if (ini_->save()) {
+        SCLD_LOG(log_, foundation::LogLevel::Info, "settings",
+                 std::string("已保存 session.clipboard_sync=") + (on ? "true" : "false"));
+        emit configKeySaved(QStringLiteral("session.clipboard_sync"),
+                            on ? QStringLiteral("true") : QStringLiteral("false"));
+    }
+    else {
+        SCLD_LOG(log_, foundation::LogLevel::Error, "settings",
+                 "config.ini 落盘失败 session.clipboard_sync");
+    }
+}
+
+void QtEventBridge::start_clipboard_monitor() {
+    QClipboard* clip = QApplication::clipboard();
+    if (clip == nullptr || bus_ == nullptr) {
+        return;
+    }
+    // 接收侧：远端 CLIPBOARD_SYNC 帧 → 写本机剪贴板。总开关关闭不收
+    //（同一 config 键两端读，隐私红线：关=不发不收）；订阅回调在发布线程，
+    // setText 须回主线程（Queued 槽风格与 init 订阅一致）
+    bus_->subscribe<Evt_ClipboardReceived>([this](const Evt_ClipboardReceived& e) {
+        QMetaObject::invokeMethod(this, [this, text = QString::fromStdString(e.text)] {
+            if (cfg_ != nullptr && !cfg_->clipboard_sync) {
+                return;  // 总开关关闭：不收
+            }
+            if (text.isEmpty()) {
+                return;
+            }
+            clip_last_in_ = text;  // 先标记再写入：本进程 dataChanged 回声在此拦下
+            QApplication::clipboard()->setText(text);
+            SCLD_LOG(log_, foundation::LogLevel::Info, "clipboard",
+                     "远端文本已写入本机剪贴板 len="
+                         + std::to_string(text.toUtf8().size()));
+        }, Qt::QueuedConnection);
+    });
+    // 发送侧：dataChanged → 500ms 尾沿节流（合并连发，≥500ms 间隔）→
+    // 回环防抖后出站。连接常驻、handler 按 Running+开关双条件静默：
+    // 会话断开即等效停听，开关关闭不发（接收侧各自过滤）
+    clip_timer_ = new QTimer(this);
+    clip_timer_->setSingleShot(true);
+    connect(clip_timer_, &QTimer::timeout, this, &QtEventBridge::flush_clipboard);
+    connect(clip, &QClipboard::dataChanged, this, [this, clip] {
+        if (!clip_session_running_
+            || (cfg_ != nullptr && !cfg_->clipboard_sync)) {
+            return;  // 非会话期 / 总开关关闭：不监听发送
+        }
+        const QString text = clip->text(QClipboard::Clipboard);
+        if (text.isEmpty()) {
+            return;  // 图片/文件等无文本载荷忽略（mimeData 只取 text）
+        }
+        if (text == clip_last_in_ || text == clip_last_out_) {
+            return;  // 回环防抖：远端刚写入 / 本端刚发出，不再回发
+        }
+        clip_pending_ = text;
+        if (!clip_timer_->isActive()) {
+            clip_timer_->start(500);
+        }
+    });
+}
+
+void QtEventBridge::flush_clipboard() {
+    const QString text = clip_pending_;
+    clip_pending_.clear();
+    // 出站前复检：节流窗口内会话已断开 / 开关被关 → 立即停发
+    if (!clip_session_running_ || (cfg_ != nullptr && !cfg_->clipboard_sync)) {
+        return;
+    }
+    if (text.isEmpty() || text == clip_last_in_ || text == clip_last_out_) {
+        return;  // 挂起期内被远端覆盖/回声：丢弃
+    }
+    if (sessions_ == nullptr) {
+        return;
+    }
+    // Running 红线/超限/空文本由会话层 send_clipboard 兜底校验
+    if (sessions_->send_clipboard(text.toStdString())) {
+        clip_last_out_ = text;  // 仅成功出站才记回声，失败允许下次重试
+        SCLD_LOG(log_, foundation::LogLevel::Info, "clipboard",
+                 "本机剪贴板已同步 len=" + std::to_string(text.toUtf8().size()));
+    }
 }
 
 QString QtEventBridge::deviceIp(const QString& code) const {    if (aliases_ == nullptr) {
@@ -312,6 +415,14 @@ bool QtEventBridge::startControl(const QString& alias, bool unattended,
 
 bool QtEventBridge::sendFile(const QString& absPath) {
     return files_ != nullptr && files_->send_file(absPath.toStdString());
+}
+
+bool QtEventBridge::cancelFile(const QString& fileId) {
+    if (files_ == nullptr) {
+        return false;
+    }
+    files_->cancel(fileId.toStdString());
+    return true;
 }
 
 bool QtEventBridge::sessionRunning() const {
@@ -628,6 +739,9 @@ QString QtEventBridge::settingsValue(const QString& key) const {
     if (k == "file.overwrite") {
         return QString::fromStdString(cfg_->overwrite);
     }
+    if (k == "file.max_parallel") {
+        return QString::number(cfg_->max_parallel);
+    }
     if (k == "security.unattended_enabled") {
         return cfg_->unattended_enabled ? QStringLiteral("true") : QStringLiteral("false");
     }
@@ -821,6 +935,19 @@ void QtEventBridge::settingsSetValue(const QString& key, const QString& value) {
         cfg_->overwrite = v;
         if (files_ != nullptr) {
             files_->set_overwrite_policy(v);
+        }
+        persist("");
+    }
+    else if (k == "file.max_parallel") {
+        // 出站并行上限（Doc19 §5 P2）：1~8，热生效
+        const int n = value.toInt(&num_ok);
+        if (!num_ok || n < 1 || n > 8) {
+            warn_invalid("1~8");
+            return;
+        }
+        cfg_->max_parallel = n;
+        if (files_ != nullptr) {
+            files_->set_max_parallel(n);
         }
         persist("");
     }

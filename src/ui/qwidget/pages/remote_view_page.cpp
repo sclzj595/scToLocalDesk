@@ -15,8 +15,10 @@
 #include "../glass_theme.h"
 #include "core/interface/iinput_injector.hpp"
 #include "core/interface/types.hpp"
+#include "foundation/config_parser.hpp"
 #include "foundation/error_text.hpp"
 #include "platform/qt_adapter/input_bridge.hpp"
+#include "service/app_config.hpp"
 #include "service/remote_session_service.hpp"
 
 namespace sc::localdesk::ui {
@@ -31,7 +33,7 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
 
     toolbar_ = new QWidget(this);
     toolbar_->setObjectName(QStringLiteral("glassPanel"));
-    toolbar_->setFixedSize(240, 44);
+    toolbar_->setFixedSize(340, 44);
     auto* toolLay = new QHBoxLayout(toolbar_);
     toolLay->setContentsMargins(16, 6, 16, 6);
     toolLay->setSpacing(8);
@@ -61,6 +63,27 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
         "background: %1;")
         .arg(GlassTheme::instance().divider().name(QColor::HexRgb)));
     toolLay->addWidget(sep);
+    // 剪贴板同步开关（Doc19 §5 P2）：会话级双向文本同步，默认开；状态
+    // 持久化 config session.clipboard_sync（两端同键，关=不发不收）
+    clip_btn_ = new QPushButton(QStringLiteral("📋 剪贴板"), toolbar_);
+    clip_btn_->setObjectName(QStringLiteral("secondaryBtn"));
+    clip_btn_->setFocusPolicy(Qt::NoFocus);  // NoFocus 红线：不吃远端键鼠焦点
+    clip_btn_->setCheckable(true);
+    clip_btn_->setChecked(true);  // 配置注入前按默认开显示
+    connect(clip_btn_, &QPushButton::toggled, this, [this](bool on) {
+        if (clip_cfg_ != nullptr) {
+            clip_cfg_->clipboard_sync = on;
+            if (clip_ini_ != nullptr) {
+                clip_cfg_->save(*clip_ini_);
+                (void)clip_ini_->save();  // 即时落盘（设置页同口径）
+            }
+        }
+    });
+    toolLay->addWidget(clip_btn_);
+    auto* sep2 = new QLabel(toolbar_);
+    sep2->setFixedSize(1, 20);
+    sep2->setStyleSheet(sep->styleSheet());
+    toolLay->addWidget(sep2);
     toolLay->addWidget(discBtn);
     connect(discBtn, &QPushButton::clicked, this, &RemoteViewPage::disconnected);
     toolbar_->hide();  // 无会话默认隐藏（断开按钮不可用），on_frame 恢复
@@ -114,6 +137,14 @@ void RemoteViewPage::on_session_started(const QString& alias) {
 void RemoteViewPage::on_read_only(bool on) {
     if (ro_badge_ != nullptr) {
         ro_badge_->setVisible(on);  // 只读徽标（会话关闭在 on_session_closed 复位）
+    }
+}
+
+void RemoteViewPage::bind_clipboard(foundation::IniConfig* ini, AppConfig* cfg) {
+    clip_ini_ = ini;
+    clip_cfg_ = cfg;
+    if (cfg != nullptr && clip_btn_ != nullptr) {
+        clip_btn_->setChecked(cfg->clipboard_sync);  // 回放持久化真值
     }
 }
 

@@ -398,7 +398,25 @@ bool RemoteSessionService::send_clipboard(const std::string& text) {
     if (text.empty() || text.size() > protocol::kClipboardMaxBytes) {
         return false;
     }
-    return send_business_frame(protocol::build_clipboard_sync(text));
+    const bool ok = send_business_frame(protocol::build_clipboard_sync(text));
+    if (ok) {
+        audit_clipboard_once();  // 会话内首次同步记一条审计（去重）
+    }
+    return ok;
+}
+
+void RemoteSessionService::audit_clipboard_once() {
+    if (clipboard_audit_done_.exchange(true)) {
+        return;  // 已记过：后续同步不刷屏
+    }
+    // 对端审计列持锁快照（本方法可能运行于收帧线程）
+    std::string code, ip;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        code = peer_code_str_;
+        ip = peer_ip_;
+    }
+    audit_event("ClipboardSync", "OK", code, ip, "剪贴板同步开启");
 }
 
 RemoteSessionService::SessState RemoteSessionService::state() const {
@@ -498,6 +516,7 @@ void RemoteSessionService::on_transport_message(
             e.text = std::move(text);
             e.timestamp_us = now_us();
             bus_->publish(e);
+            audit_clipboard_once();  // 会话内首次同步记一条审计（去重）
         }
         break;
     }
@@ -1063,6 +1082,7 @@ void RemoteSessionService::reset_to_idle() {
     }
     state_ = SessState::Idle;
     read_only_ = false;  // 只读态复位（下次会话重新按审批决定）
+    clipboard_audit_done_.store(false);  // 剪贴板首次同步审计随会话复位
     // 会话加密复位（PRD）：清会话密钥与协商上下文，下次会话重新协商
     encrypted_.store(false, std::memory_order_relaxed);
     if (crypto_ != nullptr) {

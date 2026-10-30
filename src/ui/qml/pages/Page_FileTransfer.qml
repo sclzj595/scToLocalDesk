@@ -28,7 +28,7 @@ Item {
             }
         }
         transfers.append({fileId: fileId, name: name, dir: dir,
-                          progress: 0, done: 0, speed: "",
+                          progress: 0, done: 0, queued: 0, speed: "",
                           speedVal: 0, lastX: 0, lastT: 0});
         return transfers.count - 1;
     }
@@ -69,8 +69,14 @@ Item {
 
     Connections {
         target: ScLocaldesk
+        // 出站排队登记（Doc19 §5 P2）：插行显示「排队中」，出队后 progress 接管
+        function onFileQueued(fileId, name, size) {
+            const i = root.upsert(fileId, name, 0);
+            transfers.setProperty(i, "queued", 1);
+        }
         function onFileProgress(fileId, name, transferred, total, dir) {
             const i = root.upsert(fileId, name, dir);
+            transfers.setProperty(i, "queued", 0);
             transfers.setProperty(i, "progress", total > 0 ? transferred / total : 0);
             // 速度 = 两次进度差 / 时间差（UI 层算，指数平滑抖动收敛）
             const now = Date.now();
@@ -91,9 +97,13 @@ Item {
             return Math.round(bps) + " B/s";
         }
         function onFileDone(fileId, name, dir) {
+            const i = root.upsert(fileId, name, dir);
+            transfers.setProperty(i, "queued", 0);
             root.setDone(fileId, false);
         }
         function onFileFailed(fileId, name, dir) {
+            const i = root.upsert(fileId, name, dir);
+            transfers.setProperty(i, "queued", 0);
             root.setDone(fileId, true);
         }
     }
@@ -219,15 +229,30 @@ Item {
                                     Layout.fillWidth: true
                                 }
                                 Text {
-                                    text: model.done === 1 ? qsTr("已完成")
+                                    text: model.queued === 1 ? qsTr("排队中")
+                                          : model.done === 1 ? qsTr("已完成")
                                           : model.done === 2 ? qsTr("失败")
                                           : Math.round(model.progress * 100) + "%"
                                           + (model.speed ? qsTr(" · ") + model.speed : "")
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontHint
-                                    color: model.done === 1 ? Theme.accentGreen
+                                    color: model.queued === 1 ? Theme.textHint
+                                           : model.done === 1 ? Theme.accentGreen
                                            : model.done === 2 ? Theme.accentRed
                                            : Theme.textSecond
+                                }
+                                // 排队中可取消（Doc19 §5 P2）：出队即清理，零残留
+                                Text {
+                                    visible: model.queued === 1 && model.done === 0
+                                    text: qsTr("取消")
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontHint
+                                    color: Theme.textHint
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: ScLocaldesk.cancelFile(model.fileId)
+                                    }
                                 }
                             }
                             ProgressBar {

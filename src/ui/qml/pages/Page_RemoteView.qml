@@ -191,6 +191,42 @@ Item {
                     color: Theme.divider
                 }
 
+                // 剪贴板同步开关（Doc19 §5 P2）：会话级双向文本同步，默认开；
+                // 状态经桥持久化 config session.clipboard_sync（两端同键，关=不发不收）
+                ToolButton {
+                    id: clipBtn
+                    focusPolicy: Qt.NoFocus
+                    checkable: true
+                    checked: ScLocaldesk.clipboardSyncEnabled()
+                    text: qsTr("📋 剪贴板")
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontBody
+                    onToggled: ScLocaldesk.setClipboardSyncEnabled(checked)
+                    contentItem: Text {
+                        text: clipBtn.text
+                        font: clipBtn.font
+                        color: clipBtn.checked ? Theme.accentBlue : Theme.textMain
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: Theme.btnRadius
+                        color: clipBtn.checked || clipBtn.hovered
+                                   ? Theme.hoverBg : "transparent"
+                        Behavior on color {
+                            ColorAnimation {
+                                duration: Theme.durHover
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 1
+                    height: 20
+                    color: Theme.divider
+                }
+
                 Button {
                     id: discBtn
                     focusPolicy: Qt.NoFocus
