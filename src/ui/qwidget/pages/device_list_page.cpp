@@ -12,6 +12,7 @@
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QHostAddress>
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
@@ -19,6 +20,7 @@
 #include <QVBoxLayout>
 
 #include "../glass_theme.h"
+#include "../popups/glass_dialog.hpp"
 #include "service/alias_service.hpp"
 #include "service/id_service.hpp"
 #include "service/trust_store.hpp"
@@ -100,6 +102,15 @@ DeviceListPage::DeviceListPage(QWidget* parent) : QWidget(parent) {
     head->addWidget(makeTitle(QStringLiteral("局域网设备")));
     head->addStretch();
     head->addWidget(makeHint(QStringLiteral("首次连接需对方确认，确认后免验证直连")));
+    // 手动添加设备（Doc19 §6.3）：跨子网广播不可达时按 IP 直连
+    auto* manualBtn = new QPushButton(QStringLiteral("手动添加设备"));
+    manualBtn->setObjectName(QStringLiteral("secondaryBtn"));
+    manualBtn->setStyleSheet(QStringLiteral(
+        "color: %1; border: 1px solid rgba(157,78,221,0.45); padding: 6px 16px;")
+        .arg(GlassTheme::instance().primary().name(QColor::HexRgb)));
+    connect(manualBtn, &QPushButton::clicked, this,
+            &DeviceListPage::on_manual_add);
+    head->addWidget(manualBtn);
     lay->addLayout(head);
 
     // ---- 设备卡网格（演示占位移除，apply_snapshot 增量填充） ----
@@ -141,11 +152,13 @@ void DeviceListPage::apply_snapshot() {
         const bool trusted = trust_ != nullptr && dev.code != 0
                              && trust_->is_trusted(code_raw(dev.code).toStdString());
         if (it == cards_.end()) {
-            // 新上线：建卡入网格
+            // 新上线：建卡入网格（手动对端带「手动」小标，Doc19 §6.3）
             Card c;
             c.widget = makeDeviceCard(QString::fromStdString(dev.alias),
                                       code_text(dev.code),
-                                      QString::fromStdString(dev.ip),
+                                      QString::fromStdString(dev.ip)
+                                          + (dev.manual ? QStringLiteral(" · 手动")
+                                                        : QString()),
                                       dev.status == 0x01, trusted);
             c.code = dev.code;
             c.busy = dev.status == 0x01;
@@ -231,6 +244,55 @@ QString DeviceListPage::deviceIp(const QString& code) const {
         }
     }
     return {};
+}
+
+// 「手动添加设备」（Doc19 §6.3）：GlassDialog 两次收集别名 + IP[:端口]，
+// 校验通过交装配层回调（bridge.addManualPeer：持久化 + 立即注入探活）
+void DeviceListPage::on_manual_add() {
+    if (manual_add_ == nullptr) {
+        GlassDialog::warning(this, QStringLiteral("手动添加设备"),
+                             QStringLiteral("配置未注入，暂不可用"));
+        return;
+    }
+    const QString alias = GlassDialog::getText(
+        this, QStringLiteral("手动添加设备"),
+        QStringLiteral("连接名（3~20 字符，不含 ; | =）"), {});
+    if (alias.isEmpty()) {
+        return;  // 取消
+    }
+    const QString ipport = GlassDialog::getText(
+        this, QStringLiteral("手动添加设备"),
+        QStringLiteral("对端 IP[:端口]（端口留空用默认会话端口）"), {});
+    if (ipport.isEmpty()) {
+        return;
+    }
+    // ip[:port] 拆分（IPv4 无冒号，最后一个 ':' 后为端口）
+    const int colon = ipport.lastIndexOf(QLatin1Char(':'));
+    const QString ip = (colon < 0 ? ipport : ipport.left(colon)).trimmed();
+    const QString port_s = (colon < 0 ? QString() : ipport.mid(colon + 1)).trimmed();
+    uint16_t port = 0;  // 0 = 桥侧取默认 WS 端口
+    if (!port_s.isEmpty()) {
+        bool ok = false;
+        const int p = port_s.toInt(&ok);
+        if (!ok || p < 1024 || p > 65535) {
+            GlassDialog::warning(this, QStringLiteral("手动添加设备"),
+                                 QStringLiteral("端口需 1024~65535"));
+            return;
+        }
+        port = static_cast<uint16_t>(p);
+    }
+    QHostAddress addr;
+    if (addr.setAddress(ip) == false
+        || addr.protocol() != QAbstractSocket::IPv4Protocol) {
+        GlassDialog::warning(this, QStringLiteral("手动添加设备"),
+                             QStringLiteral("IP 格式非法（仅支持 IPv4）"));
+        return;
+    }
+    if (!manual_add_(alias.trimmed(), ip, port)) {
+        GlassDialog::warning(this, QStringLiteral("手动添加设备"),
+                             QStringLiteral("添加失败：连接名需 3~20 字符且不含 ; | =，"
+                                             "或与已有条目冲突"));
+    }
 }
 
 QString DeviceListPage::deviceAlias(const QString& code) const {

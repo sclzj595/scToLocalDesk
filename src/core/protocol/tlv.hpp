@@ -54,15 +54,19 @@ std::vector<uint8_t> build_auth_challenge(const uint8_t* salt16,
 std::vector<uint8_t> build_auth_proof(const uint8_t* proof32);
 
 /// FILE_META：file_id(16B) + name_len(u16BE) + name + size(u64BE) + total_chunks(u32BE)
+/// [+ flags(1B)]（Doc19 §5：flags≠0 时末尾追加 1B，老格式字节不变天然兼容）
 std::vector<uint8_t> build_file_meta(const std::string& file_id_hex,
                                                    const std::string& name,
-                                                   uint64_t size, uint32_t total_chunks);
+                                                   uint64_t size, uint32_t total_chunks,
+                                                   uint8_t flags = 0);
 
 struct FileMetaBody {
     std::string file_id;
     std::string name;
     uint64_t size{0};
     uint32_t total_chunks{0};
+    /// 末尾 flags 字节（bit0=is_dir，Doc19 §5）；老格式（无该字节）恒 0
+    uint8_t flags{0};
 };
 
 bool parse_file_meta(const uint8_t* body, size_t len, FileMetaBody& out);

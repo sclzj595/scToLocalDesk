@@ -324,6 +324,22 @@ ApplicationWindow {
         }
     }
 
+    // 同名文件冲突三选项弹窗（Doc19 §5）：覆盖/重命名/跳过 + 会话级记住
+    Popup_FileConflict {
+        id: fileConflictPopup
+        glassSource: shell
+        onResolved: (policy, remember) => {
+            ScLocaldesk.resolveFileConflict(pendingFileId, policy, remember);
+            if (policy === "skip") {
+                toast.show(qsTr("已跳过同名文件"));
+            } else if (policy === "rename") {
+                toast.show(qsTr("将自动重命名保存"));
+            } else {
+                toast.show(qsTr("将覆盖同名文件"));
+            }
+        }
+    }
+
     // ---------------- Toast ----------------
     Toast {
         id: toast
@@ -440,6 +456,14 @@ ApplicationWindow {
             fileConfirmPopup.fileName = name;
             fileConfirmPopup.fileSize = size;
             fileConfirmPopup.open();
+        }
+        // 同名冲突待决（Doc19 §5）：accept 时目标已存在 → 弹三选项
+        function onFileConflict(fileId, name, size, alias) {
+            pendingFileId = fileId;
+            fileConflictPopup.peerAlias = alias === "" ? qsTr("对方") : alias;
+            fileConflictPopup.fileName = name;
+            fileConflictPopup.fileSize = size;
+            fileConflictPopup.open();
         }
     }
 }

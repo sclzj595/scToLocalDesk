@@ -52,6 +52,9 @@ FileTransferPage::FileTransferPage(QWidget* parent) : QWidget(parent) {
     auto* sendBtn = new QPushButton(QStringLiteral("发送文件…"));
     sendBtn->setObjectName(QStringLiteral("primaryBtn"));
     head->addWidget(sendBtn);
+    // 目录发送入口（Doc19 §5 目录递归传输）：整目录递归展开逐项发送
+    auto* sendDirBtn = new QPushButton(QStringLiteral("发送文件夹…"));
+    head->addWidget(sendDirBtn);
     lay->addLayout(head);
 
     // 行容器（拖放事件由本页统一处理：host_ 不 acceptDrops，向上冒泡到 page）
@@ -87,6 +90,14 @@ FileTransferPage::FileTransferPage(QWidget* parent) : QWidget(parent) {
             this, QStringLiteral("选择要发送的文件"));
         if (!files.isEmpty()) {
             emit filesPicked(files);
+        }
+    });
+    connect(sendDirBtn, &QPushButton::clicked, this, [this] {
+        // 目录发送（Doc19 §5）：getExistingDirectory 单选目录，FileService 递归展开
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, QStringLiteral("选择要发送的文件夹"));
+        if (!dir.isEmpty()) {
+            emit filesPicked(QStringList{dir});
         }
     });
 }
@@ -222,6 +233,22 @@ void FileTransferPage::on_file_failed(const QString& file_id, const QString& nam
         r.cancel->hide();
     }
     r.status->setText(QStringLiteral("失败"));
+    r.status->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
+                                .arg(GlassTheme::instance().accentRed().name(QColor::HexRgb)));
+    r.bar->setStyleSheet(QStringLiteral(
+        "QProgressBar { background: rgba(110,118,129,0.25); border: none;"
+        " border-radius: 3px; }"
+        "QProgressBar::chunk { background: #F72585; border-radius: 3px; }"));
+}
+
+/// 可执行后缀拦截失败态（Doc19 §5）：status 文案区分于普通失败，帮助发送方
+/// 理解被安全策略拒绝
+void FileTransferPage::on_file_blocked(const QString& file_id, const QString& name, int dir) {
+    FileRow& r = upsert_row(file_id, name, dir);
+    if (r.cancel != nullptr) {
+        r.cancel->hide();
+    }
+    r.status->setText(QStringLiteral("已拦截可执行文件"));
     r.status->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
                                 .arg(GlassTheme::instance().accentRed().name(QColor::HexRgb)));
     r.bar->setStyleSheet(QStringLiteral(

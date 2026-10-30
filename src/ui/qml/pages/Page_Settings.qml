@@ -164,6 +164,13 @@ Item {
                     checked: ScLocaldesk.settingsValue("file.safe_path") !== "false"
                     onToggled: ScLocaldesk.settingsSetValue("file.safe_path", checked ? "true" : "false")
                 }
+                // 可执行后缀拦截（Doc19 §5）：开启后收发两侧拒绝 exe/bat/cmd/ps1/msi/scr/com/vbs/js
+                SwitchRow {
+                    text: qsTr("拦截可执行文件（exe/bat/cmd/ps1 等）")
+                    visible: root.itView
+                    checked: ScLocaldesk.settingsValue("file.block_executable") === "true"
+                    onToggled: ScLocaldesk.settingsSetValue("file.block_executable", checked ? "true" : "false")
+                }
                 // 同名覆盖策略（Doc11 §4.2 / Doc17 §3.5）：热生效
                 RowLayout {
                     visible: root.itView

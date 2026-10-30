@@ -27,6 +27,9 @@ struct AppConfig {
     bool multicast_enabled{true};
     std::string multicast_addr{"239.255.88.99"};
     std::string static_map;  // alias=ip:port[:code];...（code 可选=对端 9 位连接码）
+    /// 手动添加对端（Doc19 §6.3）：alias|ip[:port];...（port 缺省=network.ws_port）。
+    /// 跨 VLAN 广播不可达场景直连表；UI 添加即追加本键并即时注入发现层
+    std::string manual_peers;
     // [session]
     std::string encoder{"mjpeg"};
     std::string capture{"auto"};
@@ -44,6 +47,9 @@ struct AppConfig {
     bool file_safe_path{true};
     int chunk_size_kb{256};
     std::string overwrite{"ask"};
+    /// 可执行后缀拦截（Doc19 §5）：双端同判（收 on_file_meta 拒收 / 发 send_file
+    /// 早拒），黑名单 exe/bat/cmd/ps1/msi/scr/com/vbs/js；默认关=全部放行
+    bool block_executable{false};
     /// 出站发送并行上限（Doc19 §5 P2）：1~8，默认 3；超出的 send_file 串行排队
     int max_parallel{3};
     // [security]（Doc16 §6）

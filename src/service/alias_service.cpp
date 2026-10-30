@@ -95,6 +95,90 @@ std::vector<DeviceInfo> parse_static_map(std::string_view text) {
     return out;
 }
 
+std::vector<DeviceInfo> parse_manual_peers(std::string_view text,
+                                           uint16_t default_port) {
+    std::vector<DeviceInfo> out;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        const size_t semi = text.find(';', pos);
+        const size_t end = semi == std::string_view::npos ? text.size() : semi;
+        const std::string_view item = text.substr(pos, end - pos);
+        pos = semi == std::string_view::npos ? text.size() : semi + 1;
+        const auto bar = item.find('|');
+        if (bar == std::string_view::npos || bar == 0) {
+            continue;  // 缺分隔符/空别名
+        }
+        const auto alias = item.substr(0, bar);
+        const auto rest = item.substr(bar + 1);
+        if (alias.find_first_of(";|=") != std::string_view::npos) {
+            continue;  // 分隔符混入别名
+        }
+        // ip[:port]：端口段为最后一个 ':' 之后（IPv4 本身无冒号）
+        const auto colon = rest.rfind(':');
+        std::string_view ip = rest;
+        uint32_t port = default_port;
+        if (colon != std::string_view::npos) {
+            ip = rest.substr(0, colon);
+            const auto port_str = rest.substr(colon + 1);
+            if (port_str.empty()
+                || port_str.find_first_not_of("0123456789") != std::string_view::npos) {
+                continue;  // 端口段畸形
+            }
+            port = 0;
+            for (const char c : port_str) {
+                port = port * 10 + static_cast<uint32_t>(c - '0');
+                if (port > 65535) {
+                    port = 0;
+                    break;
+                }
+            }
+        }
+        // IP 点分四段校验（0~255 纯数字）
+        size_t octets = 0;
+        size_t scan = 0;
+        bool ip_ok = true;
+        while (ip_ok && scan <= ip.size()) {
+            const auto dot = ip.find('.', scan);
+            const auto seg =
+                dot == std::string_view::npos ? ip.substr(scan) : ip.substr(scan, dot - scan);
+            if (seg.empty() || seg.size() > 3
+                || seg.find_first_not_of("0123456789") != std::string_view::npos) {
+                ip_ok = false;
+                break;
+            }
+            const int v = (seg[0] - '0') * 100 + (seg.size() > 1 ? (seg[1] - '0') * 10 : 0)
+                        + (seg.size() > 2 ? (seg[2] - '0') : 0);
+            if (v > 255) {
+                ip_ok = false;
+                break;
+            }
+            ++octets;
+            if (dot == std::string_view::npos) {
+                break;
+            }
+            scan = dot + 1;
+        }
+        if (!ip_ok || octets != 4 || port == 0) {
+            continue;
+        }
+        DeviceInfo dev;
+        dev.alias.assign(alias);
+        dev.ip.assign(ip);
+        dev.port = static_cast<uint16_t>(port);
+        dev.manual = true;
+        // 同名去重：后者覆盖（配置手改重复行也收敛为一条）
+        const auto it = std::find_if(out.begin(), out.end(),
+                                     [&dev](const DeviceInfo& d) { return d.alias == dev.alias; });
+        if (it != out.end()) {
+            *it = std::move(dev);
+        }
+        else {
+            out.push_back(std::move(dev));
+        }
+    }
+    return out;
+}
+
 AliasService::AliasService(std::shared_ptr<foundation::EventBus> bus,
                            std::shared_ptr<foundation::ILogger> logger)
     : bus_(std::move(bus)),
@@ -216,6 +300,27 @@ void AliasService::cleanup_expired() {
             bus_->publish(e);
             SCLD_LOG(log_, LogLevel::Info, "discovery", "[alias=" + alias + "] 设备离线");
         }
+    }
+}
+
+void AliasService::mark_device_offline(const std::string& alias,
+                                       const std::string& ip) {
+    bool removed = false;
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        const auto it = table_.find(alias);
+        if (it != table_.end() && it->second.ip == ip) {
+            table_.erase(it);
+            removed = true;
+        }
+    }
+    if (removed && bus_ != nullptr) {
+        Evt_DeviceOffline e;
+        e.device_alias = alias;
+        e.timestamp_us = now_us();
+        bus_->publish(e);
+        SCLD_LOG(log_, LogLevel::Info, "discovery",
+                 "[alias=" + alias + "] 手动对端探活失败，标记离线 ip=" + ip);
     }
 }
 

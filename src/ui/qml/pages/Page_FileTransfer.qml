@@ -28,8 +28,8 @@ Item {
             }
         }
         transfers.append({fileId: fileId, name: name, dir: dir,
-                          progress: 0, done: 0, queued: 0, speed: "",
-                          speedVal: 0, lastX: 0, lastT: 0});
+                          progress: 0, done: 0, queued: 0, blocked: 0,
+                          speed: "", speedVal: 0, lastX: 0, lastT: 0});
         return transfers.count - 1;
     }
 
@@ -65,6 +65,14 @@ Item {
         fileMode: FileDialog.OpenFiles
         title: qsTr("选择要发送的文件")
         onAccepted: root.sendFiles(selectedFiles)
+    }
+
+    // 文件夹发送（Doc19 §5 目录递归传输）：FileService 侧递归展开逐项入队
+    FileDialog {
+        id: folderDialog
+        fileMode: FileDialog.Directory
+        title: qsTr("选择要发送的文件夹")
+        onAccepted: root.sendFiles([selectedFolder])
     }
 
     Connections {
@@ -106,6 +114,18 @@ Item {
             transfers.setProperty(i, "queued", 0);
             root.setDone(fileId, true);
         }
+        // 可执行后缀拦截失败态（Doc19 §5）：文案区分普通失败
+        function onFileBlocked(fileId, name, dir) {
+            const i = root.upsert(fileId, name, dir);
+            transfers.setProperty(i, "queued", 0);
+            for (let k = 0; k < transfers.count; ++k) {
+                if (transfers.get(k).fileId === fileId) {
+                    transfers.setProperty(k, "blocked", true);
+                    break;
+                }
+            }
+            root.setDone(fileId, true);
+        }
     }
 
     ColumnLayout {
@@ -124,6 +144,29 @@ Item {
             }
             Item {
                 Layout.fillWidth: true
+            }
+            Button {
+                text: qsTr("发送文件夹…")
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                onClicked: folderDialog.open()
+                contentItem: Text {
+                    text: parent.text
+                    font: parent.font
+                    color: Theme.textMain
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: Theme.btnRadius
+                    color: parent.hovered ? Theme.cardBorder : "transparent"
+                    border.color: Theme.cardBorder
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: Theme.durHover
+                        }
+                    }
+                }
             }
             Button {
                 text: qsTr("发送文件…")
@@ -229,7 +272,10 @@ Item {
                                     Layout.fillWidth: true
                                 }
                                 Text {
-                                    text: model.queued === 1 ? qsTr("排队中")
+                                    // 状态文案（Doc19 §5）：拦截/失败/完成/排队/进度
+                                    text: model.done === 2 && model.blocked === true
+                                          ? qsTr("已拦截可执行文件")
+                                          : model.queued === 1 ? qsTr("排队中")
                                           : model.done === 1 ? qsTr("已完成")
                                           : model.done === 2 ? qsTr("失败")
                                           : Math.round(model.progress * 100) + "%"

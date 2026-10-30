@@ -154,6 +154,10 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     safeSw_ = new ToggleSwitch();
     bind_sw(safeSw_, QStringLiteral("file.safe_path"));
     fileForm->addRow(QStringLiteral("文件名安全校验"), safeSw_);
+    // 可执行后缀拦截（Doc19 §5）：开启后收发两侧拒绝 exe/bat/cmd/ps1/msi/scr/com/vbs/js
+    blockExecSw_ = new ToggleSwitch();
+    bind_sw(blockExecSw_, QStringLiteral("file.block_executable"));
+    fileForm->addRow(QStringLiteral("拦截可执行文件"), blockExecSw_);
     owCombo_ = new QComboBox();
     owCombo_->setFixedWidth(240);
     owCombo_->addItem(QStringLiteral("每次询问（推荐）"), QStringLiteral("ask"));
@@ -432,6 +436,11 @@ void SettingsPage::on_changed(const QString& key, const QString& value) {
         // 同名覆盖策略（Doc11 §4.2）：热生效走信号（widgets_main 接 files_）
         cfg_->overwrite = v;
         emit overwritePolicyChanged(value);
+    }
+    else if (k == "file.block_executable") {
+        // 可执行后缀拦截（Doc19 §5）：热生效走信号（widgets_main 接 files_）
+        cfg_->block_executable = (value == QStringLiteral("true"));
+        emit blockExecutableChanged(cfg_->block_executable);
     }
     else if (k == "security.unattended_enabled") {
         cfg_->unattended_enabled = (value == QStringLiteral("true"));

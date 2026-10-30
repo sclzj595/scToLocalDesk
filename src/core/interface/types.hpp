@@ -19,6 +19,7 @@ struct DeviceInfo {
     uint8_t status{0};        ///< 0x00 空闲可协助，0x01 会话中
     uint32_t code{0};         ///< 对端 9 位连接码（0=未知：旧包无可选 TLV，Doc18 §3.4）
     int64_t last_seen_us{0};  ///< 最近一次心跳时间（稳态时钟，微秒）
+    bool manual{false};       ///< 手动添加对端（Doc19 §6.3）：跨子网 TCP 探活注入
 };
 
 /// 采集失败分类（Doc19 §4.2 占位帧）：grab 失败原因，占位提示文案分流依据
@@ -37,12 +38,17 @@ struct VideoFrame {
     int64_t timestamp_us{0};
 };
 
-/// 文件传输元信息（见 Doc11）
+/// FILE_META flags 位定义（Doc19 §5 兼容扩展，末尾 1B，老对端恒 0）
+constexpr uint8_t kFileFlagIsDir = 0x01;  ///< bit0=目录条目（size=0 无分片，接收侧 mkdir）
+
+/// 文件传输元信息（见 Doc11 / Doc19 §5）
 struct FileMeta {
     std::string file_id;      ///< 16B 随机 ID 的 hex 表示
-    std::string name;         ///< 文件名（不含路径）
+    std::string name;         ///< 文件名（目录传输时为 '/' 分隔相对路径，根目录名作前缀）
     uint64_t size{0};
     uint32_t total_chunks{0};
+    /// FILE_META flags（kFileFlagIsDir 等；老格式解析恒 0）
+    uint8_t flags{0};
 };
 
 // ---------------- 鉴权相关（Doc06 §7 / Doc16） ----------------

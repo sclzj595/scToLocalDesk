@@ -71,7 +71,8 @@ QHash<int, QByteArray> DeviceListModel::roleNames() const {
             {kCodeRawRole, "codeRaw"},
             {kIpRole, "ip"},
             {kBusyRole, "busy"},
-            {kTrustedRole, "trusted"}};
+            {kTrustedRole, "trusted"},
+            {kManualRole, "manual"}};
 }
 
 QVariant DeviceListModel::data(const QModelIndex& index, int role) const {
@@ -92,6 +93,8 @@ QVariant DeviceListModel::data(const QModelIndex& index, int role) const {
                        : QString::number(row.info.code).rightJustified(9, '0');
         case kIpRole:
             return QString::fromStdString(row.info.ip);
+        case kManualRole:
+            return row.info.manual;
         case kBusyRole:
             return row.info.status == 0x01;
         case kTrustedRole:

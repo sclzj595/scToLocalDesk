@@ -26,6 +26,12 @@ namespace sc::localdesk {
 /// 全程无 throw（端口溢出/缺段直接丢弃），供装配层与设置页共用
 std::vector<DeviceInfo> parse_static_map(std::string_view text);
 
+/// 手动对端文本解析（Doc19 §6.3）：`alias|ip[:port];...`，port 缺省取
+/// default_port（=network.ws_port）；IP 校验点分四段（0~255），畸形条目跳过，
+/// 同名条目后者覆盖前者（去重）；alias 含 `;|=` 视为畸形。无 Qt 供冒烟直测
+std::vector<DeviceInfo> parse_manual_peers(std::string_view text,
+                                           uint16_t default_port);
+
 class AliasService final {
 public:
     AliasService(std::shared_ptr<foundation::EventBus> bus,
@@ -43,6 +49,10 @@ public:
 
     /// 周期清理超时设备并发布离线事件（心跳线程调用）
     void cleanup_expired();
+
+    /// 手动对端探活失败主动下线（Doc19 §6.3）：仅当该别名条目确为所探 ip
+    /// 时移除并发布离线（防同名广播条目误杀）；条目不存在静默
+    void mark_device_offline(const std::string& alias, const std::string& ip);
 
     void set_self_alias(std::string alias);
     void set_offline_timeout(int64_t timeout_us);

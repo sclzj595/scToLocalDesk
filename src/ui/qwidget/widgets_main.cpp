@@ -6,13 +6,16 @@
 #ifdef SCLD_QT_APP
     #ifdef SCLD_QT_WIDGETS_UI
 
+        #include <QAbstractButton>
         #include <QApplication>
+        #include <QCheckBox>
         #include <QClipboard>
         #include <QCoreApplication>
         #include <QFile>
         #include <QFileInfo>
         #include <QMessageBox>
         #include <QPointer>
+        #include <QPushButton>
         #include <QRandomGenerator>
         #include <QTimer>
 
@@ -234,6 +237,7 @@ int main(int argc, char* argv[]) {
     files->set_confirm_enabled(cfg.confirm_before_transfer);
     files->set_safe_path(cfg.file_safe_path);
     files->set_overwrite_policy(cfg.overwrite);
+    files->set_block_executable(cfg.block_executable);  // 可执行拦截（Doc19 §5）
     files->set_max_parallel(cfg.max_parallel);  // 出站并行上限（Doc19 §5 P2）
     files->set_save_dir(cfg.save_path.empty()
                             ? (QCoreApplication::applicationDirPath().toStdString()
@@ -244,6 +248,28 @@ int main(int argc, char* argv[]) {
     if (!listening) {
         SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn, "session",
                  "被控监听失败 port=" + std::to_string(cfg.ws_port));
+    }
+
+    // 剪贴板/设置轻量桥（Doc19 §5 P2，与 QML 版同一实现）。Widgets 版无常驻
+    // 桥，此处挂实例做剪贴板监视 + 配置读写 + 手动添加对端入口（Doc19 §6.3）；
+    // 须活到 app.exec() 退出（EventBus 订阅持 this 裸指针），故声明在 main 作用域
+    sc::localdesk::platform::QtEventBridge clip_bridge;
+    clip_bridge.init(bus.get(), aliases.get(), sessions.get(), files.get(),
+                     logger.get());
+    clip_bridge.set_config_store(&ini, &cfg);
+    clip_bridge.set_discovery(&discovery);  // 手动添加对端立即注入（Doc19 §6.3）
+    clip_bridge.start_clipboard_monitor();
+
+    // 手动对端（Doc19 §6.3）：跨子网广播不可达场景，配置表装配即注入探活
+    if (!cfg.manual_peers.empty()) {
+        const auto manuals =
+            sc::localdesk::parse_manual_peers(cfg.manual_peers,
+                                              static_cast<uint16_t>(cfg.ws_port));
+        for (const auto& m : manuals) {
+            (void)discovery.add_manual_peer(m.alias, m.ip, m.port);
+        }
+        SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "discovery",
+                 "手动对端已加载 n=" + std::to_string(manuals.size()));
     }
 
     // 全局 QSS 一次性挂载（主题切换时重建，Doc13 §7）
@@ -380,6 +406,10 @@ int main(int argc, char* argv[]) {
         [files](const QString& policy) {
             files->set_overwrite_policy(policy.toStdString());
         });
+    // 可执行后缀拦截开关变更 → FileService 热生效（Doc19 §5）
+    QObject::connect(
+        win.settingsPage(), &sc::localdesk::ui::SettingsPage::blockExecutableChanged,
+        &win, [files](bool on) { files->set_block_executable(on); });
     // 托盘三键接线（Doc02 §5.4）：显示主窗 / 停止服务 toggle / 退出程序
     // 显示主窗必须先清 minimized 位再 show：show() 对最小化窗口不还原
     //（经典 Qt 缺陷），保留 maximized/fullscreen 其余状态位
@@ -503,6 +533,11 @@ int main(int argc, char* argv[]) {
         dev_page->bind_services(aliases.get(), &trust_store);
         dev_page->set_self(QString::fromStdString(cfg.alias),
                            QString::fromStdString(id_service.self_code()));
+        // 手动添加设备入口（Doc19 §6.3）：页面收集输入 → 桥校验/持久化/注入
+        dev_page->set_manual_add_handler(
+            [&clip_bridge](const QString& alias, const QString& ip, uint16_t port) {
+                return clip_bridge.addManualPeer(alias, ip, static_cast<int>(port));
+            });
         auto* tick = new QTimer(&win);
         QObject::connect(tick, &QTimer::timeout, dev_page,
                          &sc::localdesk::ui::DeviceListPage::apply_snapshot);
@@ -574,6 +609,13 @@ int main(int argc, char* argv[]) {
         });
         bus->subscribe<Evt_FileFailed>([fp](const Evt_FileFailed& e) {
             QMetaObject::invokeMethod(fp, [fp, e] {
+                // 可执行拦截（Doc19 §5）：独立失败态文案「已拦截可执行文件」
+                if (e.reason == FileFailReason::Blocked) {
+                    fp->on_file_blocked(QString::fromStdString(e.file_id),
+                                        QString::fromStdString(e.name),
+                                        e.dir == FileDir::Recv ? 1 : 0);
+                    return;
+                }
                 fp->on_file_failed(QString::fromStdString(e.file_id),
                                    QString::fromStdString(e.name),
                                    e.dir == FileDir::Recv ? 1 : 0);
@@ -618,6 +660,43 @@ int main(int argc, char* argv[]) {
                         SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "file",
                                  "接收拒绝 file_id=" + e.file_id);
                     }
+                },
+                Qt::QueuedConnection);
+        });
+        // 同名冲突三选项（Doc19 §5）：目标已存在时弹 覆盖/重命名/跳过 +
+        // 「记住本次选择」（会话级记忆，断开自动失效，不落盘 config）
+        bus->subscribe<Evt_FileConflict>([&win, files](const Evt_FileConflict& e) {
+            QMetaObject::invokeMethod(
+                &win,
+                [&win, files, e] {
+                    const QString alias = QString::fromStdString(e.device_alias);
+                    const QString name = QString::fromStdString(e.name);
+                    QMessageBox box(&win);
+                    box.setWindowTitle(QObject::tr("同名文件冲突"));
+                    box.setIcon(QMessageBox::Question);
+                    box.setText(QObject::tr("%1 发送的文件已存在：\n%2（%3 字节）")
+                                    .arg(alias.isEmpty() ? QObject::tr("对方") : alias,
+                                         name)
+                                    .arg(e.size));
+                    box.setCheckBox(new QCheckBox(QObject::tr("记住本次选择（本次会话有效）"),
+                                                  &box));
+                    QPushButton* over =
+                        box.addButton(QObject::tr("覆盖"), QMessageBox::AcceptRole);
+                    box.addButton(QObject::tr("重命名保存"), QMessageBox::YesRole);
+                    QPushButton* skip =
+                        box.addButton(QObject::tr("跳过"), QMessageBox::RejectRole);
+                    box.setDefaultButton(skip);
+                    (void)box.exec();
+                    QString policy;
+                    if (box.clickedButton() == over) {
+                        policy = QStringLiteral("overwrite");
+                    } else if (box.clickedButton() == skip) {
+                        policy = QStringLiteral("skip");
+                    } else {
+                        policy = QStringLiteral("rename");
+                    }
+                    const bool remember = box.checkBox() != nullptr && box.checkBox()->isChecked();
+                    (void)files->resolve_conflict(e.file_id, policy.toStdString(), remember);
                 },
                 Qt::QueuedConnection);
         });
@@ -670,15 +749,7 @@ int main(int argc, char* argv[]) {
         });
     }
 
-    // 剪贴板文本同步（Doc19 §5 P2）：监视/接收/回环防抖/节流收敛进
-    // QtEventBridge（与 QML 版同一实现）。Widgets 版无常驻桥，此处挂轻量
-    // 实例仅做剪贴板监视 + 配置读取；须活到 app.exec() 退出
-    //（EventBus 订阅持 this 裸指针），故声明在 main 作用域
-    sc::localdesk::platform::QtEventBridge clip_bridge;
-    clip_bridge.init(bus.get(), aliases.get(), sessions.get(), files.get(),
-                     logger.get());
-    clip_bridge.set_config_store(&ini, &cfg);
-    clip_bridge.start_clipboard_monitor();
+    // 剪贴板监视/配置读写桥已在装配期建立（clip_bridge，活到 exec 退出）
     // 单实例唤起：二次启动把首实例主窗带到前台
     guard.set_raise_callback([&win] {
         win.showNormal();

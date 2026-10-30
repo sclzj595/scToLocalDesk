@@ -11,6 +11,9 @@
 #include <QUdpSocket>
 
 #include <string>
+#include <vector>
+
+class QTcpSocket;  // 全局 Qt 前置声明（探活在途连接句柄，Doc19 §6.3）
 
 #include "core/interface/idiscovery.hpp"
 
@@ -40,6 +43,15 @@ public:
         uint32_t self_code{0};        ///< 9 位连接码（心跳可选 TLV 0x10，Doc18 §3.4）
     };
 
+    /// 手动对端（Doc19 §6.3）：跨 VLAN 广播不可达场景的直连表
+    struct ManualPeer
+    {
+        std::string alias;
+        std::string ip;
+        uint16_t port{0};
+        QTcpSocket* sock{nullptr};  ///< 在途探活连接（无 = 空闲）
+    };
+
     UdpDiscoveryAdapter(Options opt, AliasService* aliases, foundation::ILogger* logger,
                         QObject* parent = nullptr);
 
@@ -54,17 +66,28 @@ public:
     /// 主动广播一轮心跳（设备列表刷新按钮：立即触发在线表更新）
     void send_heartbeat();
 
+    /// 注入手动对端（Doc19 §6.3，配置装配/UI 添加共用）：去重（同别名更新地址），
+    /// 立即以心跳同款条目进在线表（manual 标记），并按心跳周期对 ip:port 做
+    /// TCP 探活——成功续住条目，失败主动标记离线。IP 非法/别名空返回 false
+    bool add_manual_peer(const std::string& alias, const std::string& ip, uint16_t port);
+
 private slots:
     void on_ready_read();
 
 private:
     QByteArray build_heartbeat() const;
+    /// 全量手动对端发起一轮探活（心跳周期驱动 + 添加即探一次）
+    void probe_manual_peers();
+    /// 探活裁决：ok=续住条目（同款在线注入）；fail=标记离线（Doc19 §6.3）
+    void on_probe_result(const std::string& alias, QTcpSocket* sock, bool ok);
 
     Options opt_;
     AliasService* aliases_;
     foundation::ILogger* log_;
     QUdpSocket socket_;
     QTimer timer_;
+    QTimer probe_timer_;             ///< 手动对端探活周期（随心跳周期）
+    std::vector<ManualPeer> manual_;  ///< 手动对端表（alias 唯一）
     bool running_{false};
 };
 

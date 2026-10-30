@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDate>
+#include <QHostAddress>
 #include <QTimer>
 #include <QWindow>
 
@@ -143,6 +144,13 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
     });
     bus->subscribe<Evt_FileFailed>([this](const Evt_FileFailed& e) {
         QMetaObject::invokeMethod(this, [this, e] {
+            // 可执行拦截（Doc19 §5）：独立信号供 UI 显示「已拦截可执行文件」
+            if (e.reason == FileFailReason::Blocked) {
+                emit fileBlocked(QString::fromStdString(e.file_id),
+                                 QString::fromStdString(e.name),
+                                 e.dir == FileDir::Recv ? 1 : 0);
+                return;
+            }
             emit fileFailed(QString::fromStdString(e.file_id),
                             QString::fromStdString(e.name),
                             e.dir == FileDir::Recv ? 1 : 0);
@@ -161,6 +169,14 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
                                   QString::fromStdString(e.name),
                                   static_cast<qint64>(e.size),
                                   QString::fromStdString(e.device_alias));
+        }, Qt::QueuedConnection);
+    });
+    bus->subscribe<Evt_FileConflict>([this](const Evt_FileConflict& e) {
+        QMetaObject::invokeMethod(this, [this, e] {
+            emit fileConflict(QString::fromStdString(e.file_id),
+                              QString::fromStdString(e.name),
+                              static_cast<qint64>(e.size),
+                              QString::fromStdString(e.device_alias));
         }, Qt::QueuedConnection);
     });
     bus->subscribe<Evt_UnattendedLogin>([this](const Evt_UnattendedLogin& e) {
@@ -486,6 +502,13 @@ bool QtEventBridge::rejectFile(const QString& fileId) {
     return files_ != nullptr && files_->reject_pending(fileId.toStdString());
 }
 
+/// 同名冲突三选项裁决（Doc19 §5）：UI 冲突弹窗回调 → FileService
+bool QtEventBridge::resolveFileConflict(const QString& fileId, const QString& policy,
+                                        bool remember) {
+    return files_ != nullptr
+        && files_->resolve_conflict(fileId.toStdString(), policy.toStdString(), remember);
+}
+
 bool QtEventBridge::setUnattendedEnabled(bool enabled, const QString& password) {
     // TODO(V1.0): 经 UnattendedAuthenticator::set_password 走线程池 PBKDF2 →
     //   写 config.ini [security]（Doc16 §6）；骨架期仅切开关
@@ -569,6 +592,91 @@ void QtEventBridge::refreshDevices() {
     if (discovery_ != nullptr) {
         discovery_->send_heartbeat();
     }
+}
+
+bool QtEventBridge::addManualPeer(const QString& alias, const QString& ip, int port) {
+    // 未装配（headless/桥未接配置）不可用
+    if (ini_ == nullptr || cfg_ == nullptr) {
+        SCLD_LOG(log_, foundation::LogLevel::Warn, "discovery",
+                 "手动添加对端失败：配置未注入");
+        return false;
+    }
+    // 校验（Doc19 §6.3）：别名 PRD P5 同口径 + 分隔符黑名单 + IPv4 + 端口
+    if (!validAlias(alias) || alias.contains(';') || alias.contains('|')
+        || alias.contains('=')) {
+        emit settingsRejected(QStringLiteral("discovery.manual_peers"),
+                              QStringLiteral("连接名需 3~20 字符且不含 ; | ="));
+        return false;
+    }
+    const QHostAddress addr(ip);
+    if (addr.isNull() || addr.protocol() != QAbstractSocket::IPv4Protocol) {
+        emit settingsRejected(QStringLiteral("discovery.manual_peers"),
+                              QStringLiteral("IP 格式非法（仅支持 IPv4）"));
+        return false;
+    }
+    if (port == 0) {
+        port = cfg_->ws_port;  // 缺省 = 本端会话端口同款默认（Doc19 §6.3）
+    }
+    if (port < 1024 || port > 65535) {
+        emit settingsRejected(QStringLiteral("discovery.manual_peers"),
+                              QStringLiteral("端口需 1024~65535"));
+        return false;
+    }
+    // 去重更新：同名改址合并、同址直接命中，避免 config 里重复条目
+    const std::string a = alias.trimmed().toStdString();
+    const std::string i = ip.toStdString();
+    const std::string old = cfg_->manual_peers;
+    auto list = parse_manual_peers(old, static_cast<uint16_t>(cfg_->ws_port));
+    bool merged = false;
+    for (auto& d : list) {
+        if (d.alias == a) {
+            merged = d.ip == i && d.port == static_cast<uint16_t>(port);
+            d.ip = i;
+            d.port = static_cast<uint16_t>(port);
+            d.manual = true;
+            break;
+        }
+    }
+    if (!merged) {
+        DeviceInfo d;
+        d.alias = a;
+        d.ip = i;
+        d.port = static_cast<uint16_t>(port);
+        d.manual = true;
+        list.push_back(d);
+    }
+    // 回写串：port == 默认端口时省略段（与 parse 缺省语义闭环）
+    std::string out;
+    for (const auto& d : list) {
+        if (!out.empty()) {
+            out.push_back(';');
+        }
+        out += d.alias;
+        out.push_back('|');
+        out += d.ip;
+        if (d.port != static_cast<uint16_t>(cfg_->ws_port)) {
+            out.push_back(':');
+            out += std::to_string(d.port);
+        }
+    }
+    cfg_->manual_peers = out;
+    cfg_->save(*ini_);
+    if (ini_->save()) {
+        SCLD_LOG(log_, foundation::LogLevel::Info, "discovery",
+                 "手动对端已保存并注入 [alias=" + a + "] ip=" + i
+                     + " port=" + std::to_string(port));
+        emit configKeySaved(QStringLiteral("discovery.manual_peers"),
+                            QString::fromStdString(out));
+    }
+    else {
+        SCLD_LOG(log_, foundation::LogLevel::Error, "discovery",
+                 "manual_peers 落盘失败（注入仍生效，重启后丢失）");
+    }
+    // 立即注入（持久化成功与否不影响本次运行时可用性）
+    if (discovery_ != nullptr) {
+        discovery_->add_manual_peer(a, i, static_cast<uint16_t>(port));
+    }
+    return true;
 }
 
 void QtEventBridge::setUiTheme(bool dark) {

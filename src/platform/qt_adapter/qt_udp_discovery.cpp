@@ -6,6 +6,7 @@
 
 #include <QHostAddress>
 #include <QNetworkInterface>
+#include <QTcpSocket>
 
 #include <foundation/logger/ilogger.hpp>
 
@@ -58,6 +59,10 @@ UdpDiscoveryAdapter::UdpDiscoveryAdapter(Options opt, AliasService* aliases,
       log_(logger) {
     connect(&timer_, &QTimer::timeout, this, &UdpDiscoveryAdapter::send_heartbeat);
     connect(&socket_, &QUdpSocket::readyRead, this, &UdpDiscoveryAdapter::on_ready_read);
+    // 手动对端探活（Doc19 §6.3）：随现有心跳周期，组播启停不影响
+    probe_timer_.setInterval(opt_.heartbeat_ms > 0 ? opt_.heartbeat_ms : 3000);
+    connect(&probe_timer_, &QTimer::timeout, this,
+            &UdpDiscoveryAdapter::probe_manual_peers);
 }
 
 bool UdpDiscoveryAdapter::start() {
@@ -94,6 +99,14 @@ bool UdpDiscoveryAdapter::start() {
 
 void UdpDiscoveryAdapter::stop() {
     timer_.stop();
+    probe_timer_.stop();
+    for (auto& p : manual_) {
+        if (p.sock != nullptr) {
+            p.sock->abort();
+            p.sock->deleteLater();
+            p.sock = nullptr;
+        }
+    }
     socket_.leaveMulticastGroup(QHostAddress(QString::fromStdString(opt_.multicast_addr)));
     socket_.close();  // 关闭套接字：恢复服务 start() 需干净重 bind
     running_ = false;
@@ -108,6 +121,9 @@ void UdpDiscoveryAdapter::set_heartbeat_interval(int ms) {
     opt_.heartbeat_ms = ms;
     if (running_) {
         timer_.start(ms > 500 ? ms : 500);  // 下限 500ms 防误配打爆网络
+    }
+    if (!manual_.empty()) {
+        probe_timer_.start(ms > 500 ? ms : 500);  // 探活周期跟随心跳（Doc19 §6.3）
     }
 }
 
@@ -214,6 +230,107 @@ void UdpDiscoveryAdapter::on_ready_read() {
         if (aliases_ != nullptr) {
             aliases_->upsert_device(dev);  // 冲突/上/下线事件由服务发布（Doc07 §5）
         }
+    }
+}
+
+bool UdpDiscoveryAdapter::add_manual_peer(const std::string& alias,
+                                          const std::string& ip, uint16_t port) {
+    // 校验（Doc19 §6.3）：别名非空 + IPv4 点分地址 + 端口有效
+    const QHostAddress addr(QString::fromStdString(ip));
+    if (alias.empty() || port == 0
+        || addr.protocol() != QAbstractSocket::IPv4Protocol) {
+        SCLD_LOG(log_, foundation::LogLevel::Warn, opt_.log_tag,
+                 "手动对端非法已拒绝 alias=" + alias + " ip=" + ip
+                     + " port=" + std::to_string(port));
+        return false;
+    }
+    // 去重：同别名更新地址（重复添加收敛为一条，Doc19 §6.3）
+    ManualPeer* exist = nullptr;
+    for (auto& p : manual_) {
+        if (p.alias == alias) {
+            exist = &p;
+            break;
+        }
+    }
+    if (exist != nullptr) {
+        exist->ip = ip;
+        exist->port = port;
+    }
+    else {
+        ManualPeer p;
+        p.alias = alias;
+        p.ip = ip;
+        p.port = port;
+        manual_.push_back(std::move(p));
+    }
+    // 手动条目即刻可见（与心跳同款在线注入，manual 标记；探活失败再主动下线）
+    if (aliases_ != nullptr) {
+        DeviceInfo dev;
+        dev.alias = alias;
+        dev.ip = ip;
+        dev.port = port;
+        dev.manual = true;
+        aliases_->upsert_device(dev);
+    }
+    SCLD_LOG(log_, foundation::LogLevel::Info, opt_.log_tag,
+             "手动对端已注入 [alias=" + alias + "] ip=" + ip
+                 + " port=" + std::to_string(port));
+    probe_manual_peers();  // 添加即探一次，缩短在线/离线判定延迟
+    if (!probe_timer_.isActive()) {
+        probe_timer_.start(opt_.heartbeat_ms > 500 ? opt_.heartbeat_ms : 500);
+    }
+    return true;
+}
+
+void UdpDiscoveryAdapter::probe_manual_peers() {
+    for (auto& p : manual_) {
+        if (p.sock != nullptr) {
+            continue;  // 上轮在途连接未决（对端无响应），让其自然超时
+        }
+        auto* sock = new QTcpSocket(this);
+        p.sock = sock;
+        connect(sock, &QTcpSocket::connected, this,
+                [this, alias = p.alias, sock] { on_probe_result(alias, sock, true); });
+        connect(sock, &QTcpSocket::errorOccurred, this,
+                [this, alias = p.alias, sock](QAbstractSocket::SocketError) {
+                    on_probe_result(alias, sock, false);
+                });
+        // 探活超时兜底：栈级 connect 挂死（不可达路由 21s）按时收口
+        QTimer::singleShot(3000, this, [this, alias = p.alias, sock] {
+            on_probe_result(alias, sock, false);
+        });
+        sock->connectToHost(QString::fromStdString(p.ip), p.port);
+    }
+}
+
+void UdpDiscoveryAdapter::on_probe_result(const std::string& alias, QTcpSocket* sock,
+                                          bool ok) {
+    ManualPeer* p = nullptr;
+    for (auto& m : manual_) {
+        if (m.alias == alias) {
+            p = &m;
+            break;
+        }
+    }
+    // 对端已移除/连接已裁决（connected 后 error 亦会触发）只裁决一次
+    if (p == nullptr || p->sock != sock) {
+        return;
+    }
+    p->sock = nullptr;
+    sock->deleteLater();
+    if (ok) {
+        if (aliases_ != nullptr) {
+            DeviceInfo dev;
+            dev.alias = p->alias;
+            dev.ip = p->ip;
+            dev.port = p->port;
+            dev.manual = true;
+            aliases_->upsert_device(dev);  // 探活成功 = 心跳同款续住条目
+        }
+        return;
+    }
+    if (aliases_ != nullptr) {
+        aliases_->mark_device_offline(alias, p->ip);  // 失败标记离线（Doc19 §6.3）
     }
 }
 

@@ -24,6 +24,7 @@ void AppConfig::load(const foundation::IniConfig& ini) {
     multicast_enabled = ini.get_bool("discovery", "multicast_enabled", multicast_enabled);
     multicast_addr = ini.get_str("discovery", "multicast_addr", multicast_addr);
     static_map = ini.get_str("discovery", "static_map", static_map);
+    manual_peers = ini.get_str("discovery", "manual_peers", manual_peers);
 
     encoder = ini.get_str("session", "encoder", encoder);
     capture = ini.get_str("session", "capture", capture);
@@ -40,6 +41,7 @@ void AppConfig::load(const foundation::IniConfig& ini) {
     chunk_size_kb = ini.get_int("file", "chunk_size_kb", chunk_size_kb);
     overwrite = ini.get_str("file", "overwrite", overwrite);
     file_safe_path = ini.get_bool("file", "safe_path", file_safe_path);
+    block_executable = ini.get_bool("file", "block_executable", block_executable);
     max_parallel = ini.get_int("file", "max_parallel", max_parallel);
     if (max_parallel < 1 || max_parallel > 8) {
         max_parallel = 3;  // 范围校验兜底（Doc19 §5 P2）
@@ -78,6 +80,7 @@ void AppConfig::save(foundation::IniConfig& ini) const {
     ini.set_bool("discovery", "multicast_enabled", multicast_enabled);
     ini.set_str("discovery", "multicast_addr", multicast_addr);
     ini.set_str("discovery", "static_map", static_map);
+    ini.set_str("discovery", "manual_peers", manual_peers);
 
     ini.set_str("session", "encoder", encoder);
     ini.set_str("session", "capture", capture);
@@ -92,6 +95,7 @@ void AppConfig::save(foundation::IniConfig& ini) const {
     ini.set_int("file", "chunk_size_kb", chunk_size_kb);
     ini.set_str("file", "overwrite", overwrite);
     ini.set_bool("file", "safe_path", file_safe_path);
+    ini.set_bool("file", "block_executable", block_executable);
     ini.set_int("file", "max_parallel", max_parallel);
 
     ini.set_bool("security", "unattended_enabled", unattended_enabled);

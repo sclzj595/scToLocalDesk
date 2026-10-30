@@ -36,6 +36,7 @@ public:
         kIpRole,
         kBusyRole,                     ///< 对端会话中（状态点绿/蓝）
         kTrustedRole,                  ///< TrustStore 已记忆
+        kManualRole,                   ///< 手动添加对端（Doc19 §6.3，UI 显「手动」标）
     };
 
     DeviceListModel(std::shared_ptr<foundation::EventBus> bus,

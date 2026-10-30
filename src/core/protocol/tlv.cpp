@@ -95,9 +95,9 @@ std::vector<uint8_t> build_auth_proof(const uint8_t* proof32) {
 }
 
 std::vector<uint8_t> build_file_meta(const std::string& file_id_hex, const std::string& name,
-                                     uint64_t size, uint32_t total_chunks) {
+                                     uint64_t size, uint32_t total_chunks, uint8_t flags) {
     std::vector<uint8_t> body;
-    body.reserve(16 + 2 + name.size() + 8 + 4);
+    body.reserve(16 + 2 + name.size() + 8 + 4 + 1);
     // file_id：hex 字符串转 16B
     for (size_t i = 0; i + 1 < file_id_hex.size() && body.size() < 16; i += 2) {
         const auto nib = [](char c) -> uint8_t {
@@ -113,6 +113,11 @@ std::vector<uint8_t> build_file_meta(const std::string& file_id_hex, const std::
         body.push_back(static_cast<uint8_t>(size >> s));
     }
     push_be32(body, total_chunks);
+    // flags（Doc19 §5 目录传输）：=0 走老格式（字节不变），≠0 末尾追加 1B——
+    // 老对端按固定布局解析多余字节忽略，天然兼容（ScreenFrameHeader 同款）
+    if (flags != 0) {
+        body.push_back(flags);
+    }
     return build_frame(MsgType::FileMeta, body);
 }
 
@@ -143,6 +148,13 @@ bool parse_file_meta(const uint8_t* body, size_t len, FileMetaBody& out) {
                      | (static_cast<uint32_t>(body[pos + 1]) << 16)
                      | (static_cast<uint32_t>(body[pos + 2]) << 8)
                      | static_cast<uint32_t>(body[pos + 3]);
+    pos += 4;
+    // 末尾 flags（Doc19 §5 目录传输）：新格式 = 基础布局 + 1B，老格式（长度恰好
+    // 等于基础布局）恒 0——按 len 判别，不因多余/缺失字节失败（向后兼容老对端）
+    out.flags = 0;
+    if (len > pos) {
+        out.flags = body[pos];
+    }
     return true;
 }
 

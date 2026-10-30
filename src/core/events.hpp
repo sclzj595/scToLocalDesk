@@ -123,6 +123,7 @@ enum class FileFailReason {
     IoError,
     Integrity,
     Unauthed,
+    Blocked,  ///< 可执行后缀拦截（file.block_executable，Doc19 §5）
 };
 
 /// 传输方向（UI ↑/↓ 标识；发送=本机推给对端）
@@ -166,6 +167,15 @@ struct Evt_FileMetaReceived final : IEvent
     std::string name;
     uint64_t size{0};
     std::string device_alias;  ///< 发送方连接名（会话层注入，弹窗展示）
+};
+
+/// 同名文件冲突待决（Doc19 §5）：accept 时目标已存在且策略为 ask，UI 弹
+/// 覆盖/重命名/跳过 三选项（可勾选会话级「记住本次选择」）后调 resolve_conflict
+struct Evt_FileConflict final : IEvent
+{
+    std::string file_id;
+    std::string name;
+    uint64_t size{0};
 };
 
 // ---------------- 无人值守（Doc16 §2.5） ----------------

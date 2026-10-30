@@ -84,6 +84,10 @@ public:
     Q_INVOKABLE bool sessionRunning() const;
     Q_INVOKABLE bool acceptFile(const QString& fileId);   ///< 接收确认弹窗【同意】
     Q_INVOKABLE bool rejectFile(const QString& fileId);   ///< 接收确认弹窗【拒绝】
+    /// 同名冲突三选项裁决（Doc19 §5）：policy ∈ {"overwrite","rename","skip"}，
+    /// remember=「记住本次选择」（仅会话级记忆，不落盘 config，断开复位）
+    Q_INVOKABLE bool resolveFileConflict(const QString& fileId, const QString& policy,
+                                         bool remember);
     Q_INVOKABLE bool setUnattendedEnabled(bool enabled, const QString& password);
     Q_INVOKABLE void copyText(const QString& text);       ///< 连接码复制进剪贴板
     /// 连接名校验（PRD P5 别名治理）：trim 后 3~20 字符；设置页/发起前共用
@@ -107,6 +111,10 @@ public:
     Q_INVOKABLE bool setTrustNote(const QString& code, const QString& note);
     Q_INVOKABLE void clearTrust();
     Q_INVOKABLE void refreshDevices();   ///< 主动广播心跳（菜单 视图→刷新设备列表）
+    /// 手动添加对端（Doc19 §6.3）：校验（别名 3~20 字符/IPv4/端口）→ 去重更新
+    /// config discovery.manual_peers 持久化 → 立即注入发现层探活。
+    /// port 0 = 用默认 WS 端口；校验失败返回 false（QML 弹错误提示）
+    Q_INVOKABLE bool addManualPeer(const QString& alias, const QString& ip, int port);
     /// QML 主题状态 → C++ 侧 GlassTheme 同步（托盘菜单等 C++ 绘制的
     /// 弹层取色源）；Theme.qml toggleDark 每次切换调用
     Q_INVOKABLE void setUiTheme(bool dark);
@@ -193,8 +201,14 @@ signals:
                       qint64 total, int dir);
     void fileDone(const QString& fileId, const QString& name, int dir);
     void fileFailed(const QString& fileId, const QString& name, int dir);
+    /// 可执行后缀拦截失败态（Doc19 §5）：从 fileFailed 细分，UI 显示拦截文案
+    void fileBlocked(const QString& fileId, const QString& name, int dir);
     void fileMetaReceived(const QString& fileId, const QString& name, qint64 size,
                           const QString& alias);  ///< 接收确认弹窗触发
+    /// 同名冲突待决（Doc19 §5）：UI 弹 覆盖/重命名/跳过 三选项 +
+    /// 「记住本次选择」勾选，回调 resolveFileConflict
+    void fileConflict(const QString& fileId, const QString& name, qint64 size,
+                      const QString& alias);
     // 无人值守
     void unattendedLogin(const QString& alias);     ///< Toast 触发（Doc16 §7）
     void unattendedChanged();

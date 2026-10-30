@@ -6,6 +6,7 @@
 #include "doctest.h"
 
 #include "core/protocol/tlv.hpp"
+#include "core/interface/types.hpp"  // kFileFlagIsDir（Doc19 §5 目录传输位）
 
 using namespace sc::localdesk;
 using namespace sc::localdesk::protocol;
@@ -124,6 +125,30 @@ TEST_CASE("FILE_META 往返（含中文名）")
     CHECK(out.name == "测试文件.bin");
     CHECK(out.size == 1234567890ULL);
     CHECK(out.total_chunks == 32);
+    CHECK(out.flags == 0);  // 老格式（flags=0 不写字节）往返恒 0
+}
+
+TEST_CASE("FILE_META flags 往返（Doc19 §5 目录传输扩展）")
+{
+    // flags≠0：末尾追加 1B，按 len 判别解析
+    const auto frame = build_file_meta("0123456789abcdef0123456789abcdef",
+                                        "docs", 0, 0, kFileFlagIsDir);
+    const auto body = frame_body(frame);
+    FileMetaBody out;
+    REQUIRE(parse_file_meta(body.data(), body.size(), out));
+    CHECK(out.name == "docs");
+    CHECK(out.size == 0);
+    CHECK(out.total_chunks == 0);
+    CHECK(out.flags == kFileFlagIsDir);
+
+    // flags=0：字节布局与老格式完全一致（无附加字节）
+    const auto frame_old = build_file_meta("0123456789abcdef0123456789abcdef",
+                                           "a.bin", 8, 1);
+    const auto body_old = frame_body(frame_old);
+    FileMetaBody out_old;
+    REQUIRE(parse_file_meta(body_old.data(), body_old.size(), out_old));
+    CHECK(out_old.flags == 0);
+    CHECK(body_old.size() == 16 + 2 + 5 + 8 + 4);  // 基础布局长度
 }
 
 TEST_CASE("FILE_META 截断 body 解析拒绝")

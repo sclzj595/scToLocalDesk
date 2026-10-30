@@ -298,6 +298,7 @@ int main(int argc, char* argv[]) {
     files->set_confirm_enabled(cfg.confirm_before_transfer);
     files->set_safe_path(cfg.file_safe_path);
     files->set_overwrite_policy(cfg.overwrite);
+    files->set_block_executable(cfg.block_executable);  // 可执行拦截（Doc19 §5）
     files->set_max_parallel(cfg.max_parallel);  // 出站并行上限（Doc19 §5 P2）
     const QString save_dir = cfg.save_path.empty()
         ? QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)
@@ -353,6 +354,16 @@ int main(int argc, char* argv[]) {
     opt.heartbeat_ms = cfg.heartbeat_interval_s * 1000;
     opt.self_code = id_service.code_number();  // 心跳可选 TLV（Doc18 §3.4）
     platform::UdpDiscoveryAdapter discovery(opt, aliases.get(), logger.get());
+    // 手动对端（Doc19 §6.3）：跨子网广播不可达场景，配置表装配即注入探活
+    if (!cfg.manual_peers.empty()) {
+        const std::vector<DeviceInfo> manuals =
+            parse_manual_peers(cfg.manual_peers, static_cast<uint16_t>(cfg.ws_port));
+        for (const auto& m : manuals) {
+            (void)discovery.add_manual_peer(m.alias, m.ip, m.port);
+        }
+        SCLD_LOG(logger, LogLevel::Info, "discovery",
+                 "手动对端已加载 n=" + std::to_string(manuals.size()));
+    }
 
     // QML 桥（EventBus → Qt 信号，Doc13 §4）
     platform::QtEventBridge bridge;

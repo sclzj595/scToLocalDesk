@@ -11,6 +11,7 @@
 #include <QWidget>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 
@@ -76,6 +77,12 @@ public:
 
     /// 服务注入（Doc18 §3.4）：AliasService 快照 + TrustStore 信任角标
     void bind_services(AliasService* aliases, TrustStore* trust);
+    /// 手动添加设备回调注入（Doc19 §6.3）：widgets_main 传 bridge.addManualPeer；
+    /// 返回 false = 校验失败（页面弹提示）。未注入时按钮点击提示不可用
+    void set_manual_add_handler(
+        std::function<bool(const QString&, const QString&, uint16_t)> fn) {
+        manual_add_ = std::move(fn);
+    }
     /// 本机信息卡真值（IdService 派生，widgets_main 调用）
     void set_self(const QString& name, const QString& code);
     /// 心跳快照对账：与在线表 diff，仅增删/更新变化卡（增量刷新，1s 调用）
@@ -98,6 +105,8 @@ private:
     QWidget* makeDeviceCard(const QString& name, const QString& code,
                             const QString& ip, bool busy, bool trusted);
     void reflow();
+    /// 「手动添加设备」弹输入收集别名/IP[:端口] → 回调（Doc19 §6.3）
+    void on_manual_add();
     AliasService* aliases_{nullptr};
     TrustStore* trust_{nullptr};
     struct Card {
@@ -111,6 +120,7 @@ private:
     QLabel* self_name_lbl_{nullptr};
     QLabel* self_code_lbl_{nullptr};
     QGridLayout* grid_{nullptr};
+    std::function<bool(const QString&, const QString&, uint16_t)> manual_add_;
 };
 
 /// 连接码连接页：9 位三段输入（自动跳格/粘贴分发/跨段退格）+ 最近连接列表
@@ -241,6 +251,8 @@ public slots:
                           qint64 transferred, qint64 total, int dir);
     void on_file_done(const QString& file_id, const QString& name, int dir);
     void on_file_failed(const QString& file_id, const QString& name, int dir);
+    /// 可执行后缀拦截失败态（Doc19 §5）：显示「已拦截可执行文件」
+    void on_file_blocked(const QString& file_id, const QString& name, int dir);
 
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
@@ -290,6 +302,8 @@ signals:
     void unattEnabledChanged(bool on);
     /// 同名覆盖策略变更（widgets_main 接线 FileService 热生效，Doc11 §4.2）
     void overwritePolicyChanged(const QString& policy);
+    /// 可执行后缀拦截开关变更（widgets_main 接线 FileService 热生效，Doc19 §5）
+    void blockExecutableChanged(bool on);
 
 private:
     /// 控件变更统一入口：校验→更新 AppConfig→落盘（即时生效项在 QML 版由桥接服务）
@@ -333,6 +347,7 @@ private:
     QLineEdit* chunkEd_{nullptr};
     ToggleSwitch* confirmSw_{nullptr};
     ToggleSwitch* safeSw_{nullptr};
+    ToggleSwitch* blockExecSw_{nullptr};  ///< 可执行后缀拦截（Doc19 §5）
     QComboBox* owCombo_{nullptr};
     ToggleSwitch* unattSw_{nullptr};
     QLineEdit* lvEd_{nullptr};

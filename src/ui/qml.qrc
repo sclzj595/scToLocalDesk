@@ -21,5 +21,6 @@
         <file>qml/popups/Popup_ConnectConfirm.qml</file>
         <file>qml/popups/Popup_UnattendedPassword.qml</file>
         <file>qml/popups/Popup_FileConfirm.qml</file>
+        <file>qml/popups/Popup_FileConflict.qml</file>
     </qresource>
 </RCC>

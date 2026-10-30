@@ -14,6 +14,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import ".."
+import "../popups"
 import ScLocaldesk 1.0
 
 Item {
@@ -156,6 +157,34 @@ Item {
             Item {
                 Layout.fillWidth: true
             }
+            // 手动添加设备（Doc19 §6.3）：跨子网广播不可达时按 IP 直连
+            Button {
+                id: manualAddBtn
+                text: qsTr("手动添加设备")
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                onClicked: {
+                    manualPopup.open();
+                }
+                contentItem: Text {
+                    text: manualAddBtn.text
+                    font: manualAddBtn.font
+                    color: Theme.primary
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: Theme.btnRadius
+                    color: manualAddBtn.hovered ? Qt.alpha(Theme.primary, 0.10) : "transparent"
+                    border.color: Qt.alpha(Theme.primary, 0.45)
+                    border.width: 1
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: Theme.durHover
+                        }
+                    }
+                }
+            }
             Text {
                 text: qsTr("首次连接需对方确认，确认后免验证直连")
                 font.family: Theme.fontFamily
@@ -267,7 +296,9 @@ Item {
                                     color: Theme.textMain
                                 }
                                 Text {
-                                    text: model.ip
+                                    // 手动添加对端带「手动」小标（Doc19 §6.3）
+                                    text: model.manual ? model.ip + qsTr(" · 手动")
+                                                       : model.ip
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontHint
                                     color: Theme.textHint
@@ -322,13 +353,154 @@ Item {
                 }
 
                 MouseArea {
-                    id: ma
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    // 无对端连接码（纯静态条目）也可点：连接走 alias 寻址，
-                    // 码仅用于信任核对，弹窗对空码显示「待连接后交换」
-                    onClicked: root.connectRequested(model.name, model.codeRaw, model.trusted)
+                        id: ma
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        // 无对端连接码（纯静态条目）也可点：连接走 alias 寻址，
+                        // 码仅用于信任核对，弹窗对空码显示「待连接后交换」
+                        onClicked: root.connectRequested(model.name, model.codeRaw, model.trusted)
+                    }
+                }
+            }
+        }
+    }
+
+    // ---------------- 手动添加设备弹窗（Doc19 §6.3） ----------------
+    Popup {
+        id: manualPopup
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: 380
+        padding: 20
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            radius: Theme.cardRadius
+            color: Theme.cardBg
+            border.color: Theme.cardBorder
+            border.width: 1
+        }
+
+        onOpened: {
+            errTxt.visible = false;
+            aliasField.forceActiveFocus();
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Text {
+                text: qsTr("手动添加设备")
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontTitle
+                font.weight: Font.Medium
+                color: Theme.textMain
+            }
+            Text {
+                text: qsTr("跨子网广播不可达时按 IP 直连；端口留空用默认会话端口")
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontHint
+                color: Theme.textHint
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            TextField {
+                id: aliasField
+                Layout.fillWidth: true
+                selectByMouse: true
+                placeholderText: qsTr("连接名（3~20 字符）")
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                color: Theme.textMain
+                placeholderTextColor: Theme.textHint
+                leftPadding: 12
+                rightPadding: 12
+                background: Rectangle {
+                    radius: Theme.btnRadius
+                    color: Theme.winBg
+                    border.color: aliasField.activeFocus ? Theme.primary : Theme.divider
+                    border.width: 1
+                }
+            }
+            TextField {
+                id: ipField
+                Layout.fillWidth: true
+                selectByMouse: true
+                placeholderText: qsTr("对端 IP（如 192.168.10.20）")
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                color: Theme.textMain
+                placeholderTextColor: Theme.textHint
+                leftPadding: 12
+                rightPadding: 12
+                background: Rectangle {
+                    radius: Theme.btnRadius
+                    color: Theme.winBg
+                    border.color: ipField.activeFocus ? Theme.primary : Theme.divider
+                    border.width: 1
+                }
+            }
+            TextField {
+                id: portField
+                Layout.fillWidth: true
+                selectByMouse: true
+                placeholderText: qsTr("端口（可选，1024~65535）")
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                color: Theme.textMain
+                placeholderTextColor: Theme.textHint
+                leftPadding: 12
+                rightPadding: 12
+                validator: IntValidator {
+                    bottom: 1024
+                    top: 65535
+                }
+                background: Rectangle {
+                    radius: Theme.btnRadius
+                    color: Theme.winBg
+                    border.color: portField.activeFocus ? Theme.primary : Theme.divider
+                    border.width: 1
+                }
+            }
+            Text {
+                id: errTxt
+                visible: false
+                text: qsTr("添加失败：请检查连接名 / IP / 端口")
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontHint
+                color: Theme.accentRed
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item {
+                    Layout.fillWidth: true
+                }
+                AppButton {
+                    primary: false
+                    text: qsTr("取消")
+                    onClicked: manualPopup.close()
+                }
+                AppButton {
+                    text: qsTr("添加")
+                    enabled: aliasField.text.trim().length > 0
+                             && ipField.text.trim().length > 0
+                    onClicked: {
+                        // 端口留空传 0 = 桥侧取默认 WS 端口（Doc19 §6.3）
+                        const p = portField.text.trim().length
+                                  ? parseInt(portField.text.trim()) : 0;
+                        if (ScLocaldesk.addManualPeer(aliasField.text.trim(),
+                                                      ipField.text.trim(), p)) {
+                            manualPopup.close();
+                            aliasField.clear();
+                            ipField.clear();
+                            portField.clear();
+                        } else {
+                            errTxt.visible = true;
+                        }
+                    }
                 }
             }
         }
