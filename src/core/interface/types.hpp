@@ -21,6 +21,13 @@ struct DeviceInfo {
     int64_t last_seen_us{0};  ///< 最近一次心跳时间（稳态时钟，微秒）
 };
 
+/// 采集失败分类（Doc19 §4.2 占位帧）：grab 失败原因，占位提示文案分流依据
+enum class CaptureErr : uint8_t {
+    None = 0,          ///< 正常/无新帧
+    DesktopLocked = 1, ///< 用户锁屏（输入桌面不可达）
+    DriverError = 2,   ///< 采集驱动异常
+};
+
 /// 原始视频帧（采集线程产物，见 Doc10）
 struct VideoFrame {
     const uint8_t* data{nullptr};

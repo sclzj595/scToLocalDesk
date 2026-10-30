@@ -2,6 +2,7 @@
 #include "pages.h"
 
 #include <QColor>
+#include <QFont>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
@@ -13,6 +14,8 @@
 
 #include "../glass_theme.h"
 #include "core/interface/iinput_injector.hpp"
+#include "core/interface/types.hpp"
+#include "foundation/error_text.hpp"
 #include "platform/qt_adapter/input_bridge.hpp"
 #include "service/remote_session_service.hpp"
 
@@ -62,6 +65,19 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
     connect(discBtn, &QPushButton::clicked, this, &RemoteViewPage::disconnected);
     toolbar_->hide();  // 无会话默认隐藏（断开按钮不可用），on_frame 恢复
 
+    // 只读徽标（P1）：顶部悬浮小胶囊——控制端收到 Approved 附加字节=1
+    // （对端未授权键鼠）时显示，仅告知；本地输入照常采集发送，由被控端丢弃
+    ro_badge_ = new QLabel(QStringLiteral("只读模式（对方未授权键鼠）"), this);
+    ro_badge_->setObjectName(QStringLiteral("roBadge"));
+    ro_badge_->setAlignment(Qt::AlignCenter);
+    ro_badge_->setStyleSheet(QStringLiteral(
+        "background: %1; color: white; border-radius: 10px; "
+        "font-size: 12px; padding: 4px 14px;")
+        .arg(GlassTheme::instance().textSecond().name(QColor::HexRgb)));
+    ro_badge_->adjustSize();
+    ro_badge_->move((width() - ro_badge_->width()) / 2, 12);
+    ro_badge_->hide();
+
     lay->addStretch();
     auto* toolRow = new QHBoxLayout();
     toolRow->addStretch();
@@ -73,8 +89,18 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
 
 void RemoteViewPage::on_frame(const QImage& img) {
     frame_ = img;
+    if (placeholder_) {  // 正常帧到达：复位占位状态
+        placeholder_ = false;
+        placeholder_locked_ = false;
+    }
     toolbar_->setVisible(true);  // 有帧 = 会话中，恢复工具条
     update();  // 触发 paintEvent 重画
+}
+
+void RemoteViewPage::on_placeholder(bool locked) {
+    placeholder_ = true;
+    placeholder_locked_ = locked;
+    update();
 }
 
 void RemoteViewPage::on_session_started(const QString& alias) {
@@ -85,16 +111,44 @@ void RemoteViewPage::on_session_started(const QString& alias) {
     update();
 }
 
+void RemoteViewPage::on_read_only(bool on) {
+    if (ro_badge_ != nullptr) {
+        ro_badge_->setVisible(on);  // 只读徽标（会话关闭在 on_session_closed 复位）
+    }
+}
+
 void RemoteViewPage::on_session_closed() {
     frame_ = QImage();
+    placeholder_ = false;
+    placeholder_locked_ = false;
     session_active_ = false;
     toolbar_->hide();
+    if (ro_badge_ != nullptr) {
+        ro_badge_->hide();  // 只读徽标随会话复位
+    }
     update();
 }
 
 void RemoteViewPage::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.fillRect(rect(), QColor(0, 0, 0));
+    if (placeholder_) {
+        // 采集失败占位（Doc19 §4.2）：灰底 + 居中提示（titleLabel 体系字：
+        // 16px 半粗），会话保持不断、键鼠透传不受影响。
+        // 文案走 foundation 映射（员工视图红线：内部错误码不出 UI）
+        p.fillRect(rect(), QColor(0xEC, 0xEF, 0xF3));
+        QFont f = p.font();
+        f.setPixelSize(16);
+        f.setWeight(QFont::DemiBold);
+        p.setFont(f);
+        p.setPen(QColor(0x66, 0x66, 0x66));
+        const auto cap_err = placeholder_locked_
+            ? static_cast<int>(CaptureErr::DesktopLocked)
+            : static_cast<int>(CaptureErr::DriverError);
+        p.drawText(rect(), Qt::AlignCenter,
+                   QString::fromUtf8(foundation::friendly_capture_fail(cap_err)));
+        return;
+    }
     if (frame_.isNull()) {
         p.setPen(QColor(0x66, 0x66, 0x66));
         // 空态三分支（与 QML Page_RemoteView 同口径）：无会话占位 /

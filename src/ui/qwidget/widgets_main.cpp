@@ -317,7 +317,8 @@ int main(int argc, char* argv[]) {
                     }
                     active_confirm = GlassDialog::confirmIncoming(
                         &win, QString::fromStdString(e.peer_ip),
-                        [sessions] { sessions->approve(); },
+                        // readOnly=弹窗"允许对方键鼠控制"勾选态取反（P1 只读审批）
+                        [sessions](bool read_only) { sessions->approve(read_only); },
                         [sessions] { sessions->reject(); });
                 },
                 Qt::QueuedConnection);
@@ -514,6 +515,10 @@ int main(int argc, char* argv[]) {
         QObject::connect(&video,
                          &sc::localdesk::platform::VideoPipeline::frameReady,
                          rv, &sc::localdesk::ui::RemoteViewPage::on_frame);
+        // 占位帧（Doc19 §4.2）：采集失败灰底提示（queued 跨线程）
+        QObject::connect(&video,
+                         &sc::localdesk::platform::VideoPipeline::placeholderReady,
+                         rv, &sc::localdesk::ui::RemoteViewPage::on_placeholder);
         rv->set_session(sessions.get());  // 键鼠透传出口（Doc18 §4.4）
         // 会话关闭复位：清帧回空态、隐藏工具条（无会话不可点断开）
         bus->subscribe<Evt_SessionClosed>([rv](const Evt_SessionClosed&) {
@@ -524,8 +529,9 @@ int main(int argc, char* argv[]) {
         bus->subscribe<Evt_SessionStart>([rv](const Evt_SessionStart& e) {
             QMetaObject::invokeMethod(
                 rv,
-                [rv, alias = QString::fromStdString(e.device_alias)] {
+                [rv, alias = QString::fromStdString(e.device_alias), ro = e.read_only] {
                     rv->on_session_started(alias);
+                    rv->on_read_only(ro);  // 只读徽标（P1 控制端知情）
                 },
                 Qt::QueuedConnection);
         });

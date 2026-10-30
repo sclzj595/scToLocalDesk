@@ -104,8 +104,12 @@ public:
         XSync(dpy_, False);
         XSetErrorHandler(prev);
         if (img == nullptr) {
+            // 抓取失败（BadMatch 分辨率变更等）→ 驱动异常（Doc19 §4.2）；
+            // X11 锁屏不影响根窗采集，DesktopLocked 不适用
+            last_err_ = CaptureErr::DriverError;
             return false;
         }
+        last_err_ = CaptureErr{};  // 成功清回 None（Xlib None 宏污染，字面量不可用）
         const auto now = std::chrono::steady_clock::now().time_since_epoch();
         out.data = reinterpret_cast<const uint8_t*>(img->data);
         out.size = static_cast<size_t>(img->bytes_per_line) * img->height;
@@ -149,6 +153,8 @@ public:
         }
     }
 
+    CaptureErr last_error() const override { return last_err_; }
+
 private:
     /// BadMatch 等错误吞掉（返回 1 = 已处理，阻断默认 abort）
     static int QuietErrorHandler(Display*, XErrorEvent*) {
@@ -159,6 +165,7 @@ private:
     Window root_{0};
     uint32_t width_{0};
     uint32_t height_{0};
+    CaptureErr last_err_{CaptureErr{}};  ///< 最近一次 grab 失败分类（0=None）
     std::vector<uint8_t> fallback_;  // XGetImage 慢路径自持缓冲
 #ifdef SCLD_X11_SHM
     XShmSegmentInfo shminfo_{};

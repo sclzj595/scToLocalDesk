@@ -77,6 +77,7 @@ void VideoPipeline::on_video_frame(const Evt_VideoFrame& e) {
     p.payload = e.payload;
     p.width = e.width;
     p.height = e.height;
+    p.flags = e.flags;
     (void)queue_.push_overwrite(std::move(p));
 }
 
@@ -98,6 +99,12 @@ void VideoPipeline::decode_loop() {
         }
         if (!running_.load(std::memory_order_acquire)) {
             break;
+        }
+        // 占位帧（Doc19 §4.2）：data 恒空不进解码器，直接上抛占位状态
+        // （bit1=锁屏占位）；frameSize 保持末帧尺寸，键鼠归一化不受影响
+        if ((task.flags & 0x01) != 0) {
+            emit placeholderReady((task.flags & 0x02) != 0);
+            continue;
         }
         const auto& px = *task.payload;
         QImage img;

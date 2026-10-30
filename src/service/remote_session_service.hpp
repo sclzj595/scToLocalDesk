@@ -98,7 +98,9 @@ public:
 
     // ---------------- UI 回调（人工确认弹窗，Doc13 §3.1） ----------------
 
-    void approve();                                        ///< 弹窗点【同意】
+    /// 弹窗点【同意】；read_only=被控端未授权键鼠（审批弹窗勾选态取反），
+    /// 经 Approved 附加字节告知控制端显示只读徽标，Running 期丢弃键鼠注入
+    void approve(bool read_only = false);
     void reject(RejectReason reason = RejectReason::ManualDenied);
 
     // ---------------- 会话内 ----------------
@@ -252,6 +254,8 @@ public:
     std::string pending_challenge_;   ///< 被控端已签发挑战 hex
     PendingConnect pending_connect_;  ///< 控制端待发申请
     bool listening_{false};
+    bool read_only_{false};  ///< 只读模式（被控端审批决定；Running 期推给 input_，
+                             ///  控制端则为对端告知值供 UI 徽标；持锁读写，Idle 清）
     std::atomic<int64_t> session_seq_{0};
     std::function<bool(const std::string&, uint16_t)> self_ip_checker_;  ///< 自连拦截判定（空=不拦）
     std::string last_peer_;  ///< 最近发起目标（重连用；连接期赋值）

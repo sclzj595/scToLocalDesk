@@ -58,6 +58,9 @@ signals:
     void frameReady(const QImage& img);
     /// 帧分辨率变更（解码线程 emit，queued）
     void frameSizeChanged();
+    /// 占位帧到达（Doc19 §4.2，解码线程 emit）：locked=锁屏占位，
+    /// 否则驱动异常；正常帧到达后由接收方自行复位
+    void placeholderReady(bool locked);
 
 private:
     /// EventBus 订阅回调（发布线程同步执行，仅入队必须快）
@@ -75,6 +78,7 @@ private:
         std::shared_ptr<const std::vector<uint8_t>> payload;
         uint32_t width{0};
         uint32_t height{0};
+        uint8_t flags{0};  ///< SCREEN_FRAME flags（bit0=占位帧）
     };
     foundation::BoundedQueue<Pending> queue_{3};  // 只留最新（画面最忌延迟累积）
 

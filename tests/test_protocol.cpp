@@ -77,6 +77,26 @@ TEST_CASE("REQUEST_CONNECT 往返")
     REQUIRE(parse_request_connect(body.data(), body.size(), out));
     CHECK(out.alias == "SC-PC");
     CHECK(out.flags == connect_flags::kUnattended);
+    // 版本协商（SessionCtrl 首包）：新格式末尾恒带 1B 版本
+    CHECK(out.version == kProtoVersion);
+}
+
+TEST_CASE("REQUEST_CONNECT 老格式兼容（无版本字节按 0）")
+{
+    // 手工拼老格式 body：sub + alias_len + alias + flags（无末尾版本字节），
+    // 模拟老对端发来的请求——解析须成功且 version==0（legacy 放行）
+    const std::string alias = "OLD-PC";
+    std::vector<uint8_t> body;
+    body.push_back(static_cast<uint8_t>(CtrlSubType::RequestConnect));
+    body.push_back(static_cast<uint8_t>(alias.size()));
+    body.insert(body.end(), alias.begin(), alias.end());
+    body.push_back(0x00);  // flags
+
+    RequestConnectBody out;
+    REQUIRE(parse_request_connect(body.data(), body.size(), out));
+    CHECK(out.alias == alias);
+    CHECK(out.flags == 0x00);
+    CHECK(out.version == 0);
 }
 
 TEST_CASE("REQUEST_CONNECT 越界 body 解析拒绝")
@@ -236,6 +256,13 @@ TEST_CASE("控制报文整帧：头 + sub(+reason)")
     const auto ok = build_ctrl(CtrlSubType::Approved);
     CHECK(ok.size() == kHeaderSize + 1);
     CHECK(ok[kHeaderSize] == static_cast<uint8_t>(CtrlSubType::Approved));
+
+    // 带附加字节版（P1 只读告知）：Approved 尾随 1B（0=可控制 1=只读）；
+    // 旧解析按单字节 Approved 处理、多余字节忽略——双向兼容
+    const auto ok_ro = build_ctrl(CtrlSubType::Approved, 1);
+    CHECK(ok_ro.size() == kHeaderSize + 2);
+    CHECK(ok_ro[kHeaderSize] == static_cast<uint8_t>(CtrlSubType::Approved));
+    CHECK(ok_ro[kHeaderSize + 1] == 1);
 
     const auto rej = build_reject(RejectReason::SessionBusy);
     CHECK(rej.size() == kHeaderSize + 2);

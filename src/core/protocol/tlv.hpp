@@ -36,9 +36,15 @@ std::vector<uint8_t> build_frame(MsgType type, const std::vector<uint8_t>& body)
 
 // ---------------- 会话信令构建（Doc05 §3） ----------------
 
-/// REQUEST_CONNECT：alias(u8len) + flags(1B) + [proof_len(2B)+proof]
+/// 协议版本（SessionCtrl 首包协商用）：REQUEST_CONNECT 末尾 1B 透传。
+/// 老对端按 alias_len+flags 解析、多余字节忽略——天然向后兼容
+constexpr uint8_t kProtoVersion = 1;
+
+/// REQUEST_CONNECT：alias(u8len) + flags(1B) + version(1B，新格式末尾追加；
+/// 老对端按 alias_len 解析多余字节忽略)
 std::vector<uint8_t> build_request_connect(const std::string& alias,
-                                                         uint8_t flags);
+                                                         uint8_t flags,
+                                                         uint8_t version = kProtoVersion);
 
 /// AUTH_CHALLENGE：salt(16B) + challenge(16B)（salt 供控制端 PBKDF2 派生 K，密码不上网）
 std::vector<uint8_t> build_auth_challenge(const uint8_t* salt16,
@@ -64,6 +70,10 @@ bool parse_file_meta(const uint8_t* body, size_t len, FileMetaBody& out);
 /// 单字节控制报文：APPROVED / KEEPALIVE
 std::vector<uint8_t> build_ctrl(CtrlSubType sub);
 
+/// 带附加字节的控制报文：APPROVED 尾随 1B 只读标记（0=可控制 1=只读）。
+/// 老对端/无人值守路径用单字节版（按无附加=0 解析，双向兼容）
+std::vector<uint8_t> build_ctrl(CtrlSubType sub, uint8_t extra);
+
 /// REJECT：reason(1B)
 std::vector<uint8_t> build_reject(RejectReason reason);
 
@@ -75,6 +85,7 @@ std::vector<uint8_t> build_close(CloseReason reason);
 struct RequestConnectBody {
     std::string alias;
     uint8_t flags{0};
+    uint8_t version{0};  ///< 协议版本（老格式无该字节=0，视为 legacy 放行）
 };
 
 /// 从 body 解析 REQUEST_CONNECT（不校验头，调用方先 parse_header）
@@ -132,13 +143,19 @@ struct ScreenFrameHeader {
     uint32_t width{0};
     uint32_t height{0};
     int64_t timestamp_us{0};
+    /// bit0=占位帧（data 恒空）bit1=锁屏占位（否则驱动异常占位）；0=正常帧
+    uint8_t flags{0};
 };
 
-/// body = width(4B BE) + height(4B BE) + timestamp(8B BE) + data
+/// body = width(4B BE) + height(4B BE) + timestamp(8B BE) + data（老格式，
+/// 头 16B 布局不动）；flags≠0（占位帧，data 恒空）末尾恒追加 1B flags →
+/// body 恒 17B。flags=0 逐字节兼容老对端
 std::vector<uint8_t> build_screen_frame(const ScreenFrameHeader& hdr,
                                                       const uint8_t* data, size_t len);
 
-/// 解析帧头并返回数据指针（零拷贝视图，不越过 body 生命周期）
+/// 解析帧头并返回数据指针（零拷贝视图，不越过 body 生命周期）。
+/// 按 body_len 判别：len==17（16+空 data+1B flags）读末字节为 flags；
+/// 其余（16+data_len）按老格式 flags=0，兼容老对端
 bool parse_screen_frame(const uint8_t* body, size_t len,
                                       ScreenFrameHeader& hdr, const uint8_t*& data,
                                       size_t& data_len);

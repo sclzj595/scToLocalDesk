@@ -126,6 +126,10 @@ void RemoteSessionService::set_stream_service(std::shared_ptr<ScreenStreamServic
 
 void RemoteSessionService::set_input_service(std::shared_ptr<InputService> input) {
     input_ = std::move(input);
+    // 只读丢弃日志需 logger：装配期本服务 log_ 已就绪，顺手注入省装配改动
+    if (input_ != nullptr) {
+        input_->set_logger(log_.get());
+    }
 }
 
 void RemoteSessionService::set_stream_params(int fps, int quality) {
@@ -282,8 +286,8 @@ void RemoteSessionService::send_request_connect() {
     // 协议语义：REQUEST_CONNECT.body.alias = 发起方（本机）别名——被控端弹窗
     // 展示"谁在请求"与信任反查 peer_code 都依赖它；发目标别名会让被控端
     // 把自己当请求方（弹窗显示错名 + 信任直连永远反查失败）
-    transport_->send_binary(
-        protocol::build_request_connect(aliases_->self_alias(), flags));
+    transport_->send_binary(protocol::build_request_connect(
+        aliases_->self_alias(), flags, protocol::kProtoVersion));
     // 密码暂存到连接上下文：AUTH_CHALLENGE 到达时派生 proof 后立即清除
     if (pc.unattended && !pc.password.empty()) {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -292,18 +296,23 @@ void RemoteSessionService::send_request_connect() {
     }
 }
 
-void RemoteSessionService::approve() {
+void RemoteSessionService::approve(bool read_only) {
     std::lock_guard<std::mutex> lk(mtx_);
     if (state_ != SessState::WaitForUser) {
         return;
     }
     ++confirm_seq_;            // 弹窗被消费，看门狗失效（PRD 确认三件套）
     confirm_cv_.notify_all();
+    // 只读告知（P1）：Approved 尾随 1B（0=可控制 1=只读），控制端据此显示
+    // 只读徽标；旧控制端按单字节 Approved 解析、多余字节忽略——双向兼容
     if (transport_ != nullptr) {
-        transport_->send_binary(protocol::build_ctrl(protocol::CtrlSubType::Approved));
+        transport_->send_binary(
+            protocol::build_ctrl(protocol::CtrlSubType::Approved, read_only ? 1 : 0));
     }
-    // 审批审计（Doc19 §6）：同意即放行键鼠/画面，追溯刚需
-    audit_event("Approve", "OK", peer_code_str_, peer_ip_, "人工确认同意");
+    // 审批审计（Doc19 §6）：同意即放行键鼠/画面，追溯刚需；只读审批单独标注
+    audit_event("Approve", "OK", peer_code_str_, peer_ip_,
+                read_only ? "人工确认同意（只读模式）" : "人工确认同意");
+    read_only_ = read_only;  // enter_running 推给 input_（Running 期丢弃键鼠）
     enter_running(false);
 }
 
@@ -497,9 +506,13 @@ void RemoteSessionService::on_transport_message(
         protocol::ScreenFrameHeader hdr;
         const uint8_t* px = nullptr;
         size_t px_len = 0;
-        if (!protocol::parse_screen_frame(body, body_len, hdr, px, px_len)
-            || px == nullptr || px_len == 0) {
+        if (!protocol::parse_screen_frame(body, body_len, hdr, px, px_len)) {
             break;  // 畸形帧丢弃
+        }
+        // 占位帧（Doc19 §4.2）data 恒空合法；普通帧空 data 仍按畸形丢弃
+        const bool placeholder = (hdr.flags & 0x01) != 0;
+        if (px == nullptr || (!placeholder && px_len == 0)) {
+            break;
         }
         if (bus_ != nullptr) {
             Evt_VideoFrame e;
@@ -507,6 +520,7 @@ void RemoteSessionService::on_transport_message(
             e.width = hdr.width;
             e.height = hdr.height;
             e.timestamp_us = hdr.timestamp_us;
+            e.flags = hdr.flags;
             bus_->publish(e);
         }
         break;
@@ -612,19 +626,25 @@ void RemoteSessionService::handle_session_ctrl(const uint8_t* body, size_t len) 
         handle_auth_proof(body + 1, len - 1);
         break;
     case protocol::CtrlSubType::Approved: {
-        // 控制端收到同意：进入 Running
+        // 控制端收到同意：进入 Running。尾随 1B 附加（0=可控制 1=只读）——
+        // 旧被控端单字节 Approved（无附加）按 0 处理（双向兼容）；
+        // 只读=对端未授权键鼠：本地输入照常采集发送（省协议改动），由被控端丢弃
+        const bool peer_ro = len > 1 && body[1] != 0;
         std::lock_guard<std::mutex> lk(mtx_);
+        read_only_ = peer_ro;
         enter_running(false);
         break;
     }
     case protocol::CtrlSubType::Reject:
-        // 控制端收到拒绝：按 reason 提示（Doc13 §3.3）；拒绝属审计日志（Warn 即时落盘）
+        // 控制端收到拒绝：按 reason 提示（Doc13 §3.3）；拒绝属审计日志（Warn 即时落盘）。
+        // reason 原始数值随事件上抛，UI 经 friendly_reject 取映射文案（员工视图红线）
         SCLD_LOG(log_, LogLevel::Warn, "session",
                  "对端拒绝 reason=" + std::to_string(static_cast<int>(len > 1 ? body[1] : 0)));
         if (bus_ != nullptr) {
             Evt_ConnectStateChanged e;
             e.stage = "rejected";
             e.alias = peer_alias_;
+            e.reject_reason = len > 1 ? static_cast<int>(body[1]) : 0;
             e.timestamp_us = now_us();
             bus_->publish(e);
         }
@@ -729,6 +749,24 @@ void RemoteSessionService::handle_request_connect(const protocol::RequestConnect
                  "[alias=" + req.alias + "] 本机锁屏，自动拒绝连接请求");
         audit_event("Request", "Denied", code_str, req_ip,
                     "锁屏自动拒 alias=" + req.alias);
+        return;
+    }
+
+    // 版本协商（SessionCtrl 首包）：version>kProtoVersion 拒绝——本端不认识
+    // 的新格式字段可能有语义歧义，宁拒不猜。version==0（老对端无该字节）
+    // 视为 legacy 放行。请求未入状态机（state 仍 Idle），无看门狗残留
+    if (req.version > protocol::kProtoVersion) {
+        if (transport_ != nullptr) {
+            transport_->send_binary(
+                protocol::build_reject(protocol::RejectReason::Other));
+        }
+        SCLD_LOG(log_, LogLevel::Warn, "session",
+                 "[alias=" + req.alias + "] 对端协议版本过高 v="
+                     + std::to_string(req.version) + " > "
+                     + std::to_string(protocol::kProtoVersion) + "，已拒绝");
+        audit_event("Request", "Denied", code_str, req_ip,
+                    "版本不兼容 v=" + std::to_string(req.version)
+                        + " alias=" + req.alias);
         return;
     }
 
@@ -973,6 +1011,11 @@ void RemoteSessionService::enter_running(bool unattended) {
     if (files_ != nullptr) {
         files_->set_peer_alias(peer_alias_);
     }
+    // 只读模式推送给注入器（P1）：Running 期被控端收 MOUSE_KEY 一律丢弃。
+    // set_read_only 为 atomic store，持锁调用安全
+    if (input_ != nullptr) {
+        input_->set_read_only(read_only_);
+    }
     // 被控端 Running 即开推流（Doc09 §3.1 鉴权红线：APPROVED 之后才推）
     // start 非阻塞（内部起线程），持锁调用安全
     if (role_ == Role::Controlled && stream_ != nullptr) {
@@ -987,6 +1030,7 @@ void RemoteSessionService::enter_running(bool unattended) {
         e.session_id = session_id_;
         e.device_alias = peer_alias_;
         e.unattended = unattended;
+        e.read_only = read_only_;  // 控制端徽标数据源（被控端恒 false）
         e.timestamp_us = ts;
         bus_->publish(e);
     }
@@ -1018,6 +1062,7 @@ void RemoteSessionService::reset_to_idle() {
         files_->set_peer_alias("");  // 清来源名，防下次会话前残留
     }
     state_ = SessState::Idle;
+    read_only_ = false;  // 只读态复位（下次会话重新按审批决定）
     // 会话加密复位（PRD）：清会话密钥与协商上下文，下次会话重新协商
     encrypted_.store(false, std::memory_order_relaxed);
     if (crypto_ != nullptr) {

@@ -21,8 +21,11 @@ public:
     explicit ConnectConfirmDialog(QWidget* parent = nullptr);
 
     void setPeer(const QString& alias, const QString& ip, const QString& code);
-    /// 用户是否勾选了"记住此设备，下次免确认"（V1.0 TODO 写入 TrustStore）
+    /// 用户是否勾选了"记住此设备，下次免确认直连"（V1.0 TODO 写入 TrustStore）
     bool rememberChecked() const;
+    /// 是否授权对方键鼠控制（"允许对方键鼠控制"勾选态；取消 = 只读模式，
+    /// P1 被控端审批决定，随 approve(read_only) 进审批链路）
+    bool inputAllowed() const;
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -33,6 +36,7 @@ private:
     QLabel* codeLbl_{nullptr};
     QLabel* ip_{nullptr};
     QCheckBox* rememberChk_{nullptr};
+    QCheckBox* allowInputChk_{nullptr};  ///< 允许对方键鼠控制（默认勾选；取消=只读）
 };
 
 }  // namespace sc::localdesk::ui

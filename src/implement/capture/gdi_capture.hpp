@@ -51,12 +51,23 @@ public:
 
     bool grab(VideoFrame& out) override {
         if (screen_dc_ == nullptr || mem_dc_ == nullptr) {
-            return false;
+            return false;  // 未初始化：不计错误（上层以 init 失败终止推流）
         }
         if (!BitBlt(mem_dc_, 0, 0, static_cast<int>(width_), static_cast<int>(height_),
                     screen_dc_, 0, 0, SRCCOPY | CAPTUREBLT)) {
+            // 失败分类（Doc19 §4.2）：输入桌面打不开=锁屏/安全桌面切换
+            // （BitBlt 对锁屏桌面必败）；桌面可达仍失败=采集驱动异常
+            const HDESK input = OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS);
+            if (input != nullptr) {
+                CloseDesktop(input);
+                last_err_ = CaptureErr::DriverError;
+            }
+            else {
+                last_err_ = CaptureErr::DesktopLocked;
+            }
             return false;
         }
+        last_err_ = CaptureErr::None;
         LARGE_INTEGER ts{};
         QueryPerformanceCounter(&ts);
         out.data = bits_;
@@ -88,6 +99,8 @@ public:
     uint32_t width() const noexcept { return width_; }
     uint32_t height() const noexcept { return height_; }
 
+    CaptureErr last_error() const override { return last_err_; }
+
 private:
     HDC screen_dc_{nullptr};
     HDC mem_dc_{nullptr};
@@ -97,6 +110,7 @@ private:
     uint8_t* bits_{nullptr};
     uint32_t width_{0};
     uint32_t height_{0};
+    CaptureErr last_err_{CaptureErr::None};  ///< 最近一次 grab 失败分类
 };
 
 }  // namespace sc::localdesk

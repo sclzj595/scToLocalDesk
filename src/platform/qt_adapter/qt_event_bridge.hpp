@@ -63,7 +63,7 @@ public:
 
     // ---------------- QML 调用（Q_INVOKABLE） ----------------
 
-    Q_INVOKABLE void approve();                    ///< 确认弹窗【同意】
+    Q_INVOKABLE void approve(bool readOnly = false);  ///< 确认弹窗【同意】（readOnly=未授权键鼠）
     Q_INVOKABLE void reject();                     ///< 确认弹窗【拒绝】
     Q_INVOKABLE void disconnectSession();          ///< 一键断开（悬浮按钮）
     /// 控制端取消连接（PRD P7）：拨号/等确认期取消；Running 不响应
@@ -165,10 +165,15 @@ signals:
     void connectRequestTimedOut();  ///< 确认弹窗 30s 未响应已自动拒，UI 关弹窗
     void connectDenied(const QString& alias, const QString& reason);  ///< 本地拦截提示
     void controlStartFailed(const QString& reason);  ///< 发起协助失败细分文案（PRD P5）
-    /// 控制端连接过程状态（PRD P7）：connecting/wait_confirm/rejected
-    void connectStateChanged(QString stage, QString alias);
+    /// 控制端连接过程状态（PRD P7）：connecting/wait_confirm/rejected；
+    /// rejected 时 reasonText 为 friendly_reject 映射文案（员工视图红线，
+    /// UI 直接展示，勿拼内部错误码），其余阶段空串
+    void connectStateChanged(QString stage, QString alias, QString reasonText);
     void sessionBusyChanged();
     void sessionStarted(const QString& alias);
+    /// 只读模式徽标（P1）：控制端收到 Approved 附加字节=1（对端未授权键鼠）。
+    /// 跟随 sessionStarted 发布；会话关闭回 false（QML 据此显隐徽标）
+    void sessionReadOnly(bool readOnly);
     void sessionClosed(const QString& reasonText);
     // 文件（dir: 0 发送 1 接收；name 供 UI 首次插条目）
     void fileProgress(const QString& fileId, const QString& name, qint64 transferred,

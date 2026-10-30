@@ -32,11 +32,13 @@ void warning(QWidget* parent, const QString& title, const QString& text);
 bool question(QWidget* parent, const QString& title, const QString& text);
 
 /// 入站连接确认（PRD 确认三件套：非模态 + 置顶 + 任务栏闪烁）。
-/// onAccept/onReject 在用户选择后回调（模态 exec 不可用——30s 超时
-/// 信号需能远程关窗，见 Evt_ConnectRequestTimeout）。
+/// 内置"允许对方键鼠控制"勾选框（默认勾选；取消 = 只读模式，
+/// P1 审批决定）。onAccept(read_only) 在用户选择后回调——只读值随
+/// approve() 进审批链路。onReject 在用户选择后回调（模态 exec 不可用
+/// ——30s 超时信号需能远程关窗，见 Evt_ConnectRequestTimeout）。
 /// 返回 QPointer 供超时信号 close()；close 走 finished(No) → onReject
 QPointer<QMessageBox> confirmIncoming(QWidget* parent, const QString& peerIp,
-                                      std::function<void()> onAccept,
+                                      std::function<void(bool read_only)> onAccept,
                                       std::function<void()> onReject);
 
 /// 单行文本输入（设备备注等）：ok=false 取消。note 允许空串（ok 区分）

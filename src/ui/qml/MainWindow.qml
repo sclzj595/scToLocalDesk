@@ -275,14 +275,14 @@ ApplicationWindow {
         peerIp: pendingIp
         onClosed: ScLocaldesk.setSelfWindowTopMost(false)  // 同意/拒绝/超时关闭统一释放置顶
 
-        onAccepted: remember => {
+        onAccepted: (remember, readOnly) => {
             if (confirmPopup.outgoing) {
                 // 控制端发起：确认后真正拨号（Doc18 §4.3；密码模式走无人值守弹窗）
                 ScLocaldesk.startControl(pendingAlias, false, "");
                 toast.show(qsTr("正在连接 %1 …").arg(pendingAlias));
             }
             else {
-                // 被控端入站申请
+                // 被控端入站申请（readOnly=未勾选"允许对方键鼠控制"）
                 if (remember) {
                     ScLocaldesk.trust(pendingCode, pendingAlias);   // 确认之后才有：落盘 trust.json
                     toast.show(qsTr("已同意，%1 已加入信任缓存").arg(pendingAlias));
@@ -290,7 +290,7 @@ ApplicationWindow {
                 else {
                     toast.show(qsTr("已同意，会话建立中…"));
                 }
-                ScLocaldesk.approve();
+                ScLocaldesk.approve(readOnly);
             }
         }
         onRejected: {
@@ -396,8 +396,9 @@ ApplicationWindow {
             toast.show(reason);
             connectStage = "";
         }
-        function onConnectStateChanged(stage, alias) {
-            // PRD P7 状态流转：connecting/wait_confirm/rejected → 顶部状态条
+        function onConnectStateChanged(stage, alias, reasonText) {
+            // PRD P7 状态流转：connecting/wait_confirm/rejected → 顶部状态条；
+            // rejected 文案取桥层 friendly_reject 映射（员工视图红线：不吐内部错误码）
             connectAlias = alias;
             if (stage === "connecting" || stage === "wait_confirm") {
                 connectStage = stage;
@@ -407,7 +408,8 @@ ApplicationWindow {
                 // rejected：状态条转失败文案（带重连按钮），4s 后自动收
                 connectStage = "rejected";
                 if (stage === "rejected") {
-                    toast.show(qsTr("%1 拒绝了本次协助").arg(alias));
+                    toast.show(reasonText !== "" ? reasonText
+                                                 : qsTr("%1 拒绝了本次协助").arg(alias));
                 }
                 connectHideTimer.restart();
             }

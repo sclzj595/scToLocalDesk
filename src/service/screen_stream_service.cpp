@@ -4,6 +4,7 @@
 // ============================================================
 #include "service/screen_stream_service.hpp"
 
+#include <algorithm>
 #include <chrono>
 
 #include "core/events.hpp"
@@ -116,11 +117,25 @@ void ScreenStreamService::capture_loop(SendFn send, Options opt) {
     foundation::PerfCounter frame_perf;
     constexpr uint64_t kPerfReportEvery = 300;   // 每 300 帧上报一次均值/峰值
 
+    // 采集失败占位（Doc19 §4.2）：连续失败 ≥2s 且 last_error 有分类时改推
+    // 占位帧（每 2s 一发），控制端灰底提示、会话保持不断；Warn 同错误去重，
+    // grab 恢复成功即重置
+    uint32_t last_w = 0;  ///< 最近成功帧宽（0 → 占位帧兜底 640x480）
+    uint32_t last_h = 0;
+    int fail_ticks = 0;   ///< 连续 grab 失败 tick 数
+    int warn_err = 0;     ///< 已告警错误码（去重；0=无）
+    const int placeholder_ticks =
+        2000 / std::max(1, static_cast<int>(interval.count()));
+
     while (running_.load(std::memory_order_acquire)) {
         next_tick += interval;
         {
             foundation::ScopedPerf sp(frame_perf);   // grab+encode 全程计时
             if (capturer_->grab(frame)) {
+                last_w = frame.width;
+                last_h = frame.height;
+                fail_ticks = 0;
+                warn_err = 0;  // 恢复成功：告警去重重置
                 // 会话水印（PRD P4）：grab 返回的 DIB 缓冲归本管线所有，encode
                 // 前可就地写入；右下角 alpha 混合（1080p 贴片 ~60k 像素/帧）
                 std::shared_ptr<std::vector<uint8_t>> wm;
@@ -179,6 +194,33 @@ void ScreenStreamService::capture_loop(SendFn send, Options opt) {
                     auto pkt = protocol::build_screen_frame(hdr, encoded.data(), encoded.size());
                     dropped_total_.fetch_add(queue_.push_overwrite(std::move(pkt)),
                                              std::memory_order_relaxed);
+                }
+            }
+            else {
+                // 采集失败占位（Doc19 §4.2）：连续失败 ≥2s 且采集器给出错误
+                // 分类才占位（未升级后端 last_error 恒 None → 维持旧行为）
+                ++fail_ticks;
+                const CaptureErr err = capturer_->last_error();
+                if (err != CaptureErr::None && fail_ticks >= placeholder_ticks) {
+                    const int err_code = static_cast<int>(err);
+                    if (err_code != warn_err) {
+                        warn_err = err_code;  // 同一错误只 Warn 一次，换错/恢复重置
+                        SCLD_LOG(log_, LogLevel::Warn, "stream",
+                                 "采集持续失败，改推占位帧 err="
+                                     + std::to_string(err_code));
+                    }
+                    // 每 2s 一发（占位 tick 周期 = 失败门槛 tick 数，非每 tick）
+                    if (fail_ticks % placeholder_ticks == 0) {
+                        protocol::ScreenFrameHeader ph;
+                        ph.width = last_w != 0 ? last_w : 640;
+                        ph.height = last_h != 0 ? last_h : 480;
+                        ph.timestamp_us = now_us();
+                        ph.flags = 0x01
+                                 | (err == CaptureErr::DesktopLocked ? 0x02 : 0x00);
+                        auto pkt = protocol::build_screen_frame(ph, nullptr, 0);
+                        dropped_total_.fetch_add(queue_.push_overwrite(std::move(pkt)),
+                                                 std::memory_order_relaxed);
+                    }
                 }
             }
         }

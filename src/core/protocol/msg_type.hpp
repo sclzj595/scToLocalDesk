@@ -50,7 +50,8 @@ enum class CloseReason : uint8_t {
 /// REQUEST_CONNECT flags 位定义（Doc05 §3）
 namespace connect_flags {
 constexpr uint8_t kUnattended = 0x01;  ///< bit0：请求无人值守通道
-constexpr uint8_t kReservedAll = 0xFE;
+constexpr uint8_t kReadOnly = 0x02;    ///< bit1：只读（被控端审批决定，发起方不用）
+constexpr uint8_t kReservedAll = 0xFC;
 }  // namespace connect_flags
 
 /// 文件分片字段偏移（FILE_CHUNK Body，Doc05 §5）：16B file_id + 4B idx + 4B total + 1B last + 4B len

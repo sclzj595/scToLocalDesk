@@ -21,6 +21,9 @@ Item {
     /// 控制端无帧（对方未开画面/无采集）≠ 被控端（提示被控中）
     property bool imController: true
     property string peerAlias: ""
+    /// 只读模式（P1）：对端审批未授权键鼠（Approved 附加字节=1），
+    /// 仅告知徽标——本地输入照常采集发送，由被控端丢弃兜底
+    property bool readOnly: false
 
     /// 会话中判定：有帧（frameSize 非 0）且会话未关闭
     readonly property bool inSession: sessionActive && VideoPipeline.frameSize.width > 0
@@ -32,8 +35,12 @@ Item {
             root.peerAlias = alias;
             root.imController = ScLocaldesk.isController();
         }
+        function onSessionReadOnly(ro) {
+            root.readOnly = ro;  // 只读徽标显隐（P1 控制端知情）
+        }
         function onSessionClosed() {
             root.sessionActive = false;
+            root.readOnly = false;  // 会话关闭复位
         }
     }
 
@@ -50,10 +57,11 @@ Item {
         }
 
         // 空态三分支（禁止无提示黑屏）：无会话占位 / 控制端等画面 /
-        // 被控端提示被控中（会话活着但无帧 ≠ 无会话）
+        // 被控端提示被控中（会话活着但无帧 ≠ 无会话）；占位帧激活时让位，
+        // 避免与占位提示文字叠加
         Text {
             anchors.centerIn: parent
-            visible: !root.inSession
+            visible: !root.inSession && !surface.placeholder
             text: !root.sessionActive
                   ? qsTr("暂未进行远程控制\n从设备列表或连接码页发起会话后，画面将显示在此处")
                   : root.imController
@@ -63,6 +71,25 @@ Item {
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
             color: "#666666"
+        }
+
+        // 采集失败占位（Doc19 §4.2）：灰底+提示文字，会话保持不断；
+        // 声明于键鼠捕获之前 → 不阻塞输入事件（RemoteInputItem 照常透传）
+        Rectangle {
+            anchors.fill: parent
+            visible: surface.placeholder
+            color: "#ECEFF3"
+
+            Text {
+                anchors.centerIn: parent
+                width: parent.width - 48
+                text: surface.placeholderText
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                color: "#666666"
+            }
         }
 
         // 键鼠捕获（Doc18 §4.4）：盖住画面，归一化后经桥发送；
@@ -77,6 +104,30 @@ Item {
             onInputMouse: (action, x, y, wheel) =>
                           ScLocaldesk.sendMouse(action, x, y, wheel)
             onInputKey: (vk, scan, down) => ScLocaldesk.sendKey(vk, scan, down)
+        }
+
+        // 只读徽标（P1）：顶部小胶囊——对端未授权键鼠时显示（仅告知）
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: 12
+            z: 10
+            visible: root.sessionActive && root.readOnly
+            width: roText.implicitWidth + 28
+            height: 26
+            radius: 13
+            color: Theme.isDark ? Qt.rgba(0.10, 0.11, 0.13, 0.72)
+                                : Qt.rgba(1, 1, 1, 0.72)
+            border.color: Theme.glassBorder
+            border.width: 1
+            Text {
+                id: roText
+                anchors.centerIn: parent
+                text: qsTr("只读模式（对方未授权键鼠）")
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontHint
+                color: Theme.textMain
+            }
         }
 
         // 底部悬浮工具条：半透底 + 描边（内容区禁模糊，Doc13 红线2）；

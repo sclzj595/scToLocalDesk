@@ -6,6 +6,7 @@
 #include "glass_dialog.hpp"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QColor>
 #include <QInputDialog>
 #include <QLineEdit>
@@ -47,7 +48,7 @@ bool question(QWidget* parent, const QString& title, const QString& text) {
 }
 
 QPointer<QMessageBox> confirmIncoming(QWidget* parent, const QString& peerIp,
-                                      std::function<void()> onAccept,
+                                      std::function<void(bool read_only)> onAccept,
                                       std::function<void()> onReject) {
     auto* box = new QMessageBox(parent);
     box->setAttribute(Qt::WA_DeleteOnClose);
@@ -58,11 +59,17 @@ QPointer<QMessageBox> confirmIncoming(QWidget* parent, const QString& peerIp,
                            .arg(peerIp));
     box->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
     box->setWindowFlag(Qt::WindowStaysOnTopHint, true);  // PRD 确认三件套：置顶
+    // 键鼠授权勾选（P1 只读模式）：默认授权；取消勾选 = 只读，
+    // approve(read_only) → Approved 附加字节告知控制端显示徽标
+    auto* allow_input = new QCheckBox(QObject::tr("允许对方键鼠控制"), box);
+    allow_input->setChecked(true);
+    box->setCheckBox(allow_input);
     QObject::connect(box, &QMessageBox::finished, box,
                      [onAccept = std::move(onAccept),
-                      onReject = std::move(onReject)](int r) {
+                      onReject = std::move(onReject),
+                      allow_input](int r) {
                          if (r == QMessageBox::Yes) {
-                             onAccept();
+                             onAccept(!allow_input->isChecked());
                          }
                          else {
                              // 含超时自动拒后的收尾 close()：

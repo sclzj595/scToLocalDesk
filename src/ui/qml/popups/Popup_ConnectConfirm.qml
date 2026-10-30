@@ -19,12 +19,13 @@ AppDialog {
     property bool outgoing: false  ///< true=控制端发起确认（同意即拨号），false=被控端入站申请
     property Item glassSource
 
-    /// remember=勾选了"记住此设备"（V1.0 TODO 写入 TrustStore）
-    signal accepted(bool remember)
+    /// remember=勾选了"记住此设备"（V1.0 TODO 写入 TrustStore）；
+    /// readOnly=未勾选"允许对方键鼠控制"（被控端审批决定，Approved 附加字节告知控制端）
+    signal accepted(bool remember, bool readOnly)
     signal rejected()
 
     width: 400
-    height: 268
+    height: 296  // 268 + 键鼠授权勾选行 28
     title: qsTr("连接请求")
 
     Text {
@@ -112,6 +113,46 @@ AppDialog {
         }
     }
 
+    // 键鼠授权复选框（P1 只读模式）：默认授权；取消勾选 = 只读，
+    // 会话建立后控制端顶部显示只读徽标、被控端丢弃键鼠注入
+    CheckBox {
+        id: allowInputChk
+        text: qsTr("允许对方键鼠控制")
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontBody
+        checked: true
+
+        // 样式对齐"记住此设备"勾选框（同款 indicator/contentItem）
+        indicator: Rectangle {
+            implicitWidth: 18
+            implicitHeight: 18
+            radius: 4
+            color: allowInputChk.checked ? Theme.primary : Theme.winBg
+            border.color: allowInputChk.checked ? Theme.primary : Theme.divider
+            border.width: 1
+            Behavior on color {
+                ColorAnimation {
+                    duration: Theme.durHover
+                }
+            }
+            Text {
+                anchors.centerIn: parent
+                text: "✓"
+                color: "#FFFFFF"
+                font.pixelSize: 12
+                font.bold: true
+                visible: allowInputChk.checked
+            }
+        }
+        contentItem: Text {
+            text: allowInputChk.text
+            font: allowInputChk.font
+            color: Theme.textMain
+            leftPadding: allowInputChk.indicator.width + 6
+            verticalAlignment: Text.AlignVCenter
+        }
+    }
+
     footerChildren: [
         AppButton {
             primary: false
@@ -125,7 +166,7 @@ AppDialog {
             text: qsTr("同意")
             onClicked: {
                 root.close();
-                root.accepted(rememberChk.checked);
+                root.accepted(rememberChk.checked, !allowInputChk.checked);
             }
         }
     ]

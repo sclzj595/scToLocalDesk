@@ -162,9 +162,17 @@ public slots:
     /// 解码管线输出（queued 跨线程；有帧即走画面分支，无帧走占位文案）
     void on_frame(const QImage& img);
 
+    /// 占位帧（Doc19 §4.2，queued 跨线程）：采集失败灰底+提示文字，
+    /// 会话保持不断；正常帧到达（on_frame）复位
+    void on_placeholder(bool locked);
+
     /// 会话建立（widgets_main 接 Evt_SessionStart）：快照角色/对端 +
     /// 恢复工具条——无帧会话也必须能断开（控制端无画面场景，实战踩坑）
     void on_session_started(const QString& alias);
+
+    /// 只读模式徽标（P1，widgets_main 接 Evt_SessionStart）：控制端收到
+    /// Approved 附加字节=1（对端未授权键鼠）时置位显示，会话关闭复位
+    void on_read_only(bool on);
 
     /// 会话关闭复位：清帧回空态、隐藏工具条（widgets_main 接 Evt_SessionClosed）
     void on_session_closed();
@@ -182,7 +190,10 @@ private:
     void send_mouse(MouseAction action, const QPointF& local, int wheel = 0);
 
     QWidget* toolbar_{nullptr};
+    QLabel* ro_badge_{nullptr};  ///< 只读徽标（顶部居中，对端未授权键鼠时显示）
     QImage frame_;
+    bool placeholder_{false};        ///< 占位帧激活（画灰底+提示，不画图像）
+    bool placeholder_locked_{false}; ///< 占位分支：锁屏文案 / 驱动异常文案
     RemoteSessionService* sessions_{nullptr};
     bool session_active_{false};  ///< 会话进行中（与有帧解耦：无帧也可断开）
     bool is_controller_{true};    ///< 本端角色（空态文案分流）

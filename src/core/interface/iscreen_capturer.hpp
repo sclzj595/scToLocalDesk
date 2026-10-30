@@ -18,6 +18,12 @@ public:
     /// 抓取一帧；无新帧返回 false，不阻塞（采集线程专用）
     virtual bool grab(VideoFrame& out) = 0;
 
+    /// 最近一次 grab 失败原因（无错误/无新帧时 None）；占位帧分流依据（Doc19 §4.2）
+    /// 带默认实现：未升级的后端恒 None，推流侧维持旧行为不推占位
+    /// 注：不写 CaptureErr::None 字面量——Xlib 的 None 宏会污染展开
+    /// （Linux 端 x11_capture.hpp include 顺序不可控），值初始化等价且免疫
+    virtual CaptureErr last_error() const { return CaptureErr{}; }
+
     virtual void shutdown() = 0;
 };
 

@@ -63,13 +63,17 @@ std::vector<uint8_t> build_frame(MsgType type, const std::vector<uint8_t>& body)
     return out;
 }
 
-std::vector<uint8_t> build_request_connect(const std::string& alias, uint8_t flags) {
+std::vector<uint8_t> build_request_connect(const std::string& alias, uint8_t flags,
+                                           uint8_t version) {
     std::vector<uint8_t> body;
-    body.reserve(1 + 1 + alias.size() + 1);
+    body.reserve(1 + 1 + alias.size() + 1 + 1);
     // SESSION_CTRL body 首字节恒为 sub（Doc05 §3；此前漏写致被控端当未知 sub 丢弃）
     body.push_back(static_cast<uint8_t>(CtrlSubType::RequestConnect));
     push_str8(body, alias);
     body.push_back(flags);
+    // 末尾追加 1B 协议版本：老对端按 alias_len+flags 解析，多余字节忽略——
+    // 天然兼容；新对端读出做版本协商（version>kProtoVersion 拒绝）
+    body.push_back(version);
     return build_frame(MsgType::SessionCtrl, body);
 }
 
@@ -196,6 +200,11 @@ std::vector<uint8_t> build_ctrl(CtrlSubType sub) {
     return build_frame(MsgType::SessionCtrl, body);
 }
 
+std::vector<uint8_t> build_ctrl(CtrlSubType sub, uint8_t extra) {
+    const std::vector<uint8_t> body{static_cast<uint8_t>(sub), extra};
+    return build_frame(MsgType::SessionCtrl, body);
+}
+
 std::vector<uint8_t> build_reject(RejectReason reason) {
     const std::vector<uint8_t> body{static_cast<uint8_t>(CtrlSubType::Reject),
                                     static_cast<uint8_t>(reason)};
@@ -221,6 +230,12 @@ bool parse_request_connect(const uint8_t* body, size_t len, RequestConnectBody& 
     }
     out.alias.assign(reinterpret_cast<const char*>(body) + 2, alias_len);
     out.flags = body[2 + alias_len];
+    // 协议版本（新格式末尾追加 1B）：老格式无该字节按 0（legacy），
+    // 解析不因多余/缺失字节失败——向后兼容老对端
+    out.version = 0;
+    if (static_cast<size_t>(3) + alias_len < len) {
+        out.version = body[3 + alias_len];
+    }
     return true;
 }
 
@@ -273,7 +288,9 @@ bool parse_mouse_key(const uint8_t* body, size_t len, MouseKeyBody& out) {
 std::vector<uint8_t> build_screen_frame(const ScreenFrameHeader& hdr, const uint8_t* data,
                                         size_t len) {
     std::vector<uint8_t> body;
-    body.reserve(16 + len);
+    // flags≠0（占位帧，data 恒空）末尾追加 1B flags → body 恒 17B（新格式）；
+    // flags=0 走老格式 16+data，老对端逐字节兼容（头 16B 布局不动）
+    body.reserve(16 + len + 1);
     push_be32(body, hdr.width);
     push_be32(body, hdr.height);
     for (int s = 56; s >= 0; s -= 8) {
@@ -281,6 +298,9 @@ std::vector<uint8_t> build_screen_frame(const ScreenFrameHeader& hdr, const uint
     }
     if (data != nullptr && len > 0) {
         body.insert(body.end(), data, data + len);
+    }
+    if (hdr.flags != 0) {
+        body.push_back(hdr.flags);
     }
     return build_frame(MsgType::ScreenFrame, body);
 }
@@ -303,6 +323,15 @@ bool parse_screen_frame(const uint8_t* body, size_t len, ScreenFrameHeader& hdr,
         hdr.timestamp_us = (hdr.timestamp_us << 8) | body[i];
     }
     data = body + 16;
+    if (len == 17) {
+        // 新格式占位帧：16B 头 + 空 data + 1B flags（老对端 1 字节 data 的
+        // 畸形帧同样落此分支，flags 非法时解码器按空帧丢弃，无副作用）
+        data_len = 0;
+        hdr.flags = body[16];
+        return true;
+    }
+    // 老格式（16+data_len）恒 flags=0：兼容老对端
+    hdr.flags = 0;
     data_len = len - 16;
     return true;
 }

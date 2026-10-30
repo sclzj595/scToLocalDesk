@@ -24,6 +24,7 @@
 #include <QStandardPaths>
 
 #include <foundation/config_parser.hpp>
+#include <foundation/error_text.hpp>
 #include <platform/win32/auto_start.hpp>
 #include <platform/qt_adapter/qt_udp_discovery.hpp>
 #include <service/alias_service.hpp>
@@ -70,11 +71,17 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
                                QString::fromStdString(e.conflict_ip));
         }, Qt::QueuedConnection);
     });
-    // 控制端状态流转（PRD P7）：stage 直传 + busy 属性联动（防重复发起置灰）
+    // 控制端状态流转（PRD P7）：stage 直传 + busy 属性联动（防重复发起置灰）。
+    // rejected 附带 friendly_reject 映射文案——REJECT reason 数值不出 UI 层
     bus->subscribe<Evt_ConnectStateChanged>([this](const Evt_ConnectStateChanged& e) {
         QMetaObject::invokeMethod(this, [this, e] {
+            QString reason_text;
+            if (e.stage == "rejected" && e.reject_reason >= 0) {
+                reason_text = QString::fromUtf8(
+                    foundation::friendly_reject(e.reject_reason));
+            }
             emit connectStateChanged(QString::fromStdString(e.stage),
-                                     QString::fromStdString(e.alias));
+                                     QString::fromStdString(e.alias), reason_text);
             emit sessionBusyChanged();  // connecting/rejected 均changed
         }, Qt::QueuedConnection);
     });
@@ -82,6 +89,7 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
         QMetaObject::invokeMethod(this, [this, e] {
             emit sessionBusyChanged();
             emit sessionStarted(QString::fromStdString(e.device_alias));
+            emit sessionReadOnly(e.read_only);  // 只读徽标（控制端知情）
         }, Qt::QueuedConnection);
     });
     bus->subscribe<Evt_SessionClosed>([this](const Evt_SessionClosed& e) {
@@ -221,9 +229,9 @@ bool QtEventBridge::unattendedEnabled() const {
     return unattended_;
 }
 
-void QtEventBridge::approve() {
+void QtEventBridge::approve(bool readOnly) {
     if (sessions_ != nullptr) {
-        sessions_->approve();
+        sessions_->approve(readOnly);  // 只读：被控端未授权键鼠，Running 期丢弃注入
     }
 }
 

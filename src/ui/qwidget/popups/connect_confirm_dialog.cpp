@@ -21,7 +21,7 @@ ConnectConfirmDialog::ConnectConfirmDialog(QWidget* parent) : QDialog(parent) {
     setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
     setAttribute(Qt::WA_TranslucentBackground, true);
     setModal(true);
-    setFixedSize(400, 268);
+    setFixedSize(400, 296);  // 268 + 键鼠授权勾选行 28
 
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(24, 20, 24, 20);
@@ -67,11 +67,17 @@ ConnectConfirmDialog::ConnectConfirmDialog(QWidget* parent) : QDialog(parent) {
     rememberChk_ = new QCheckBox(tr("记住此设备，下次免确认直连"));
     rememberChk_->setChecked(true);
 
+    // 键鼠授权复选框（P1 只读模式）：默认授权；取消勾选 = 只读，
+    // inputAllowed() 取反即 approve(read_only) 的只读值
+    allowInputChk_ = new QCheckBox(tr("允许对方键鼠控制"));
+    allowInputChk_->setChecked(true);
+
     lay->addWidget(title);
     lay->addWidget(text_);
     lay->addWidget(codeCard);
     lay->addWidget(ip_);
     lay->addWidget(rememberChk_);
+    lay->addWidget(allowInputChk_);
     lay->addStretch();
 
     auto* btnRow = new QHBoxLayout();
@@ -98,6 +104,10 @@ void ConnectConfirmDialog::setPeer(const QString& alias, const QString& ip,
 
 bool ConnectConfirmDialog::rememberChecked() const {
     return rememberChk_->isChecked();
+}
+
+bool ConnectConfirmDialog::inputAllowed() const {
+    return allowInputChk_ != nullptr && allowInputChk_->isChecked();
 }
 
 void ConnectConfirmDialog::paintEvent(QPaintEvent*) {

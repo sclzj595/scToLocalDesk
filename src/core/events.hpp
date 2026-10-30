@@ -71,12 +71,19 @@ struct Evt_ConnectDenied final : IEvent {
 
 struct Evt_SessionStart final : IEvent {
     bool unattended{false};
+    /// 只读模式（被控端审批未授权键鼠）：控制端据此显示只读徽标。
+    /// 被控端恒 false（read_only 是对控制端授权的收紧）
+    bool read_only{false};
 };
 
 /// 控制端连接过程状态（PRD P7 状态流转）：UI 据此展示细分文案/取消按钮
 struct Evt_ConnectStateChanged final : IEvent {
     std::string stage;  ///< connecting=拨号中 / wait_confirm=等对方确认 / rejected=对方拒绝
     std::string alias;  ///< 目标别名
+    /// REJECT reason 原始数值（stage=rejected 时有效，其余 -1）。
+    /// UI 展示前须经 foundation::friendly_reject 映射（员工视图红线），
+    /// 本事件只做原始值传递，不做文案拼装
+    int reject_reason{-1};
 };
 
 struct Evt_SessionClosed final : IEvent {
@@ -90,11 +97,14 @@ struct Evt_StreamLag final : IEvent {
     uint64_t dropped_frames{0};
 };
 
-/// 控制端收到一帧画面（payload 为压缩数据或 RAW BGRA，shared_ptr 零拷贝流转）
+/// 控制端收到一帧画面（payload 为压缩数据或 RAW BGRA，shared_ptr 零拷贝流转；
+/// 占位帧 payload 恒空，仅 flags 携带状态，Doc19 §4.2）
 struct Evt_VideoFrame final : IEvent {
     std::shared_ptr<const std::vector<uint8_t>> payload;
     uint32_t width{0};
     uint32_t height{0};
+    /// SCREEN_FRAME flags 透传：bit0=占位帧 bit1=锁屏占位
+    uint8_t flags{0};
 };
 
 // ---------------- 剪贴板（PRD P9） ----------------
