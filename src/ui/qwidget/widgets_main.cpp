@@ -38,6 +38,7 @@
         #include "platform/qt_adapter/single_instance_guard.hpp"
         #include "platform/qt_adapter/video_pipeline.hpp"
         #include "platform/win32/crash_reporter.hpp"
+        #include "platform/win32/input_blocker.hpp"
         #include "platform/win32/session_lock.hpp"
         #include "platform/win32/system_info.hpp"
         #include "service/alias_service.hpp"
@@ -488,10 +489,75 @@ int main(int argc, char* argv[]) {
                          });
         QObject::connect(
             &tray, &sc::localdesk::platform::TrayController::disconnectRequested,
-            [&sessions, &logger] {
-                SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn, "tray",
-                         "托盘一键断开会话");
+            [&sessions, &logger, &tray] {
+                using sc::localdesk::foundation::LogLevel;
+                SCLD_LOG(logger, LogLevel::Warn, "tray", "托盘一键断开所有远程会话");
                 sessions->close_session(sc::localdesk::protocol::CloseReason::Normal);
+                tray.notify(QObject::tr("远程协助"),
+                            QObject::tr("已断开所有远程会话"));
+            });
+
+        // 键鼠冻结（Doc19 §2.1）：托盘勾选 ↔ platform 低级钩子；30 分钟
+        // 上限 + 会话断开自动解除 + 快捷键自解回执（逃生通道，同 QML 版）
+        auto* freeze_cap = new QTimer(&tray);
+        freeze_cap->setSingleShot(true);
+        freeze_cap->setInterval(30 * 60 * 1000);
+        const auto unfreeze_and_sync = [&](const char* why) {
+            using sc::localdesk::foundation::LogLevel;
+            (void)sc::localdesk::platform::set_input_frozen(false);
+            tray.set_input_frozen_state(false);
+            freeze_cap->stop();
+            SCLD_LOG(logger, LogLevel::Warn, "tray", why);
+        };
+        QObject::connect(freeze_cap, &QTimer::timeout, &tray, [&] {
+            if (sc::localdesk::platform::is_input_frozen()) {
+                unfreeze_and_sync("键鼠冻结达 30 分钟上限，已自动解除");
+            }
+        });
+        sc::localdesk::platform::set_freeze_changed_callback([&](bool frozen) {
+            if (!frozen) {
+                unfreeze_and_sync("键鼠冻结已通过快捷键 Ctrl+Alt+Shift+F12 解除");
+            }
+        });
+        QObject::connect(
+            &tray, &sc::localdesk::platform::TrayController::freezeInputRequested,
+            &tray, [&](bool on) {
+                using sc::localdesk::foundation::LogLevel;
+                if (sc::localdesk::platform::set_input_frozen(on)) {
+                    tray.set_input_frozen_state(on);
+                    if (on) {
+                        freeze_cap->start();
+                        SCLD_LOG(logger, LogLevel::Warn, "tray",
+                                 "已冻结本机键鼠输入（画面继续；"
+                                 "Ctrl+Alt+Shift+F12 或托盘取消勾选解除）");
+                    }
+                    else {
+                        freeze_cap->stop();
+                        SCLD_LOG(logger, LogLevel::Info, "tray", "已解除键鼠冻结");
+                    }
+                }
+                else {
+                    tray.set_input_frozen_state(false);
+                    SCLD_LOG(logger, LogLevel::Warn, "tray",
+                             "键鼠冻结设置失败（输入钩子注册未生效）");
+                }
+            });
+        // 会话结束自动解除冻结（冻结是会话级状态）
+        bus->subscribe<Evt_SessionClosed>(
+            [&tray, &logger, &freeze_cap](const Evt_SessionClosed&) {
+                using sc::localdesk::foundation::LogLevel;
+                QMetaObject::invokeMethod(
+                    &tray,
+                    [&] {
+                        if (sc::localdesk::platform::is_input_frozen()) {
+                            (void)sc::localdesk::platform::set_input_frozen(false);
+                            tray.set_input_frozen_state(false);
+                            freeze_cap->stop();
+                            SCLD_LOG(logger, LogLevel::Info, "tray",
+                                     "会话已断开，键鼠冻结自动解除");
+                        }
+                    },
+                    Qt::QueuedConnection);
             });
         bus->subscribe<Evt_SessionStart>(
             [&tray, &stream, wm_timer, current_peer](const Evt_SessionStart& e) {
@@ -557,7 +623,7 @@ int main(int argc, char* argv[]) {
                          &sc::localdesk::platform::VideoPipeline::placeholderReady,
                          rv, &sc::localdesk::ui::RemoteViewPage::on_placeholder);
         rv->set_session(sessions.get());  // 键鼠透传出口（Doc18 §4.4）
-        rv->bind_clipboard(&ini, &cfg);  // 剪贴板同步开关（Doc19 §5 P2）
+        rv->bind_config(&ini, &cfg);  // 剪贴板开关 + 缩放模式（Doc19 §5 P2/§4.4）
         // 会话关闭复位：清帧回空态、隐藏工具条（无会话不可点断开）
         bus->subscribe<Evt_SessionClosed>([rv](const Evt_SessionClosed&) {
             QMetaObject::invokeMethod(rv, &sc::localdesk::ui::RemoteViewPage::on_session_closed,

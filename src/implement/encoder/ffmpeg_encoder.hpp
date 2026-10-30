@@ -27,6 +27,9 @@ public:
 
     bool open(const EncoderConfig& cfg) override;
     bool encode(const VideoFrame& in, std::vector<uint8_t>& out) override;
+    /// 运行时调质量（自适应画质 Doc19 §4.5）：仅更新 cfg_，逐帧在 encode
+    /// 里以 frame->quality 生效（AV_CODEC_FLAG_QSCALE 编码器契约），无需重建管线
+    void set_quality(int quality) override;
     void close() override;
 
 private:

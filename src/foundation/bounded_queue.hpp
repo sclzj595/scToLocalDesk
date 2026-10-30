@@ -116,6 +116,9 @@ public:
         return queue_.size();
     }
 
+    /// 容量上限（自适应画质判"队列常满"用，Doc19 §4.5）
+    size_t capacity() const { return capacity_; }
+
     bool closed() const {
         std::lock_guard<std::mutex> lk(mtx_);
         return closed_;

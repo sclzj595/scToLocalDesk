@@ -24,6 +24,16 @@ Item {
     /// 只读模式（P1）：对端审批未授权键鼠（Approved 附加字节=1），
     /// 仅告知徽标——本地输入照常采集发送，由被控端丢弃兜底
     property bool readOnly: false
+    /// 画面缩放模式（Doc19 §4.4）：0 自适应（默认）1 拉伸铺满 2 1:1 原始
+    /// 像素；持久化 config view.scale_mode（桥 Q_INVOKABLE，双 exe 同键）
+    property int scaleMode: ScLocaldesk.scaleMode()
+
+    function setScaleMode(m) {
+        if (scaleMode !== m) {
+            scaleMode = m;
+            ScLocaldesk.setScaleMode(m);
+        }
+    }
 
     /// 会话中判定：有帧（frameSize 非 0）且会话未关闭
     readonly property bool inSession: sessionActive && VideoPipeline.frameSize.width > 0
@@ -49,11 +59,14 @@ Item {
         anchors.fill: parent
         color: "#000000"
 
-        // 远程画面（Doc18 §4.2）：VideoPipeline.frameReady → 等比铺满
+        // 远程画面（Doc18 §4.2）：VideoPipeline.frameReady → 缩放三模式；
+        // 平移偏移绑键鼠捕获件（中键拖动真源，Doc19 §4.4）
         VideoSurface {
             id: surface
             anchors.fill: parent
             pipeline: VideoPipeline
+            scaleMode: root.scaleMode
+            panOffset: inputCatcher.panOffset
         }
 
         // 空态三分支（禁止无提示黑屏）：无会话占位 / 控制端等画面 /
@@ -99,6 +112,7 @@ Item {
             anchors.fill: parent
             visible: root.inSession
             videoSize: VideoPipeline.frameSize
+            scaleMode: root.scaleMode
             focus: true
             onVisibleChanged: if (visible) forceActiveFocus()
             onInputMouse: (action, x, y, wheel) =>
@@ -211,6 +225,96 @@ Item {
                     background: Rectangle {
                         radius: Theme.btnRadius
                         color: clipBtn.checked || clipBtn.hovered
+                                   ? Theme.hoverBg : "transparent"
+                        Behavior on color {
+                            ColorAnimation {
+                                duration: Theme.durHover
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 1
+                    height: 20
+                    color: Theme.divider
+                }
+
+                // 画面缩放三模式（Doc19 §4.4）：互斥 checkable，绑定
+                // root.scaleMode；样式照抄剪贴板开关（选中主色高亮）
+                ToolButton {
+                    id: fitBtn
+                    focusPolicy: Qt.NoFocus
+                    checkable: true
+                    checked: root.scaleMode === 0
+                    text: qsTr("自适应")
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontBody
+                    onToggled: if (checked) root.setScaleMode(0)
+                    contentItem: Text {
+                        text: fitBtn.text
+                        font: fitBtn.font
+                        color: fitBtn.checked ? Theme.accentBlue : Theme.textMain
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: Theme.btnRadius
+                        color: fitBtn.checked || fitBtn.hovered
+                                   ? Theme.hoverBg : "transparent"
+                        Behavior on color {
+                            ColorAnimation {
+                                duration: Theme.durHover
+                            }
+                        }
+                    }
+                }
+
+                ToolButton {
+                    id: stretchBtn
+                    focusPolicy: Qt.NoFocus
+                    checkable: true
+                    checked: root.scaleMode === 1
+                    text: qsTr("拉伸")
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontBody
+                    onToggled: if (checked) root.setScaleMode(1)
+                    contentItem: Text {
+                        text: stretchBtn.text
+                        font: stretchBtn.font
+                        color: stretchBtn.checked ? Theme.accentBlue : Theme.textMain
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: Theme.btnRadius
+                        color: stretchBtn.checked || stretchBtn.hovered
+                                   ? Theme.hoverBg : "transparent"
+                        Behavior on color {
+                            ColorAnimation {
+                                duration: Theme.durHover
+                            }
+                        }
+                    }
+                }
+
+                ToolButton {
+                    id: pixelBtn
+                    focusPolicy: Qt.NoFocus
+                    checkable: true
+                    checked: root.scaleMode === 2
+                    text: qsTr("1:1")
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontBody
+                    onToggled: if (checked) root.setScaleMode(2)
+                    contentItem: Text {
+                        text: pixelBtn.text
+                        font: pixelBtn.font
+                        color: pixelBtn.checked ? Theme.accentBlue : Theme.textMain
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: Theme.btnRadius
+                        color: pixelBtn.checked || pixelBtn.hovered
                                    ? Theme.hoverBg : "transparent"
                         Behavior on color {
                             ColorAnimation {

@@ -25,23 +25,28 @@ public:
     void set_service_stopped(bool on);
     /// 托盘气泡（无人值守接入提示等，Doc16 §2.5 可见性）
     void notify(const QString& title, const QString& body);
+    /// 键鼠冻结勾选态回执（实际执行结果/自动解除后同步；blockSignals 防回环）
+    void set_input_frozen_state(bool on);
 
 signals:
     void showMainRequested();
     void stopServiceRequested();
     void quitRequested();
-    void disconnectRequested();  ///< 一键断开当前会话
+    void disconnectRequested();  ///< 一键断开所有远程会话（红标项）
+    void freezeInputRequested(bool frozen);  ///< 冻结键鼠输入勾选切换（Doc19 §2.1）
 
 private:
     QSystemTrayIcon tray_;
     QMenu menu_;
     QAction* show_action_{nullptr};
     QAction* session_action_{nullptr};    ///< "远程协助进行中：X"（禁用状态项）
-    QAction* disconnect_action_{nullptr}; ///< 一键断开（会话中可见）
+    QAction* disconnect_action_{nullptr}; ///< 一键断开（红标；无会话禁用）
+    QAction* freeze_action_{nullptr};     ///< 冻结键鼠输入（勾选；会话中可用）
     QAction* stop_action_{nullptr};
     QAction* quit_action_{nullptr};
     bool unattended_on_{false};  ///< 徽标状态记忆（会话结束后 tooltip 恢复用）
     QIcon base_icon_;            ///< 无徽标基础图标（徽标合成/恢复用）
+    QIcon red_dot_icon_;         ///< 断开项红色标记图标（构造期合成一次）
 };
 
 }  // namespace sc::localdesk::platform

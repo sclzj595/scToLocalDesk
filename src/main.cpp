@@ -65,8 +65,10 @@
     #include "platform/win32/system_info.hpp"
 #ifdef _WIN32
     #include "platform/win32/session_lock.hpp"
+    #include "platform/win32/input_blocker.hpp"
 #else
     #include "platform/linux/session_lock.hpp"
+    #include "platform/linux/input_blocker.hpp"
 #endif
     #include "service/alias_service.hpp"
     #include "service/app_config.hpp"
@@ -625,6 +627,79 @@ int main(int argc, char* argv[]) {
         QApplication::quit();
     });
 
+    // 一键断开（红标项）：单会话模型下"所有"即当前会话；主日志 + 托盘气泡
+    //（会话关闭事件链路会再走 tooltip/水印复位）
+    QObject::connect(&tray, &platform::TrayController::disconnectRequested,
+                     [&sessions, &logger, &tray] {
+                         SCLD_LOG(logger, LogLevel::Warn, "tray", "托盘一键断开所有远程会话");
+                         sessions->close_session(protocol::CloseReason::Normal);
+                         tray.notify(QStringLiteral("远程协助"),
+                                     QStringLiteral("已断开所有远程会话"));
+                     });
+
+    // 键鼠冻结（Doc19 §2.1 会话内一键冻结输入）：托盘勾选 ↔ platform 层；
+    // 30 分钟上限自动解除 + 会话断开自动解除 + 快捷键自解回执（逃生通道）
+    auto* freeze_cap = new QTimer(&tray);
+    freeze_cap->setSingleShot(true);
+    freeze_cap->setInterval(30 * 60 * 1000);
+    const auto unfreeze_and_sync = [&](const char* why) {
+        (void)platform::set_input_frozen(false);
+        tray.set_input_frozen_state(false);
+        freeze_cap->stop();
+        SCLD_LOG(logger, LogLevel::Warn, "tray", why);
+    };
+    QObject::connect(freeze_cap, &QTimer::timeout, &tray, [&] {
+        if (platform::is_input_frozen()) {
+            unfreeze_and_sync("键鼠冻结达 30 分钟上限，已自动解除");
+        }
+    });
+    // 快捷键（Ctrl+Alt+Shift+F12）在钩子内自行解除 → 回执同步勾选态
+    platform::set_freeze_changed_callback([&](bool frozen) {
+        if (!frozen) {
+            unfreeze_and_sync("键鼠冻结已通过快捷键 Ctrl+Alt+Shift+F12 解除");
+        }
+    });
+    QObject::connect(&tray, &platform::TrayController::freezeInputRequested,
+                     &tray, [&](bool on) {
+                         if (platform::set_input_frozen(on)) {
+                             tray.set_input_frozen_state(on);
+                             if (on) {
+                                 freeze_cap->start();
+                                 SCLD_LOG(logger, LogLevel::Warn, "tray",
+                                          "已冻结本机键鼠输入（画面继续；"
+                                          "Ctrl+Alt+Shift+F12 或托盘取消勾选解除，"
+                                          "30 分钟上限自动解除）");
+                             }
+                             else {
+                                 freeze_cap->stop();
+                                 SCLD_LOG(logger, LogLevel::Info, "tray",
+                                          "已解除键鼠冻结");
+                             }
+                         }
+                         else {
+                             // 注册失败：回弹勾选态并提示（勿让 UI 显示假态）
+                             tray.set_input_frozen_state(false);
+                             SCLD_LOG(logger, LogLevel::Warn, "tray",
+                                      "键鼠冻结设置失败（输入钩子注册未生效）");
+                         }
+                     });
+    // 会话结束（最后一席断开）自动解除冻结（Doc19 §2.1：冻结是会话级状态）
+    bus->subscribe<Evt_SessionClosed>([&tray, &logger, &freeze_cap](
+                                          const Evt_SessionClosed&) {
+        QMetaObject::invokeMethod(
+            &tray,
+            [&] {
+                if (platform::is_input_frozen()) {
+                    (void)platform::set_input_frozen(false);
+                    tray.set_input_frozen_state(false);
+                    freeze_cap->stop();
+                    SCLD_LOG(logger, LogLevel::Info, "tray",
+                             "会话已断开，键鼠冻结自动解除");
+                }
+            },
+            Qt::QueuedConnection);
+    });
+
     // 被控端知情权（PRD P4）：会话中托盘状态项 + 一键断开 + 推流水印
     //（"访客别名 · 时间"，60s 刷新；水印渲染在主线程，混合在采集线程）
     {
@@ -642,11 +717,6 @@ int main(int argc, char* argv[]) {
                 stream->set_watermark(std::move(buf), wm.width(), wm.height());
             }
         });
-        QObject::connect(&tray, &platform::TrayController::disconnectRequested,
-                         [&sessions, &logger] {
-                             SCLD_LOG(logger, LogLevel::Warn, "tray", "托盘一键断开会话");
-                             sessions->close_session(protocol::CloseReason::Normal);
-                         });
         bus->subscribe<Evt_SessionStart>(
             [&tray, &stream, wm_timer, current_peer, &logger](const Evt_SessionStart& e) {
                 QMetaObject::invokeMethod(

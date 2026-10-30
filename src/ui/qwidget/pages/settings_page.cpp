@@ -5,6 +5,8 @@
 #include "page_kit.h"
 
 #include <QComboBox>
+#include <QCoreApplication>
+#include <QDesktopServices>
 #include <QFormLayout>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -16,6 +18,7 @@
 #include <QRegularExpressionValidator>
 #include <QScrollArea>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include "../glass_theme.h"
@@ -295,6 +298,17 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     logForm->addRow(QStringLiteral("日志级别"), lvEd_);
     logForm->addRow(QStringLiteral("日志上限（MB）"), logMaxEd_);
     logForm->addRow(QStringLiteral("日志文件数"), logFilesEd_);
+    // 打开日志目录（交接遗留）：QDesktopServices 系统文件管理器定位 exe 旁
+    // logs/——路径口径与 AuditLogger/main 装配一致（applicationDirPath()+"/logs"）
+    auto* openLogBtn = new QPushButton(QStringLiteral("打开日志目录"));
+    openLogBtn->setObjectName(QStringLiteral("secondaryBtn"));
+    openLogBtn->setCursor(Qt::PointingHandCursor);
+    openLogBtn->setToolTip(QStringLiteral("在文件管理器中打开日志所在目录"));
+    connect(openLogBtn, &QPushButton::clicked, this, [] {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(
+            QCoreApplication::applicationDirPath() + QStringLiteral("/logs")));
+    });
+    logForm->addRow(QString(), openLogBtn);
     grpLog_ = grpLog;
     lay->addWidget(grpLog);
 

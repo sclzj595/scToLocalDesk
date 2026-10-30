@@ -68,9 +68,21 @@ void VideoSurface::paint(QPainter* painter) {
     if (frame_.isNull()) {
         return;
     }
-    // 等比缩放铺满（黑边留白，对齐主流远程桌面观感）
+    // 缩放三模式绘制（Doc19 §4.4）：0 自适应等比黑边 / 1 拉伸铺满 /
+    // 2 1:1 原始像素（平移偏移取负，滚出视口部分由 painter 裁剪）
     const QSizeF area = boundingRect().size();
     const QSizeF src = frame_.size();
+    painter->setRenderHint(QPainter::SmoothPixmapTransform, scale_mode_ != 2);
+    if (scale_mode_ == 1) {
+        painter->drawImage(boundingRect(), frame_);
+        return;
+    }
+    if (scale_mode_ == 2) {
+        painter->drawImage(QRectF(-pan_.x(), -pan_.y(), src.width(), src.height()),
+                           frame_);
+        return;
+    }
+    // 等比缩放铺满（黑边留白，对齐主流远程桌面观感）
     const double scale = qMin(area.width() / src.width(),
                               area.height() / src.height());
     const double dw = src.width() * scale;

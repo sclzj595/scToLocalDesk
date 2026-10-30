@@ -242,6 +242,16 @@ Item {
                     numeric: true
                     onEdited: v => ScLocaldesk.settingsSetValue("log.max_files", v)
                 }
+                // 交接遗留（设置页快捷入口）：系统文件管理器打开 exe 旁 logs/
+                RowLayout {
+                    Layout.fillWidth: true
+                    Item { Layout.fillWidth: true }
+                    Button {
+                        text: qsTr("打开日志目录")
+                        font.family: Theme.fontFamily
+                        onClicked: ScLocaldesk.openLogDir()
+                    }
+                }
             }
 
             // ---- 信任设备管理（Doc19 §10 子页收口进设置页；IT 视图） ----

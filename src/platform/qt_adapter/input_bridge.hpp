@@ -47,6 +47,28 @@ struct InputBridge final {
         return true;
     }
 
+    /// Pixel（1:1 原始像素）模式映射（Doc19 §4.4）：画面不缩放无 letterbox，
+    /// 帧像素 = 局部坐标 + 平移偏移（pan 为画面左上角相对视口的负偏移，
+    /// 即绘制原点取 -pan）；视口外坐标 clamp 进画面后归一化
+    static bool map_mouse_pixel(int action, const QPointF& local,
+                                const QPointF& pan, const QSizeF& video,
+                                protocol::MouseKeyBody& mk, int wheel = 0) {
+        if (video.isEmpty()) {
+            return false;
+        }
+        mk.kind = protocol::MouseKeyKind::Mouse;
+        mk.action = static_cast<uint8_t>(action);
+        if (action == static_cast<int>(MouseAction::Wheel)) {
+            mk.wheel = static_cast<int16_t>(wheel);
+            return true;
+        }
+        const double lx = qBound(0.0, local.x() + pan.x(), video.width());
+        const double ly = qBound(0.0, local.y() + pan.y(), video.height());
+        mk.x = static_cast<uint16_t>(lx / video.width() * 65535.0 + 0.5);
+        mk.y = static_cast<uint16_t>(ly / video.height() * 65535.0 + 0.5);
+        return true;
+    }
+
     /// Qt::Key → Windows VK（scan 填 0 走 VK 路径注入）。
     /// ASCII 区标点的 Qt 值与 VK 不一致（OEM 码），一律查表；表外丢弃。
     static bool map_key(int qt_key, bool down, protocol::MouseKeyBody& mk) {

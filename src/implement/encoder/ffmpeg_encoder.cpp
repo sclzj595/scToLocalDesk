@@ -91,6 +91,20 @@ bool FfmpegEncoder::init_frame(uint32_t width, uint32_t height) {
     return true;
 }
 
+void FfmpegEncoder::set_quality(int quality) {
+    if (quality < 1) {
+        quality = 1;
+    }
+    if (quality > 100) {
+        quality = 100;
+    }
+    cfg_.quality = quality;
+    // ctx 未建（open 懒初始化）时仅存配置，init_frame 时取用
+    if (ctx_ != nullptr) {
+        ctx_->global_quality = FF_QP2LAMBDA * quality_to_qscale(quality);
+    }
+}
+
 bool FfmpegEncoder::encode(const VideoFrame& in, std::vector<uint8_t>& out) {
     out.clear();
     if (in.data == nullptr || in.width == 0 || in.height == 0) {
@@ -114,6 +128,9 @@ bool FfmpegEncoder::encode(const VideoFrame& in, std::vector<uint8_t>& out) {
               dst_stride);
 
     frame_->pts = pts_++;
+    // 逐帧质量（自适应画质运行时调档，Doc19 §4.5）：QSCALE 编码器按
+    // frame->quality 优先取用——运行期改档无需重建编码管线
+    frame_->quality = FF_QP2LAMBDA * quality_to_qscale(cfg_.quality);
     if (avcodec_send_frame(ctx_, frame_) < 0) {
         return false;
     }

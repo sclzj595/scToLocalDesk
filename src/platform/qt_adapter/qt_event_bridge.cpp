@@ -9,9 +9,12 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QCoreApplication>
 #include <QDate>
+#include <QDesktopServices>
 #include <QHostAddress>
 #include <QTimer>
+#include <QUrl>
 #include <QWindow>
 
 #ifdef Q_OS_WIN
@@ -240,6 +243,46 @@ void QtEventBridge::setClipboardSyncEnabled(bool on) {
         SCLD_LOG(log_, foundation::LogLevel::Error, "settings",
                  "config.ini 落盘失败 session.clipboard_sync");
     }
+}
+
+// ---------------- 画面缩放模式（Doc19 §4.4） ----------------
+
+int QtEventBridge::scaleMode() const {
+    if (cfg_ == nullptr) {
+        return 0;
+    }
+    const QString m = QString::fromStdString(cfg_->view_scale_mode);
+    return m == QLatin1String("stretch") ? 1
+         : m == QLatin1String("pixel")   ? 2
+                                         : 0;  // 默认自适应
+}
+
+void QtEventBridge::setScaleMode(int mode) {
+    const char* s = mode == 1 ? "stretch" : mode == 2 ? "pixel" : "fit";
+    if (cfg_ == nullptr || ini_ == nullptr || cfg_->view_scale_mode == s) {
+        return;
+    }
+    cfg_->view_scale_mode = s;
+    cfg_->save(*ini_);
+    if (ini_->save()) {
+        SCLD_LOG(log_, foundation::LogLevel::Info, "settings",
+                 std::string("已保存 view.scale_mode=") + s);
+        emit configKeySaved(QStringLiteral("view.scale_mode"),
+                            QString::fromLatin1(s));
+    }
+    else {
+        SCLD_LOG(log_, foundation::LogLevel::Error, "settings",
+                 "config.ini 落盘失败 view.scale_mode");
+    }
+}
+
+void QtEventBridge::openLogDir() const {
+    // 口径照抄 AuditLogger 装配：applicationDirPath() + "/logs"（main.cpp）
+    const QString dir = QCoreApplication::applicationDirPath()
+                        + QStringLiteral("/logs");
+    SCLD_LOG(log_, foundation::LogLevel::Info, "settings",
+             "打开日志目录 " + dir.toStdString());
+    QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
 }
 
 void QtEventBridge::start_clipboard_monitor() {

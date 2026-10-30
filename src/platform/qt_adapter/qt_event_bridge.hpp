@@ -153,6 +153,13 @@ public:
     /// 远程画面页开关按钮读写；同一键两端读——关=不发不收（隐私红线）
     Q_INVOKABLE bool clipboardSyncEnabled() const;
     Q_INVOKABLE void setClipboardSyncEnabled(bool on);
+    /// 画面缩放模式（Doc19 §4.4，config view.scale_mode，双 exe 同键）：
+    /// 0 自适应（默认）1 拉伸铺满 2 1:1 原始像素；画面页三钮读写
+    Q_INVOKABLE int scaleMode() const;
+    Q_INVOKABLE void setScaleMode(int mode);
+    /// 打开日志目录（设置页交接遗留项）：系统文件管理器定位 exe 旁 logs/
+    ///（路径口径与 AuditLogger/applicationDirPath()+"/logs" 一致）
+    Q_INVOKABLE void openLogDir() const;
     /// 启动剪贴板双向同步监视（Doc19 §5 P2）：本机剪贴板变化 → 500ms 尾沿
     /// 节流 + 回环防抖 → 会话出站；远端 CLIPBOARD_SYNC 帧 → 写本机剪贴板。
     /// 仅会话 Running 且开关开启时生效；两个 exe 装配末尾各调一次

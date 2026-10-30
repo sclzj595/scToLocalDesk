@@ -108,10 +108,55 @@ void ScreenStreamService::capture_loop(SendFn send, Options opt) {
         return;
     }
 
-    const auto interval = std::chrono::milliseconds(1000 / (opt.fps > 0 ? opt.fps : 15));
-    const double budget_ms = static_cast<double>(interval.count());
+    // 运行中档位（自适应画质 Doc19 §4.5 可调，初始=满档）
+    int cur_fps = opt.fps > 0 ? opt.fps : 15;
+    int cur_quality = std::min(opt.quality, 85);  // 满档上限 85（升档恢复口径一致）
+    auto interval = std::chrono::milliseconds(1000 / cur_fps);
+    const double budget_ms0 = static_cast<double>(interval.count());
+    double budget_ms = budget_ms0;
     auto next_tick = std::chrono::steady_clock::now();
     VideoFrame frame;
+
+    // —— 自适应画质闭环（Doc19 §4.5 P3）：5s 窗口两档，防高动态画面打满内网 ——
+    // 降档判据：窗口丢帧率 >20% 或队列 ≥80% tick 常满 → quality-15（下限40）+
+    // fps min(原,10)；升档判据：连续 3 窗口（15s）丢帧率 <2% 且不常满 → 恢复
+    // 满档。两档设计每次一档天然满足"间隔 ≥5s 缓慢恢复"防振荡
+    int cur_tier = 0;              // 0=满档 1=降档
+    constexpr double kDropHigh = 0.20;
+    constexpr double kDropLow = 0.02;
+    int win_produced = 0;          // 窗口内成功编码帧数
+    int win_dropped = 0;           // 窗口内被队列挤掉的帧数
+    int win_ticks = 0;             // 窗口内采集 tick 数
+    int win_full_ticks = 0;        // 窗口内队列满 tick 数（常满判据）
+    int good_windows = 0;          // 连续低丢帧窗口数（升档判据）
+    auto win_start = std::chrono::steady_clock::now();
+    // 档位切换：改间隔/预算 + 重锚 next_tick（防降档后追帧连发）+ 编码器热调
+    auto apply_tier = [&](int tier) {
+        if (tier == cur_tier) {
+            return;
+        }
+        cur_tier = tier;
+        if (tier == 1) {
+            cur_quality = std::max(40, std::min(opt.quality, 85) - 15);
+            cur_fps = std::min(cur_fps, 10);
+            SCLD_LOG(log_, LogLevel::Info, "stream",
+                     "自适应降档 quality=" + std::to_string(cur_quality)
+                         + " fps=" + std::to_string(cur_fps)
+                         + "（丢帧率高或队列常满，压低码率保流畅）");
+        }
+        else {
+            cur_quality = std::min(opt.quality, 85);
+            cur_fps = opt.fps > 0 ? opt.fps : 15;
+            SCLD_LOG(log_, LogLevel::Info, "stream",
+                     "自适应升档恢复 quality=" + std::to_string(cur_quality)
+                         + " fps=" + std::to_string(cur_fps)
+                         + "（链路持续空闲）");
+        }
+        interval = std::chrono::milliseconds(1000 / cur_fps);
+        budget_ms = static_cast<double>(interval.count());
+        next_tick = std::chrono::steady_clock::now() + interval;
+        encoder_->set_quality(cur_quality);
+    };
 
     // 采集+编码耗时可见性（perf_counter：吸收 NetComm MicroCounter 统计口径）
     foundation::PerfCounter frame_perf;
@@ -124,8 +169,10 @@ void ScreenStreamService::capture_loop(SendFn send, Options opt) {
     uint32_t last_h = 0;
     int fail_ticks = 0;   ///< 连续 grab 失败 tick 数
     int warn_err = 0;     ///< 已告警错误码（去重；0=无）
-    const int placeholder_ticks =
-        2000 / std::max(1, static_cast<int>(interval.count()));
+    // 占位 tick 周期随自适应帧率走（逐 tick 重算，开销可忽略）
+    auto placeholder_ticks_fn = [&interval] {
+        return 2000 / std::max(1, static_cast<int>(interval.count()));
+    };
 
     while (running_.load(std::memory_order_acquire)) {
         next_tick += interval;
@@ -192,8 +239,11 @@ void ScreenStreamService::capture_loop(SendFn send, Options opt) {
                     hdr.height = frame.height;
                     hdr.timestamp_us = frame.timestamp_us != 0 ? frame.timestamp_us : now_us();
                     auto pkt = protocol::build_screen_frame(hdr, encoded.data(), encoded.size());
-                    dropped_total_.fetch_add(queue_.push_overwrite(std::move(pkt)),
-                                             std::memory_order_relaxed);
+                    const size_t dropped = queue_.push_overwrite(std::move(pkt));
+                    dropped_total_.fetch_add(dropped, std::memory_order_relaxed);
+                    // 自适应统计（Doc19 §4.5）：产出+被挤掉帧计入当前窗口
+                    ++win_produced;
+                    win_dropped += static_cast<int>(dropped);
                 }
             }
             else {
@@ -201,7 +251,7 @@ void ScreenStreamService::capture_loop(SendFn send, Options opt) {
                 // 分类才占位（未升级后端 last_error 恒 None → 维持旧行为）
                 ++fail_ticks;
                 const CaptureErr err = capturer_->last_error();
-                if (err != CaptureErr::None && fail_ticks >= placeholder_ticks) {
+                if (err != CaptureErr::None && fail_ticks >= placeholder_ticks_fn()) {
                     const int err_code = static_cast<int>(err);
                     if (err_code != warn_err) {
                         warn_err = err_code;  // 同一错误只 Warn 一次，换错/恢复重置
@@ -210,7 +260,7 @@ void ScreenStreamService::capture_loop(SendFn send, Options opt) {
                                      + std::to_string(err_code));
                     }
                     // 每 2s 一发（占位 tick 周期 = 失败门槛 tick 数，非每 tick）
-                    if (fail_ticks % placeholder_ticks == 0) {
+                    if (fail_ticks % placeholder_ticks_fn() == 0) {
                         protocol::ScreenFrameHeader ph;
                         ph.width = last_w != 0 ? last_w : 640;
                         ph.height = last_h != 0 ? last_h : 480;
@@ -246,6 +296,42 @@ void ScreenStreamService::capture_loop(SendFn send, Options opt) {
                 e.timestamp_us = now_us();
                 bus_->publish(e);
             }
+        }
+        // 自适应窗口统计：tick 计数 + 队列是否满（常满=发送链路消化不动）
+        if (queue_.size() >= queue_.capacity()) {
+            ++win_full_ticks;
+        }
+        ++win_ticks;
+        // 自适应评估（5s 窗口，Doc19 §4.5）：两档闭环，档位变化只在此处发生
+        const auto win_now = std::chrono::steady_clock::now();
+        if (win_now - win_start >= std::chrono::seconds(5)) {
+            const double drop_rate =
+                win_produced > 0
+                    ? static_cast<double>(win_dropped)
+                          / static_cast<double>(win_produced)
+                    : 0.0;
+            const bool queue_stuffed =
+                win_ticks > 0 && win_full_ticks * 5 >= win_ticks * 4;
+            if (cur_tier == 0 && (drop_rate > kDropHigh || queue_stuffed)) {
+                apply_tier(1);
+            }
+            else if (cur_tier == 1) {
+                // 升档判据：连续 3 窗口（15s）低丢帧；任一窗口劣化即清零防振荡
+                if (drop_rate < kDropLow && !queue_stuffed) {
+                    if (++good_windows >= 3) {
+                        good_windows = 0;
+                        apply_tier(0);
+                    }
+                }
+                else {
+                    good_windows = 0;
+                }
+            }
+            win_produced = 0;
+            win_dropped = 0;
+            win_ticks = 0;
+            win_full_ticks = 0;
+            win_start = win_now;
         }
         std::this_thread::sleep_until(next_tick);
     }

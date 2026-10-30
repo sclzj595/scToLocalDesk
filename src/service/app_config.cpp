@@ -65,6 +65,12 @@ void AppConfig::load(const foundation::IniConfig& ini) {
     appearance_theme = ini.get_str("appearance", "theme", appearance_theme);
     appearance_reduce_transparency =
         ini.get_bool("appearance", "reduce_transparency", appearance_reduce_transparency);
+
+    view_scale_mode = ini.get_str("view", "scale_mode", view_scale_mode);
+    if (view_scale_mode != "fit" && view_scale_mode != "stretch"
+        && view_scale_mode != "pixel") {
+        view_scale_mode = "fit";  // 非法值兜底默认（Doc12 §5）
+    }
 }
 
 void AppConfig::save(foundation::IniConfig& ini) const {
@@ -113,6 +119,8 @@ void AppConfig::save(foundation::IniConfig& ini) const {
 
     ini.set_str("appearance", "theme", appearance_theme);
     ini.set_bool("appearance", "reduce_transparency", appearance_reduce_transparency);
+
+    ini.set_str("view", "scale_mode", view_scale_mode);
 }
 
 }  // namespace sc::localdesk

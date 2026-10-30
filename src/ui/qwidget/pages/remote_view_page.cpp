@@ -1,6 +1,7 @@
 // scToLocalDesk | 远程画面页（RemoteViewPage）实现（自 pages.cpp 原样拆出）
 #include "pages.h"
 
+#include <QButtonGroup>
 #include <QColor>
 #include <QFont>
 #include <QHBoxLayout>
@@ -33,7 +34,7 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
 
     toolbar_ = new QWidget(this);
     toolbar_->setObjectName(QStringLiteral("glassPanel"));
-    toolbar_->setFixedSize(340, 44);
+    toolbar_->setFixedSize(580, 44);  // 加缩放三钮后加宽（原 340）
     auto* toolLay = new QHBoxLayout(toolbar_);
     toolLay->setContentsMargins(16, 6, 16, 6);
     toolLay->setSpacing(8);
@@ -80,6 +81,37 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
         }
     });
     toolLay->addWidget(clip_btn_);
+    // 画面缩放三模式（Doc19 §4.4）：自适应（默认，等比黑边）/拉伸铺满/
+    // 1:1 原始像素，互斥 checkable；状态持久化 config view.scale_mode
+    //（双 exe 共用键），bind_config 回放，切换即时落盘
+    auto* mode_group = new QButtonGroup(this);
+    const auto make_mode_btn = [this, mode_group, &toolLay](const char* text) {
+        auto* b = new QPushButton(QString::fromUtf8(text), toolbar_);
+        b->setObjectName(QStringLiteral("secondaryBtn"));
+        b->setFocusPolicy(Qt::NoFocus);  // NoFocus 红线：不吃远端键鼠焦点
+        b->setCheckable(true);
+        mode_group->addButton(b);  // exclusive 默认开：三钮互斥
+        toolLay->addWidget(b);
+        return b;
+    };
+    fit_btn_ = make_mode_btn("自适应");
+    stretch_btn_ = make_mode_btn("拉伸");
+    pixel_btn_ = make_mode_btn("1:1");
+    connect(fit_btn_, &QPushButton::toggled, this, [this](bool on) {
+        if (on && scale_mode_ != ScaleMode::Fit) {  // 回放重复置位不重写
+            apply_scale_mode(ScaleMode::Fit);
+        }
+    });
+    connect(stretch_btn_, &QPushButton::toggled, this, [this](bool on) {
+        if (on && scale_mode_ != ScaleMode::Stretch) {
+            apply_scale_mode(ScaleMode::Stretch);
+        }
+    });
+    connect(pixel_btn_, &QPushButton::toggled, this, [this](bool on) {
+        if (on && scale_mode_ != ScaleMode::Pixel) {
+            apply_scale_mode(ScaleMode::Pixel);
+        }
+    });
     auto* sep2 = new QLabel(toolbar_);
     sep2->setFixedSize(1, 20);
     sep2->setStyleSheet(sep->styleSheet());
@@ -116,6 +148,7 @@ void RemoteViewPage::on_frame(const QImage& img) {
         placeholder_ = false;
         placeholder_locked_ = false;
     }
+    clamp_pan();  // Pixel 平移偏移随画面尺寸收敛（分辨率切换防出界）
     toolbar_->setVisible(true);  // 有帧 = 会话中，恢复工具条
     update();  // 触发 paintEvent 重画
 }
@@ -140,12 +173,67 @@ void RemoteViewPage::on_read_only(bool on) {
     }
 }
 
-void RemoteViewPage::bind_clipboard(foundation::IniConfig* ini, AppConfig* cfg) {
+void RemoteViewPage::bind_config(foundation::IniConfig* ini, AppConfig* cfg) {
     clip_ini_ = ini;
     clip_cfg_ = cfg;
-    if (cfg != nullptr && clip_btn_ != nullptr) {
-        clip_btn_->setChecked(cfg->clipboard_sync);  // 回放持久化真值
+    if (cfg != nullptr) {
+        if (clip_btn_ != nullptr) {
+            clip_btn_->setChecked(cfg->clipboard_sync);  // 回放持久化真值
+        }
+        // 缩放模式回放（Doc19 §4.4）：字符串 → 枚举（非法值 load 已兜底）
+        const QString m = QString::fromStdString(cfg->view_scale_mode);
+        scale_mode_ = m == QLatin1String("stretch") ? ScaleMode::Stretch
+                    : m == QLatin1String("pixel")   ? ScaleMode::Pixel
+                                                    : ScaleMode::Fit;
+        QPushButton* btn = scale_mode_ == ScaleMode::Stretch ? stretch_btn_
+                         : scale_mode_ == ScaleMode::Pixel   ? pixel_btn_
+                                                             : fit_btn_;
+        if (btn != nullptr) {
+            btn->setChecked(true);  // QButtonGroup 互斥：其余自动弹起
+        }
     }
+}
+
+/// 缩放模式 → config 字符串（view.scale_mode，双 exe 同键）
+static const char* scale_mode_str(RemoteViewPage::ScaleMode m) {
+    switch (m) {
+    case RemoteViewPage::ScaleMode::Stretch:
+        return "stretch";
+    case RemoteViewPage::ScaleMode::Pixel:
+        return "pixel";
+    default:
+        return "fit";
+    }
+}
+
+void RemoteViewPage::apply_scale_mode(ScaleMode m) {
+    scale_mode_ = m;
+    if (m == ScaleMode::Pixel && !frame_.isNull()) {
+        // 进入 1:1：居中定位（画面小于视口 clamp 收敛为 0）
+        pixel_pan_ = QPointF(qMax(0.0, (frame_.width() - width()) / 2.0),
+                             qMax(0.0, (frame_.height() - height()) / 2.0));
+    }
+    clamp_pan();
+    if (clip_cfg_ != nullptr) {
+        clip_cfg_->view_scale_mode = scale_mode_str(m);
+        if (clip_ini_ != nullptr) {
+            clip_cfg_->save(*clip_ini_);
+            (void)clip_ini_->save();  // 即时落盘（剪贴板开关同口径）
+        }
+    }
+    update();
+}
+
+void RemoteViewPage::clamp_pan() {
+    if (frame_.isNull()) {
+        pixel_pan_ = QPointF(0, 0);
+        return;
+    }
+    pixel_pan_ = QPointF(
+        qBound(0.0, pixel_pan_.x(),
+               qMax(0.0, static_cast<double>(frame_.width() - width()))),
+        qBound(0.0, pixel_pan_.y(),
+               qMax(0.0, static_cast<double>(frame_.height() - height()))));
 }
 
 void RemoteViewPage::on_session_closed() {
@@ -200,14 +288,25 @@ void RemoteViewPage::paintEvent(QPaintEvent*) {
                    QStringLiteral("暂未进行远程控制\n从设备列表或连接码页发起会话后，画面将显示在此处"));
         return;
     }
-    // 等比缩放铺满（与 QML VideoSurface 同观感）
+    // 缩放三模式绘制（Doc19 §4.4）：Fit 等比黑边 / Stretch 拉伸铺满 /
+    // Pixel 1:1 原始像素（平移偏移取负 = 画面左上角滚出视口的部分不画）
     const QSizeF area = size();
     const QSizeF src = frame_.size();
+    p.setRenderHint(QPainter::SmoothPixmapTransform, scale_mode_ != ScaleMode::Pixel);
+    if (scale_mode_ == ScaleMode::Stretch) {
+        p.drawImage(QRectF(0, 0, area.width(), area.height()), frame_);
+        return;
+    }
+    if (scale_mode_ == ScaleMode::Pixel) {
+        p.drawImage(QRectF(-pixel_pan_.x(), -pixel_pan_.y(),
+                           src.width(), src.height()), frame_);
+        return;
+    }
+    // 等比缩放铺满（与 QML VideoSurface 同观感，黑边留白）
     const double scale = qMin(area.width() / src.width(),
                               area.height() / src.height());
     const double dw = src.width() * scale;
     const double dh = src.height() * scale;
-    p.setRenderHint(QPainter::SmoothPixmapTransform);
     p.drawImage(QRectF((area.width() - dw) / 2, (area.height() - dh) / 2, dw, dh),
                 frame_);
 }
@@ -219,15 +318,29 @@ void RemoteViewPage::send_mouse(MouseAction action, const QPointF& local, int wh
         return;
     }
     protocol::MouseKeyBody mk;
-    if (platform::InputBridge::map_mouse(
-            static_cast<int>(action), local, QSizeF(size()),
-            QSizeF(frame_.size()), mk, wheel)) {
+    // Pixel 模式无 letterbox：帧像素 = 局部坐标 + 平移偏移（Doc19 §4.4）
+    const bool ok = scale_mode_ == ScaleMode::Pixel
+        ? platform::InputBridge::map_mouse_pixel(
+              static_cast<int>(action), local, pixel_pan_,
+              QSizeF(frame_.size()), mk, wheel)
+        : platform::InputBridge::map_mouse(
+              static_cast<int>(action), local, QSizeF(size()),
+              QSizeF(frame_.size()), mk, wheel);
+    if (ok) {
         (void)sessions_->send_input_event(mk);
     }
 }
 
 void RemoteViewPage::mousePressEvent(QMouseEvent* e) {
     setFocus();  // 点画面即接管键盘
+    if (scale_mode_ == ScaleMode::Pixel && e->button() == Qt::MiddleButton) {
+        // 1:1 平移（Doc19 §4.4）：中键按压不立即透传——超阈值拖动=平移，
+        // 原地松开=中键点击（release 补发 Down+Up，中键功能不丢）
+        mid_panning_ = true;
+        mid_moved_ = false;
+        mid_last_ = e->position();
+        return;
+    }
     switch (e->button()) {
     case Qt::LeftButton:
         send_mouse(MouseAction::LeftDown, e->position());
@@ -244,6 +357,15 @@ void RemoteViewPage::mousePressEvent(QMouseEvent* e) {
 }
 
 void RemoteViewPage::mouseReleaseEvent(QMouseEvent* e) {
+    if (scale_mode_ == ScaleMode::Pixel && e->button() == Qt::MiddleButton) {
+        const bool was_click = !mid_moved_;
+        mid_panning_ = false;
+        if (was_click) {  // 未拖动 = 中键点击：补发按下+抬起
+            send_mouse(MouseAction::MiddleDown, e->position());
+            send_mouse(MouseAction::MiddleUp, e->position());
+        }
+        return;
+    }
     switch (e->button()) {
     case Qt::LeftButton:
         send_mouse(MouseAction::LeftUp, e->position());
@@ -260,6 +382,20 @@ void RemoteViewPage::mouseReleaseEvent(QMouseEvent* e) {
 }
 
 void RemoteViewPage::mouseMoveEvent(QMouseEvent* e) {
+    if (scale_mode_ == ScaleMode::Pixel && mid_panning_
+        && (e->buttons() & Qt::MiddleButton) != 0) {
+        if (!mid_moved_
+            && (e->position() - mid_last_).manhattanLength() > 8) {
+            mid_moved_ = true;  // 超阈值进入拖动：松开不再补发中键点击
+        }
+        if (mid_moved_) {
+            pixel_pan_ += mid_last_ - e->position();  // 拖动方向与画面一致
+            clamp_pan();
+            mid_last_ = e->position();
+            update();
+            return;  // 平移中不向远端发移动（本地视口操作）
+        }
+    }
     send_mouse(MouseAction::Move, e->position());
 }
 

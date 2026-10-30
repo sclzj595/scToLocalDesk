@@ -67,6 +67,7 @@ public:
             }
             return false;
         }
+        compose_cursor();  // 光标合成（Doc19 §4.4）：失败静默画无光标帧
         last_err_ = CaptureErr::None;
         LARGE_INTEGER ts{};
         QueryPerformanceCounter(&ts);
@@ -102,6 +103,22 @@ public:
     CaptureErr last_error() const override { return last_err_; }
 
 private:
+    /// 光标合成（Doc19 §4.4）：BitBlt 采到的画面不含鼠标光标——控制端看不到
+    /// 对端鼠标位置（远程协助核心痛点）。GetCursorInfo 取当前光标句柄+屏幕
+    /// 坐标，DrawIconEx 原尺寸画进同一内存 DC（即帧 BGRA 缓冲，ARGB 光标
+    /// 自动 alpha 混合）；隐藏光标/失败/安全桌面静默跳过，不影响主帧率。
+    /// 全屏采集（0,0 起）与屏幕坐标同系，1:1 直画不缩放
+    void compose_cursor() {
+        CURSORINFO ci{};
+        ci.cbSize = sizeof(ci);
+        if (!GetCursorInfo(&ci) || !(ci.flags & CURSOR_SHOWING)
+            || ci.hCursor == nullptr) {
+            return;
+        }
+        (void)DrawIconEx(mem_dc_, ci.ptScreenPos.x, ci.ptScreenPos.y,
+                         ci.hCursor, 0, 0, 0, nullptr, DI_NORMAL);
+    }
+
     HDC screen_dc_{nullptr};
     HDC mem_dc_{nullptr};
     HBITMAP bitmap_{nullptr};

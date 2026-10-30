@@ -8,6 +8,7 @@
 #pragma once
 
 #include <QImage>
+#include <QPointF>
 #include <QQuickPaintedItem>
 #include <QString>
 
@@ -22,6 +23,11 @@ class VideoSurface : public QQuickPaintedItem {
     Q_PROPERTY(bool placeholder READ placeholder NOTIFY placeholderChanged)
     /// 占位提示文案：锁屏 / 驱动异常（含错误码）两条，与 Widgets 版同口径
     Q_PROPERTY(QString placeholderText READ placeholderText NOTIFY placeholderTextChanged)
+    /// 画面缩放模式（Doc19 §4.4）：0 自适应（等比黑边）1 拉伸铺满
+    /// 2 1:1 原始像素（平移偏移由 RemoteInputItem 拖动驱动）
+    Q_PROPERTY(int scaleMode READ scaleMode WRITE set_scaleMode NOTIFY scaleModeChanged)
+    /// Pixel 平移偏移（画面左上角相对视口的负偏移）；本件只消费不回收
+    Q_PROPERTY(QPointF panOffset READ panOffset WRITE setPanOffset NOTIFY panOffsetChanged)
 
 public:
     explicit VideoSurface(QQuickPaintedItem* parent = nullptr);
@@ -31,6 +37,25 @@ public:
 
     bool placeholder() const { return placeholder_; }
     QString placeholderText() const { return placeholder_text_; }
+    int scaleMode() const { return scale_mode_; }
+    void set_scaleMode(int m) {
+        m = qBound(0, m, 2);
+        if (scale_mode_ == m) {
+            return;
+        }
+        scale_mode_ = m;
+        emit scaleModeChanged();
+        update();
+    }
+    QPointF panOffset() const { return pan_; }
+    void setPanOffset(const QPointF& p) {
+        if (pan_ == p) {
+            return;
+        }
+        pan_ = p;
+        emit panOffsetChanged();
+        update();
+    }
 
     void paint(QPainter* painter) override;
 
@@ -38,12 +63,16 @@ signals:
     void pipelineChanged();
     void placeholderChanged();
     void placeholderTextChanged();
+    void scaleModeChanged();
+    void panOffsetChanged();
 
 private:
     QObject* pipeline_{nullptr};  // VideoPipeline*（qobject_cast 检查后使用）
     QImage frame_;
     bool placeholder_{false};
     QString placeholder_text_;
+    int scale_mode_{0};  // 0 Fit | 1 Stretch | 2 Pixel（Doc19 §4.4）
+    QPointF pan_;        // Pixel 平移偏移（Page 绑 inputCatcher.panOffset）
 };
 
 }  // namespace sc::localdesk::platform

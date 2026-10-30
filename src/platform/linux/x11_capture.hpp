@@ -12,6 +12,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <dlfcn.h>
 #if __has_include(<X11/extensions/XShm.h>)
     #include <sys/ipc.h>
     #include <sys/shm.h>
@@ -45,6 +46,22 @@ public:
         }
         width_ = static_cast<uint32_t>(attr.width);
         height_ = static_cast<uint32_t>(attr.height);
+        // XFixes 光标合成（Doc19 §4.4）：dlopen 运行时加载（免 dev 包，
+        // libXtst 先例）；扩展不可用保持空指针，grab 静默画无光标帧
+        fixes_so_ = dlopen("libXfixes.so.3", RTLD_NOW | RTLD_LOCAL);
+        if (fixes_so_ != nullptr) {
+            auto qe = reinterpret_cast<FnFixesQueryExt>(
+                dlsym(fixes_so_, "XFixesQueryExtension"));
+            fixes_cursor_ = reinterpret_cast<FnFixesGetCursor>(
+                dlsym(fixes_so_, "XFixesGetCursorImage"));
+            int ev = 0, er = 0;
+            if (qe == nullptr || fixes_cursor_ == nullptr
+                || !qe(dpy_, &ev, &er)) {
+                fixes_cursor_ = nullptr;
+                dlclose(fixes_so_);
+                fixes_so_ = nullptr;
+            }
+        }
 #ifdef SCLD_X11_SHM
         // XShm 快路径：MIT-SHM 扩展可用即常驻共享内存，grab 零拷贝
         if (XShmQueryExtension(dpy_)) {
@@ -110,6 +127,7 @@ public:
             return false;
         }
         last_err_ = CaptureErr{};  // 成功清回 None（Xlib None 宏污染，字面量不可用）
+        compose_cursor(img);  // 光标合成（Doc19 §4.4）：失败静默画无光标帧
         const auto now = std::chrono::steady_clock::now().time_since_epoch();
         out.data = reinterpret_cast<const uint8_t*>(img->data);
         out.size = static_cast<size_t>(img->bytes_per_line) * img->height;
@@ -133,6 +151,11 @@ public:
     }
 
     void shutdown() override {
+        if (fixes_so_ != nullptr) {
+            dlclose(fixes_so_);
+            fixes_so_ = nullptr;
+            fixes_cursor_ = nullptr;
+        }
 #ifdef SCLD_X11_SHM
         if (dpy_ != nullptr && shm_ok_) {
             XShmDetach(dpy_, &shminfo_);
@@ -156,6 +179,79 @@ public:
     CaptureErr last_error() const override { return last_err_; }
 
 private:
+    /// XFixes 光标图（dlopen 免 <X11/extensions/Xfixes.h> dev 依赖，字段
+    /// 布局对齐 libXfixes 头定义：6×ushort + ulong 序列号 + 像素指针）
+    struct FixesCursorImage {
+        unsigned short x, y;
+        unsigned short width, height;
+        unsigned short xhot, yhot;
+        unsigned long cursor_serial;
+        unsigned long* pixels;
+    };
+    using FnFixesGetCursor = FixesCursorImage* (*)(Display*);
+    using FnFixesQueryExt = int (*)(Display*, int*, int*);
+
+    /// 光标合成（Doc19 §4.4）：XGetImage/XShmGetImage 采到的根窗画面不含
+    /// 鼠标光标——控制端看不到对端鼠标位置。XFixesGetCursorImage 取 ARGB
+    /// 光标位图+屏幕位置（x/y 为热点坐标，绘制原点 = 热点 - xhot/yhot），
+    /// 按预乘 alpha blend 写进本帧像素（ZPixmap 32bpp 小端 = BGRA 字节序，
+    /// 与编码器布局同构）；任意一步失败静默跳过，不影响主帧率
+    void compose_cursor(XImage* img) {
+        if (fixes_cursor_ == nullptr || img == nullptr
+            || img->bits_per_pixel != 32) {
+            return;
+        }
+        const XErrorHandler prev = XSetErrorHandler(QuietErrorHandler);
+        FixesCursorImage* ci = fixes_cursor_(dpy_);
+        XSetErrorHandler(prev);
+        if (ci == nullptr || ci->pixels == nullptr) {
+            return;
+        }
+        const int cx = static_cast<int>(ci->x) - static_cast<int>(ci->xhot);
+        const int cy = static_cast<int>(ci->y) - static_cast<int>(ci->yhot);
+        const int iw = static_cast<int>(img->width);
+        const int ih = static_cast<int>(img->height);
+        for (int row = 0; row < static_cast<int>(ci->height); ++row) {
+            const int dy = cy + row;
+            if (dy < 0 || dy >= ih) {
+                continue;
+            }
+            uint8_t* dst =
+                reinterpret_cast<uint8_t*>(img->data)
+                + static_cast<size_t>(dy) * static_cast<size_t>(img->bytes_per_line);
+            const unsigned long* src = ci->pixels
+                + static_cast<size_t>(row) * static_cast<size_t>(ci->width);
+            for (int col = 0; col < static_cast<int>(ci->width); ++col) {
+                const int dx = cx + col;
+                if (dx < 0 || dx >= iw) {
+                    continue;
+                }
+                const uint32_t argb = static_cast<uint32_t>(src[col]);
+                const uint32_t a = (argb >> 24) & 0xFF;
+                if (a == 0) {
+                    continue;  // 全透明：底图不动
+                }
+                uint8_t* px = dst + static_cast<size_t>(dx) * 4;
+                if (a >= 255) {
+                    px[0] = static_cast<uint8_t>(argb & 0xFF);          // B
+                    px[1] = static_cast<uint8_t>((argb >> 8) & 0xFF);   // G
+                    px[2] = static_cast<uint8_t>((argb >> 16) & 0xFF);  // R
+                }
+                else {
+                    // 预乘 alpha（XFixes ARGB 语义）：out = src + dst*(1-a)
+                    const uint32_t na = 255 - a;
+                    for (int c = 0; c < 3; ++c) {
+                        const uint32_t s = (argb >> (c * 8)) & 0xFF;
+                        px[c] = static_cast<uint8_t>(s + (px[c] * na + 127) / 255);
+                    }
+                }
+                px[3] = 0xFF;
+            }
+        }
+        XFree(ci->pixels);  // libXfixes：结构体与像素两块独立分配，逐一释放
+        XFree(ci);
+    }
+
     /// BadMatch 等错误吞掉（返回 1 = 已处理，阻断默认 abort）
     static int QuietErrorHandler(Display*, XErrorEvent*) {
         return 1;
@@ -167,6 +263,8 @@ private:
     uint32_t height_{0};
     CaptureErr last_err_{CaptureErr{}};  ///< 最近一次 grab 失败分类（0=None）
     std::vector<uint8_t> fallback_;  // XGetImage 慢路径自持缓冲
+    void* fixes_so_{nullptr};         ///< libXfixes dlopen 句柄（光标合成）
+    FnFixesGetCursor fixes_cursor_{nullptr};  ///< XFixesGetCursorImage（空=禁用）
 #ifdef SCLD_X11_SHM
     XShmSegmentInfo shminfo_{};
     XImage* shm_img_{nullptr};

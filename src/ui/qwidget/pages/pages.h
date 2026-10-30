@@ -160,15 +160,19 @@ class RemoteViewPage final : public QWidget {
     Q_OBJECT
 
 public:
+    /// 画面缩放模式（Doc19 §4.4）：Fit 等比缩放黑边（默认）/ Stretch 拉伸
+    /// 铺满 / Pixel 1:1 原始像素（画面大于视口时中键拖动平移）
+    enum class ScaleMode { Fit, Stretch, Pixel };
+
     explicit RemoteViewPage(QWidget* parent = nullptr);
 
     /// DI：控制会话服务（键鼠事件发送出口），画面装配后调用
     void set_session(RemoteSessionService* s) { sessions_ = s; }
 
-    /// 剪贴板同步开关配置注入（Doc19 §5 P2）：读写 config
-    /// session.clipboard_sync（默认开）；widgets_main 装配后调用，
-    /// 回放持久化真值到按钮 checked 态
-    void bind_clipboard(foundation::IniConfig* ini, AppConfig* cfg);
+    /// 配置注入：剪贴板同步开关（Doc19 §5 P2，session.clipboard_sync）+
+    /// 缩放模式回放（Doc19 §4.4，view.scale_mode）；widgets_main 装配后
+    /// 调用，回放持久化真值到各控件 checked 态
+    void bind_config(foundation::IniConfig* ini, AppConfig* cfg);
 
 signals:
     void disconnected();
@@ -203,12 +207,25 @@ protected:
 
 private:
     void send_mouse(MouseAction action, const QPointF& local, int wheel = 0);
+    /// 缩放模式切换（Doc19 §4.4）：进入 Pixel 居中定位 + clamp，落盘
+    /// view.scale_mode（双 exe 同键，剪贴板开关同口径）
+    void apply_scale_mode(ScaleMode m);
+    /// Pixel 平移偏移收敛：画面/视口尺寸变化（on_frame、拖动）后防出界
+    void clamp_pan();
 
     QWidget* toolbar_{nullptr};
     QLabel* ro_badge_{nullptr};  ///< 只读徽标（顶部居中，对端未授权键鼠时显示）
     QPushButton* clip_btn_{nullptr};      ///< 剪贴板同步开关（工具条内，checkable）
-    foundation::IniConfig* clip_ini_{nullptr};  ///< 开关落盘（bind_clipboard 注入）
-    AppConfig* clip_cfg_{nullptr};              ///< 开关真值（bind_clipboard 注入）
+    QPushButton* fit_btn_{nullptr};       ///< 缩放三模式互斥钮（Doc19 §4.4）
+    QPushButton* stretch_btn_{nullptr};
+    QPushButton* pixel_btn_{nullptr};
+    ScaleMode scale_mode_{ScaleMode::Fit};
+    QPointF pixel_pan_{0.0, 0.0};  ///< Pixel 平移偏移（画面左上角相对视口负偏移）
+    bool mid_panning_{false};      ///< Pixel 中键按压中（Down 延迟至 release 判定）
+    bool mid_moved_{false};        ///< 本次按压已超阈值进入拖动（不再补发中键点击）
+    QPointF mid_last_;             ///< 平移增量起点（拖动方向计算）
+    foundation::IniConfig* clip_ini_{nullptr};  ///< 开关落盘（bind_config 注入）
+    AppConfig* clip_cfg_{nullptr};              ///< 开关真值（bind_config 注入）
     QImage frame_;
     bool placeholder_{false};        ///< 占位帧激活（画灰底+提示，不画图像）
     bool placeholder_locked_{false}; ///< 占位分支：锁屏文案 / 驱动异常文案

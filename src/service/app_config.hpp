@@ -68,6 +68,8 @@ struct AppConfig {
     // [appearance]（Doc18 §3.3：主题选择持久化）
     std::string appearance_theme{"light"};  // light | dark
     bool appearance_reduce_transparency{false};
+    // [view]（Doc19 §4.4：控制端画面缩放模式持久化，双 exe 同键）
+    std::string view_scale_mode{"fit"};  // fit | stretch | pixel
 
     /// 从 ini 读取（缺失/非法回退成员当前值 = 默认值）
     void load(const foundation::IniConfig& ini);
