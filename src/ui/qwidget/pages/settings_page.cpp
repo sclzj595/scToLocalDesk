@@ -19,9 +19,11 @@
 #include <QVBoxLayout>
 
 #include "../glass_theme.h"
+#include "../popups/glass_dialog.hpp"
 #include "service/alias_service.hpp"
 #include "service/app_config.hpp"
 #include "service/blacklist_store.hpp"
+#include "service/trust_store.hpp"
 #include "foundation/config_parser.hpp"
 
 namespace sc::localdesk::ui {
@@ -178,19 +180,63 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     pwdEd->setFixedWidth(240);
     pwdEd->setToolTip(QStringLiteral("凭据派生（PBKDF2）与即时生效为 V1.0 任务"));
     secForm->addRow(QStringLiteral("无人值守密码"), pwdEd);
-    auto* trustBtn = new QPushButton(QStringLiteral("清空信任设备缓存"));
+    auto* trustBtn = new QPushButton(QStringLiteral("清空全部信任"));
     trustBtn->setObjectName(QStringLiteral("secondaryBtn"));
     trustBtn->setCursor(Qt::PointingHandCursor);
-    connect(trustBtn, &QPushButton::clicked, this, [this, trustBtn] {
-        emit clearTrustRequested();   // TrustStore::clear 由主窗口执行（Doc18 §3.2）
-        trustBtn->setText(QStringLiteral("已清空 ✓"));
-        trustBtn->setEnabled(false);
-        QTimer::singleShot(1600, trustBtn, [trustBtn] {
-            trustBtn->setText(QStringLiteral("清空信任设备缓存"));
-            trustBtn->setEnabled(true);
-        });
+    connect(trustBtn, &QPushButton::clicked, this, [this] {
+        // 信任变更审计在 TrustStore 内部落 audit.log（TrustClear 事件）
+        if (trust_ != nullptr) {
+            trust_->clear();
+            refresh_trust(trust_list_);
+        }
     });
-    secForm->addRow(QString(), trustBtn);
+
+    // ---- 信任设备管理列表（Doc19 §10 子页收口进设置页）：条目级吊销/
+    // 备注编辑/清空。吊销后下次连接强制弹窗确认（TrustRemove 审计）
+    auto* trustList = new QListWidget();
+    trustList->setFixedHeight(140);
+    trustList->setToolTip(QStringLiteral("名单内设备连接本机免弹窗确认；吊销后恢复人工确认"));
+    auto* trustBtnRow = new QHBoxLayout();
+    auto* trustNoteBtn = new QPushButton(QStringLiteral("修改备注"));
+    trustNoteBtn->setObjectName(QStringLiteral("secondaryBtn"));
+    trustNoteBtn->setCursor(Qt::PointingHandCursor);
+    auto* trustRevokeBtn = new QPushButton(QStringLiteral("吊销选中"));
+    trustRevokeBtn->setObjectName(QStringLiteral("dangerBtn"));
+    trustRevokeBtn->setCursor(Qt::PointingHandCursor);
+    connect(trustNoteBtn, &QPushButton::clicked, this, [this, trustList] {
+        auto* it = trustList->currentItem();
+        if (it == nullptr || trust_ == nullptr) {
+            return;
+        }
+        bool ok = false;
+        // 弹窗门面统一出口；ok 区分空备注确认与取消
+        const QString note = GlassDialog::getText(
+            this, QStringLiteral("设备备注"), QStringLiteral("标注对方是谁（可空）："),
+            it->data(Qt::UserRole + 1).toString(), &ok);
+        if (ok) {
+            trust_->set_note(it->data(Qt::UserRole).toString().toStdString(),
+                             note.toStdString());
+            refresh_trust(trustList);
+        }
+    });
+    connect(trustRevokeBtn, &QPushButton::clicked, this, [this, trustList] {
+        auto* it = trustList->currentItem();
+        if (it != nullptr && trust_ != nullptr) {
+            trust_->untrust(it->data(Qt::UserRole).toString().toStdString());
+            refresh_trust(trustList);
+        }
+    });
+    trustBtnRow->addStretch();
+    trustBtnRow->addWidget(trustNoteBtn);
+    trustBtnRow->addWidget(trustRevokeBtn);
+    trustBtnRow->addWidget(trustBtn);
+    auto* trustWrap = new QWidget();
+    auto* trustLay = new QVBoxLayout(trustWrap);
+    trustLay->setContentsMargins(0, 0, 0, 0);
+    trustLay->addWidget(trustList);
+    trustLay->addLayout(trustBtnRow);
+    secForm->addRow(QStringLiteral("信任设备"), trustWrap);
+    trust_list_ = trustList;  // 数据注入走 set_trust_store（构造期后到）
 
     // ---- 黑名单管理（Doc19 §3.4，P0）：列表+移除+清空，拉黑动作后续从
     // 信任列表右键加——入口保持最小可用，命中行为在会话层（静默丢弃）
@@ -465,6 +511,40 @@ void SettingsPage::refresh_blacklist(QListWidget* list) {
         }
         auto* it = new QListWidgetItem(line, list);
         it->setData(Qt::UserRole, grouped);  // unblock 反查键（normalize 去空格后命中）
+    }
+}
+
+void SettingsPage::refresh_trust(QListWidget* list) {
+    if (list == nullptr) {
+        return;
+    }
+    list->clear();
+    if (trust_ == nullptr) {
+        return;
+    }
+    for (const auto& e : trust_->list()) {
+        // 9 位裸码 → "xxx xxx xxx" 三段展示（与 QML/黑名单同口径）
+        const QString raw = QString::fromStdString(e.code);
+        QString grouped;
+        for (int i = 0; i < raw.size(); ++i) {
+            if (i > 0 && i % 3 == 0) {
+                grouped += QLatin1Char(' ');
+            }
+            grouped += raw.at(i);
+        }
+        QString line = grouped;
+        if (!e.name.empty()) {
+            line += QStringLiteral("　%1").arg(QString::fromStdString(e.name));
+        }
+        if (!e.note.empty()) {
+            line += QStringLiteral("（%1）").arg(QString::fromStdString(e.note));
+        }
+        if (!e.trusted_at.empty()) {
+            line += QStringLiteral("　%1").arg(QString::fromStdString(e.trusted_at));
+        }
+        auto* it = new QListWidgetItem(line, list);
+        it->setData(Qt::UserRole, grouped);             // 吊销/备注反查键
+        it->setData(Qt::UserRole + 1, QString::fromStdString(e.note));  // 备注预填
     }
 }
 

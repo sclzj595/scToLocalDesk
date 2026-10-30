@@ -17,6 +17,7 @@ namespace sc::localdesk {
 
 namespace foundation {
 class ILogger;
+class AuditLogger;  ///< 安全审计分流（Doc19 §6：信任变更全事件落 audit.log）
 }
 
 class TrustStore final {
@@ -51,14 +52,24 @@ public:
     /// 全表快照（连接码页"最近连接"真数据源，Doc18 §3.2）
     std::vector<Entry> list() const;
 
+    /// 审计注入（Doc19 §6，P0）：TrustAdd/TrustRemove/TrustNote/TrustClear
+    /// 全事件落 audit.log。装配层在 AuditLogger 创建后调用；可空
+    void set_audit_logger(foundation::AuditLogger* audit) {
+        audit_ = audit;
+    }
+
 private:
     void load();
     void save();  // 调用方须持锁
+    /// 审计出口（audit_ 为空跳过；peer_ip 列恒 "-"，信任条目不含 IP）
+    void audit(const std::string& event, const std::string& code,
+               const std::string& note);
 
     std::filesystem::path file_;
     mutable std::mutex mtx_;
     std::vector<Entry> entries_;
     foundation::ILogger* log_{nullptr};
+    foundation::AuditLogger* audit_{nullptr};  ///< 可空（未注入不审计）
 };
 
 }  // namespace sc::localdesk

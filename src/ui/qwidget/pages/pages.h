@@ -252,11 +252,17 @@ public:
         blacklist_ = bl;
     }
 
+    /// 信任缓存注入（Doc19 §10 信任管理子页）：列表/吊销/备注/清空
+    void set_trust_store(TrustStore* ts) {
+        trust_ = ts;
+        if (trust_list_ != nullptr) {
+            refresh_trust(trust_list_);
+        }
+    }
+
 signals:
     /// 深色主题开关切换（主窗口统一 applyTheme：QSS + Dock 染色 + glyph）
     void themeChanged(bool dark);
-    /// 清空信任设备缓存（TrustStore::clear 由主窗口执行，Doc18 §3.2）
-    void clearTrustRequested();
     /// 无人值守开关变更（widgets_main 接线托盘徽标，Doc16 §7）
     void unattEnabledChanged(bool on);
     /// 同名覆盖策略变更（widgets_main 接线 FileService 热生效，Doc11 §4.2）
@@ -273,12 +279,16 @@ private:
     void apply_view_mode();
     /// 黑名单列表重载（blacklist.json → QListWidget；构造与变更后调用）
     void refresh_blacklist(QListWidget* list);
+    /// 信任列表重载（trust.json → QListWidget；注入与变更后调用）
+    void refresh_trust(QListWidget* list);
 
     foundation::IniConfig* ini_{nullptr};
     AppConfig* cfg_{nullptr};
     AliasService* aliases_{nullptr};
     BlacklistStore* blacklist_{nullptr};  ///< 黑名单（Doc19 §3.4，可空）
+    TrustStore* trust_{nullptr};          ///< 信任缓存（Doc19 §10，可空）
     QListWidget* bl_list_{nullptr};       ///< 黑名单列表控件（变更后重载）
+    QListWidget* trust_list_{nullptr};    ///< 信任列表控件（变更后重载）
     ToggleSwitch* viewSw_{nullptr};
     QFrame* grpNet_{nullptr};
     QFrame* grpSess_{nullptr};

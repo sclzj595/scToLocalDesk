@@ -98,6 +98,8 @@ public:
     Q_INVOKABLE void trust(const QString& code, const QString& name);
     /// 单条删除信任（PRD P6）：信任列表条目级删除，trust.json 即时重写
     Q_INVOKABLE void untrust(const QString& code);
+    /// 清空全部信任（QML 设置页信任卡；审计 TrustClear 在 TrustStore 内落）
+    Q_INVOKABLE void clearTrusted();
     /// 设置设备备注（PRD P6）：条目存在返回 true
     Q_INVOKABLE bool setTrustNote(const QString& code, const QString& note);
     Q_INVOKABLE void clearTrust();

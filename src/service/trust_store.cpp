@@ -9,6 +9,7 @@
 
 #include "foundation/fs_portable.hpp"
 #include "foundation/jsonx.hpp"
+#include "foundation/logger/audit_logger.hpp"
 #include "foundation/logger/ilogger.hpp"
 
 namespace sc::localdesk {
@@ -159,11 +160,13 @@ void TrustStore::trust(const std::string& code, const std::string& name) {
             e.name = name;
             e.trusted_at = now_timestamp();
             save();
+            audit("TrustAdd", norm, "刷新记忆 name=" + name);
             return;
         }
     }
     entries_.push_back(Entry{norm, name, "", now_timestamp()});
     save();
+    audit("TrustAdd", norm, "确认弹窗记忆 name=" + name);
 }
 
 bool TrustStore::set_note(const std::string& code, const std::string& note) {
@@ -176,6 +179,7 @@ bool TrustStore::set_note(const std::string& code, const std::string& note) {
             }
             e.note = note;
             save();
+            audit("TrustNote", norm, "note=" + note);
             return true;
         }
     }
@@ -189,6 +193,7 @@ void TrustStore::untrust(const std::string& code) {
         if (it->code == norm) {
             entries_.erase(it);
             save();
+            audit("TrustRemove", norm, "吊销信任（下次连接强制确认）");
             return;
         }
     }
@@ -199,8 +204,10 @@ void TrustStore::clear() {
     if (entries_.empty()) {
         return;
     }
+    const size_t n = entries_.size();
     entries_.clear();
     save();
+    audit("TrustClear", "-", "清空全部信任 count=" + std::to_string(n));
 }
 
 size_t TrustStore::count() const {
@@ -211,6 +218,16 @@ size_t TrustStore::count() const {
 std::vector<TrustStore::Entry> TrustStore::list() const {
     std::lock_guard<std::mutex> lk(mtx_);
     return entries_;
+}
+
+void TrustStore::audit(const std::string& event, const std::string& code,
+                       const std::string& note) {
+    // 前置：调用方已持锁（audit_ 指针只在装配期设置，无竞态）
+    if (audit_ != nullptr) {
+        audit_->audit(event, "OK", code, "-", note);
+    }
+    SCLD_LOG(log_, LogLevel::Info, "trust",
+             event + " code=" + code + " " + note);
 }
 
 }  // namespace sc::localdesk

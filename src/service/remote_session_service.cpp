@@ -711,6 +711,27 @@ void RemoteSessionService::handle_request_connect(const protocol::RequestConnect
         peer_ip_ = req_ip;
     }
 
+    // 锁屏自动拒（Doc19 §1.3，P0）：无人监督场景防悄悄接入——信任直通
+    // 同样拒绝（信任绕过人工确认，锁屏期间无人把关）；无人值守密码链路
+    // 豁免（StartChallenge 即为无人值守设计，锁屏恰是它的使用场景）。
+    // 探测失败由平台层 fail-open 返回未锁，不锁死远程可用性
+    if (lock_checker_ != nullptr && lock_checker_()
+        && (req.flags & protocol::connect_flags::kUnattended) == 0) {
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            reset_to_idle();  // 清上面缓存的审计列，回 Idle
+        }
+        if (transport_ != nullptr) {
+            transport_->send_binary(
+                protocol::build_reject(protocol::RejectReason::Other));
+        }
+        SCLD_LOG(log_, LogLevel::Warn, "session",
+                 "[alias=" + req.alias + "] 本机锁屏，自动拒绝连接请求");
+        audit_event("Request", "Denied", code_str, req_ip,
+                    "锁屏自动拒 alias=" + req.alias);
+        return;
+    }
+
     session_id_ = make_session_id();
     peer_alias_ = req.alias;
 

@@ -141,6 +141,15 @@ public:
         audit_ = audit;
     }
 
+    /// 锁屏探测注入（Doc19 §1.3，P0 锁屏自动拒）：平台实现注入
+    ///（win32 OpenInputDesktop / linux D-Bus ScreenSaver）。
+    /// 锁屏期间入站请求自动拒绝（含信任直通——防无人监督悄悄接入）；
+    /// 无人值守密码链路豁免（StartChallenge 本就是无人值守设计）。
+    /// 可空（未注入则不做锁屏判定）
+    void set_lock_checker(std::function<bool()> lc) {
+        lock_checker_ = std::move(lc);
+    }
+
     /// 自连拦截（PRD 连接黑名单）：注入本机判定回调（IP 属本机集合 且 端口==本机监听端口）；
     /// connect_to_peer 拨号前比对，命中即本地拒绝不发网络包。
     /// 双实例同机（端口不同）不算自连，放行保 E2E 回环
@@ -218,6 +227,7 @@ public:
     TrustStore* trust_{nullptr};
     BlacklistStore* blacklist_{nullptr};          ///< 黑名单（可空，黑优先过滤）
     foundation::AuditLogger* audit_{nullptr};     ///< 审计分流（可空）
+    std::function<bool()> lock_checker_{nullptr}; ///< 锁屏探测（可空）
     std::string peer_code_str_;  ///< 当前对端 9 位码（审计列；持锁写，Idle 清）
     std::string peer_ip_;        ///< 当前对端 IP（审计列；入站时缓存，持锁写）
     std::shared_ptr<foundation::EventBus> bus_;

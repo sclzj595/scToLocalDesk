@@ -506,6 +506,13 @@ void QtEventBridge::untrust(const QString& code) {
              "删除信任 code=" + code.toStdString());  // 审计：Warn 即时落盘
 }
 
+void QtEventBridge::clearTrusted() {
+    if (trust_ != nullptr) {
+        // TrustClear 审计在 TrustStore 内部落 audit.log（Doc19 §6）
+        trust_->clear();
+    }
+}
+
 bool QtEventBridge::setTrustNote(const QString& code, const QString& note) {
     if (trust_ == nullptr) {
         return false;

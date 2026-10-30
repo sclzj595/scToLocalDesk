@@ -65,13 +65,8 @@ MainWindow::MainWindow() {
     filePage_ = filePage;
     stack_->addWidget(filePage);                   // 3 文件传输
     stack_->addWidget(settingsPage);               // 4 设置
-    // 设置页：深色开关 → 统一主题入口；清空信任缓存 → TrustStore
+    // 设置页：深色开关 → 统一主题入口（清空信任已收口进设置页直调 TrustStore）
     connect(settingsPage, &SettingsPage::themeChanged, this, &MainWindow::applyTheme);
-    connect(settingsPage, &SettingsPage::clearTrustRequested, this, [this] {
-        if (trust_ != nullptr) {
-            trust_->clear();
-        }
-    });
     updateDockStyle();   // 栈已就绪：应用初始选中态（第 0 项竖线+染色）
     body->addWidget(stack_, 1);
     root->addLayout(body, 1);
@@ -508,6 +503,9 @@ void MainWindow::setTrustStore(TrustStore* ts) {
     trust_ = ts;
     if (connCode_ != nullptr) {
         connCode_->set_trust_store(ts);
+    }
+    if (settingsPage_ != nullptr) {
+        settingsPage_->set_trust_store(ts);  // 信任管理子页（Doc19 §10）
     }
 }
 

@@ -237,6 +237,86 @@ Item {
                 }
             }
 
+            // ---- 信任设备管理（Doc19 §10 子页收口进设置页；IT 视图） ----
+            // 名单内设备连接本机免弹窗确认；吊销后恢复人工确认。
+            // TrustAdd/TrustRemove/TrustClear 审计在 TrustStore 内落 audit.log
+            GroupCard {
+                id: trustCard
+                title: qsTr("信任设备（免确认直连）")
+                visible: root.itView
+
+                function reload() {
+                    trustRepeater.model = ScLocaldesk.listTrusted();
+                    trustEmpty.visible = trustRepeater.count === 0;
+                    trustClearBtn.visible = trustRepeater.count > 0;
+                }
+                onVisibleChanged: reload()
+                Component.onCompleted: reload()
+
+                Text {
+                    id: trustEmpty
+                    text: qsTr("暂无信任设备（确认弹窗勾选"记住此设备"后进入）")
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontHint
+                    color: Theme.textHint
+                    visible: true
+                }
+
+                Repeater {
+                    id: trustRepeater
+                    model: []
+                    delegate: RowLayout {
+                        required property var modelData
+                        width: trustCard.width - 48
+                        spacing: 8
+                        Text {
+                            text: modelData.code
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontBody
+                            font.weight: Font.DemiBold
+                            color: Theme.textMain
+                        }
+                        Text {
+                            text: modelData.name === ""
+                                  ? (modelData.note === "" ? "—" : modelData.note)
+                                  : (modelData.note === ""
+                                     ? modelData.name
+                                     : modelData.name + "（" + modelData.note + "）")
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontHint
+                            color: Theme.textHint
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            text: modelData.time
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontHint
+                            color: Theme.textHint
+                        }
+                        Button {
+                            text: qsTr("吊销")
+                            font.family: Theme.fontFamily
+                            onClicked: {
+                                ScLocaldesk.untrust(modelData.code);
+                                trustCard.reload();
+                            }
+                        }
+                    }
+                }
+
+                Button {
+                    id: trustClearBtn
+                    text: qsTr("清空全部信任")
+                    font.family: Theme.fontFamily
+                    visible: false
+                    onClicked: {
+                        ScLocaldesk.clearTrusted();
+                        trustCard.reload();
+                    }
+                }
+            }
+
             // ---- 黑名单（Doc19 §3.4，P0；IT 视图） ----
             // 命中即静默丢弃（不弹窗不回包），仅审计——入口保持最小可用：
             // 列表展示 + 条目移除 + 一键清空；拉黑动作从信任列表/设备操作加

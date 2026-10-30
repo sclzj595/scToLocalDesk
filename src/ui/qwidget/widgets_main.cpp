@@ -34,6 +34,7 @@
         #include "platform/qt_adapter/single_instance_guard.hpp"
         #include "platform/qt_adapter/video_pipeline.hpp"
         #include "platform/win32/crash_reporter.hpp"
+        #include "platform/win32/session_lock.hpp"
         #include "platform/win32/system_info.hpp"
         #include "service/alias_service.hpp"
         #include "service/app_config.hpp"
@@ -136,6 +137,7 @@ int main(int argc, char* argv[]) {
     sc::localdesk::foundation::AuditLogger audit_logger(
         QCoreApplication::applicationDirPath().toStdWString() + L"\\logs\\audit.log",
         id_service.self_code());
+    trust_store.set_audit_logger(&audit_logger);  // 信任变更落 audit.log（Doc19 §6）
 
     // 发现栈（Doc18 §3.4）：组播心跳 → AliasService 在线表 → 设备页快照对账
     auto bus = std::make_shared<sc::localdesk::foundation::EventBus>();
@@ -194,6 +196,8 @@ int main(int argc, char* argv[]) {
     sessions->set_trust_store(&trust_store);  // 已信任设备免确认直连（Doc18 §3.2）
     sessions->set_blacklist(&blacklist_store);  // 黑名单命中静默丢弃（Doc19 §3.4）
     sessions->set_audit_logger(&audit_logger);  // 审计分流 audit.log（Doc19 §6）
+    sessions->set_lock_checker(
+        &sc::localdesk::platform::is_session_locked);  // 锁屏自动拒（Doc19 §1.3）
     // 自连拦截（PRD 连接黑名单）：本机网卡 IP 集合 + 本机监听端口双条件
     const std::vector<std::string> local_ips = sys.ips;
     const uint16_t local_port = static_cast<uint16_t>(cfg.ws_port);

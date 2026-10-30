@@ -244,15 +244,17 @@ if(SCTOLOCALDESK_BUILD_QT_APP)
                 src/platform/win32/input_injector.cpp
                 src/platform/win32/system_info.cpp
                 src/platform/win32/crash_reporter.cpp
+                src/platform/win32/session_lock.cpp
             )
         else()
             # Linux（Doc18 P6）：system_info 走 POSIX 实现；注入器 XTest
             # （dlopen libXtst 运行时加载）；自启动 .desktop；CrashReporter
-            # 用 core-dump 承接存根（同文件 #else 分支）
+            # 用 core-dump 承接存根（同文件 #else 分支）；锁屏探测 D-Bus
             target_sources(scToLocalDesk PRIVATE
                 src/platform/linux/system_info_linux.cpp
                 src/platform/linux/input_injector_linux.cpp
                 src/platform/linux/auto_start_linux.cpp
+                src/platform/linux/session_lock.cpp
                 src/platform/win32/crash_reporter.cpp
             )
         endif()
@@ -335,6 +337,7 @@ if(SCTOLOCALDESK_BUILD_WIDGETS_APP)
                 src/platform/win32/input_injector.cpp
                 src/platform/win32/system_info.cpp
                 src/platform/win32/crash_reporter.cpp
+                src/platform/win32/session_lock.cpp
                 src/platform/qt_adapter/qt_udp_discovery.cpp
             )
         endif()
