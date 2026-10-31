@@ -20,10 +20,10 @@ TrayController::TrayController(QObject* parent)
     // DWM 圆角/描边；主题明暗随 GlassTheme 单例实时取值（QML 端经
     // setUiTheme 桥接同步，两端形态一致）
     sc::localdesk::ui::GlassDialog::styleGlassMenu(&menu_);
-    show_action_ = menu_.addAction(QStringLiteral("显示主窗口"));
+    show_action_ = menu_.addAction(tr("显示主窗口"));
     menu_.addSeparator();
     // 会话知情权（PRD P4）：状态项只读展示；一键断开红标项恒显（无会话禁用）
-    session_action_ = menu_.addAction(QStringLiteral("远程协助进行中"));
+    session_action_ = menu_.addAction(tr("远程协助进行中"));
     session_action_->setEnabled(false);
     // 红色标记（QMenu 不渲染富文本，画红圆点图标作视觉警示）
     QPixmap red_pm(12, 12);
@@ -36,20 +36,20 @@ TrayController::TrayController(QObject* parent)
     rp.end();
     red_dot_icon_ = QIcon(red_pm);
     disconnect_action_ = menu_.addAction(red_dot_icon_,
-                                         QStringLiteral("断开所有远程会话"));
+                                         tr("断开所有远程会话"));
     disconnect_action_->setEnabled(false);
     // 会话内一键冻结输入（Doc19 §2.1）：双向锁语义——物理+注入全丢，
     // 画面继续传；勾选态由执行结果回执（set_input_frozen_state）
-    freeze_action_ = menu_.addAction(QStringLiteral("冻结键鼠输入（画面继续）"));
+    freeze_action_ = menu_.addAction(tr("冻结键鼠输入（画面继续）"));
     freeze_action_->setCheckable(true);
     freeze_action_->setEnabled(false);
     menu_.addSeparator();
-    stop_action_ = menu_.addAction(QStringLiteral("停止服务"));
+    stop_action_ = menu_.addAction(tr("停止服务"));
     menu_.addSeparator();
-    quit_action_ = menu_.addAction(QStringLiteral("退出程序"));
+    quit_action_ = menu_.addAction(tr("退出程序"));
 
     tray_.setContextMenu(&menu_);
-    tray_.setToolTip(QStringLiteral("SC 邻桌"));
+    tray_.setToolTip(tr("SC 邻桌"));
     // Windows 无 freedesktop 图标主题，fromTheme 恒失败；应用未设 windowIcon
     // 时回退仍为空（"No Icon set" 警告+托盘空白）——SP_ComputerIcon 系统兜底
     const QIcon fallback =
@@ -107,29 +107,29 @@ void TrayController::set_unattended_badge(bool on) {
         tray_.setIcon(QIcon(pm));
     }
     if (on) {
-        tray_.setToolTip(QStringLiteral("SC 邻桌（无人值守开启中）"));
+        tray_.setToolTip(tr("SC 邻桌（无人值守开启中）"));
     }
     else if (!disconnect_action_->isEnabled()) {  // 会话中不改 tooltip
-        tray_.setToolTip(QStringLiteral("SC 邻桌"));
+        tray_.setToolTip(tr("SC 邻桌"));
     }
 }
 
 void TrayController::set_session_active(bool on, const QString& peer_alias) {
     if (on) {
         session_action_->setText(
-            QStringLiteral("远程协助进行中：%1").arg(peer_alias));
+            tr("远程协助进行中：%1").arg(peer_alias));
         session_action_->setVisible(true);
         disconnect_action_->setEnabled(true);
         freeze_action_->setEnabled(true);
-        tray_.setToolTip(QStringLiteral("SC 邻桌（远程协助中：%1）").arg(peer_alias));
+        tray_.setToolTip(tr("SC 邻桌（远程协助中：%1）").arg(peer_alias));
     }
     else {
         session_action_->setVisible(false);
         disconnect_action_->setEnabled(false);
         freeze_action_->setEnabled(false);
         set_input_frozen_state(false);  // 会话结束回弹勾选（自动解除由 main 落地）
-        tray_.setToolTip(unattended_on_ ? QStringLiteral("SC 邻桌（无人值守开启中）")
-                                            : QStringLiteral("SC 邻桌"));
+        tray_.setToolTip(unattended_on_ ? tr("SC 邻桌（无人值守开启中）")
+                                            : tr("SC 邻桌"));
     }
 }
 
@@ -141,13 +141,13 @@ void TrayController::set_input_frozen_state(bool on) {
 }
 
 void TrayController::set_service_stopped(bool on) {
-    stop_action_->setText(on ? QStringLiteral("恢复服务") : QStringLiteral("停止服务"));
+    stop_action_->setText(on ? tr("恢复服务") : tr("停止服务"));
     if (on) {
-        tray_.setToolTip(QStringLiteral("SC 邻桌（服务已停止）"));
+        tray_.setToolTip(tr("SC 邻桌（服务已停止）"));
     }
     else if (!disconnect_action_->isEnabled()) {  // 会话中 tooltip 由会话态管理
-        tray_.setToolTip(unattended_on_ ? QStringLiteral("SC 邻桌（无人值守开启中）")
-                                        : QStringLiteral("SC 邻桌"));
+        tray_.setToolTip(unattended_on_ ? tr("SC 邻桌（无人值守开启中）")
+                                        : tr("SC 邻桌"));
     }
 }
 

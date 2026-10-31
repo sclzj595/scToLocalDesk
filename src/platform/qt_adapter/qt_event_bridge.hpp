@@ -175,6 +175,10 @@ public:
     Q_INVOKABLE QString settingsValue(const QString& key) const;
     /// 写配置值：校验 → 更新 AppConfig → 全量落盘 → 即时生效项接服务 setter
     Q_INVOKABLE void settingsSetValue(const QString& key, const QString& value);
+    /// 界面语言（i18n，config general.language，auto|zh|en）：QML 设置页读写
+    Q_INVOKABLE QString language() const;
+    /// 切换界面语言并持久化（翻译器装载在 main 启动期，重启后生效；非法值忽略）
+    Q_INVOKABLE void setLanguage(const QString& language);
 
 signals:
     // 发现

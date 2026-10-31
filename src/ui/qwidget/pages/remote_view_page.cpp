@@ -3,6 +3,7 @@
 
 #include <QButtonGroup>
 #include <QColor>
+#include <QCoreApplication>
 #include <QFont>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -17,7 +18,6 @@
 #include "core/interface/iinput_injector.hpp"
 #include "core/interface/types.hpp"
 #include "foundation/config_parser.hpp"
-#include "foundation/error_text.hpp"
 #include "platform/qt_adapter/input_bridge.hpp"
 #include "service/app_config.hpp"
 #include "service/remote_session_service.hpp"
@@ -38,7 +38,7 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
     auto* toolLay = new QHBoxLayout(toolbar_);
     toolLay->setContentsMargins(16, 6, 16, 6);
     toolLay->setSpacing(8);
-    auto* fullBtn = new QPushButton(QStringLiteral("⛶ 全屏"));
+    auto* fullBtn = new QPushButton(tr("⛶ 全屏"));
     fullBtn->setObjectName(QStringLiteral("secondaryBtn"));
     // 对齐 QML fullBtn：全屏/还原切换（原为未接 clicked 的死按钮）
     connect(fullBtn, &QPushButton::clicked, this, [this] {
@@ -50,7 +50,7 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
             w->showFullScreen();
         }
     });
-    auto* discBtn = new QPushButton(QStringLiteral("断开连接"));
+    auto* discBtn = new QPushButton(tr("断开连接"));
     discBtn->setObjectName(QStringLiteral("dangerBtn"));
     // NoFocus 红线：按钮不吃键盘焦点——点击后 Space/Enter 激活按钮、
     // Tab 走焦点导航，远端收不到这些键（与 QML 版 Page_RemoteView 同修）
@@ -66,7 +66,7 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
     toolLay->addWidget(sep);
     // 剪贴板同步开关（Doc19 §5 P2）：会话级双向文本同步，默认开；状态
     // 持久化 config session.clipboard_sync（两端同键，关=不发不收）
-    clip_btn_ = new QPushButton(QStringLiteral("📋 剪贴板"), toolbar_);
+    clip_btn_ = new QPushButton(tr("📋 剪贴板"), toolbar_);
     clip_btn_->setObjectName(QStringLiteral("secondaryBtn"));
     clip_btn_->setFocusPolicy(Qt::NoFocus);  // NoFocus 红线：不吃远端键鼠焦点
     clip_btn_->setCheckable(true);
@@ -85,8 +85,8 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
     // 1:1 原始像素，互斥 checkable；状态持久化 config view.scale_mode
     //（双 exe 共用键），bind_config 回放，切换即时落盘
     auto* mode_group = new QButtonGroup(this);
-    const auto make_mode_btn = [this, mode_group, &toolLay](const char* text) {
-        auto* b = new QPushButton(QString::fromUtf8(text), toolbar_);
+    const auto make_mode_btn = [this, mode_group, &toolLay](const QString& text) {
+        auto* b = new QPushButton(text, toolbar_);
         b->setObjectName(QStringLiteral("secondaryBtn"));
         b->setFocusPolicy(Qt::NoFocus);  // NoFocus 红线：不吃远端键鼠焦点
         b->setCheckable(true);
@@ -94,8 +94,8 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
         toolLay->addWidget(b);
         return b;
     };
-    fit_btn_ = make_mode_btn("自适应");
-    stretch_btn_ = make_mode_btn("拉伸");
+    fit_btn_ = make_mode_btn(tr("自适应"));
+    stretch_btn_ = make_mode_btn(tr("拉伸"));
     pixel_btn_ = make_mode_btn("1:1");
     connect(fit_btn_, &QPushButton::toggled, this, [this](bool on) {
         if (on && scale_mode_ != ScaleMode::Fit) {  // 回放重复置位不重写
@@ -122,7 +122,7 @@ RemoteViewPage::RemoteViewPage(QWidget* parent) : QWidget(parent) {
 
     // 只读徽标（P1）：顶部悬浮小胶囊——控制端收到 Approved 附加字节=1
     // （对端未授权键鼠）时显示，仅告知；本地输入照常采集发送，由被控端丢弃
-    ro_badge_ = new QLabel(QStringLiteral("只读模式（对方未授权键鼠）"), this);
+    ro_badge_ = new QLabel(tr("只读模式（对方未授权键鼠）"), this);
     ro_badge_->setObjectName(QStringLiteral("roBadge"));
     ro_badge_->setAlignment(Qt::AlignCenter);
     ro_badge_->setStyleSheet(QStringLiteral(
@@ -254,18 +254,33 @@ void RemoteViewPage::paintEvent(QPaintEvent*) {
     if (placeholder_) {
         // 采集失败占位（Doc19 §4.2）：灰底 + 居中提示（titleLabel 体系字：
         // 16px 半粗），会话保持不断、键鼠透传不受影响。
-        // 文案走 foundation 映射（员工视图红线：内部错误码不出 UI）
+        // 文案走 ErrorText 上下文译文（员工视图红线：内部错误码不出 UI；
+        // 源串与 foundation/error_text.hpp 对齐，core 日志仍用原表）
         p.fillRect(rect(), QColor(0xEC, 0xEF, 0xF3));
         QFont f = p.font();
         f.setPixelSize(16);
         f.setWeight(QFont::DemiBold);
         p.setFont(f);
         p.setPen(QColor(0x66, 0x66, 0x66));
-        const auto cap_err = placeholder_locked_
+        const int cap_err = placeholder_locked_
             ? static_cast<int>(CaptureErr::DesktopLocked)
             : static_cast<int>(CaptureErr::DriverError);
-        p.drawText(rect(), Qt::AlignCenter,
-                   QString::fromUtf8(foundation::friendly_capture_fail(cap_err)));
+        QString cap_text;
+        switch (cap_err) {
+        case 1:  // DesktopLocked（对方锁屏）
+            cap_text = QCoreApplication::translate(
+                "ErrorText", "对方屏幕已锁定，画面暂时不可用");
+            break;
+        case 2:  // DriverError（采集驱动异常）
+            cap_text = QCoreApplication::translate(
+                "ErrorText", "无法获取对方屏幕画面，尝试以管理员运行");
+            break;
+        default:
+            cap_text = QCoreApplication::translate(
+                "ErrorText", "对方屏幕画面暂时不可用");
+            break;
+        }
+        p.drawText(rect(), Qt::AlignCenter, cap_text);
         return;
     }
     if (frame_.isNull()) {
@@ -275,17 +290,17 @@ void RemoteViewPage::paintEvent(QPaintEvent*) {
         if (session_active_) {
             if (is_controller_) {
                 p.drawText(rect(), Qt::AlignCenter,
-                           QStringLiteral("已连接 %1，等待对方画面…\n（对方未开启画面共享或对方暂无采集能力）")
+                           tr("已连接 %1，等待对方画面…\n（对方未开启画面共享或对方暂无采集能力）")
                                .arg(peer_));
             }
             else {
                 p.drawText(rect(), Qt::AlignCenter,
-                           QStringLiteral("正在被 %1 远程控制").arg(peer_));
+                           tr("正在被 %1 远程控制").arg(peer_));
             }
             return;
         }
         p.drawText(rect(), Qt::AlignCenter,
-                   QStringLiteral("暂未进行远程控制\n从设备列表或连接码页发起会话后，画面将显示在此处"));
+                   tr("暂未进行远程控制\n从设备列表或连接码页发起会话后，画面将显示在此处"));
         return;
     }
     // 缩放三模式绘制（Doc19 §4.4）：Fit 等比黑边 / Stretch 拉伸铺满 /

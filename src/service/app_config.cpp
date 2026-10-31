@@ -12,6 +12,10 @@ void AppConfig::load(const foundation::IniConfig& ini) {
     alias = ini.get_str("general", "alias", alias);
     run_mode = ini.get_str("general", "run_mode", run_mode);
     view_mode = ini.get_str("general", "view_mode", view_mode);
+    language = ini.get_str("general", "language", language);
+    if (language != "auto" && language != "zh" && language != "en") {
+        language = "auto";  // 非法值兜底默认（Doc12 §5）
+    }
 
     ws_port = ini.get_int("network", "ws_port", ws_port);
     if (ws_port < 1024 || ws_port > 65535) {
@@ -77,6 +81,7 @@ void AppConfig::save(foundation::IniConfig& ini) const {
     ini.set_str("general", "alias", alias);
     ini.set_str("general", "run_mode", run_mode);
     ini.set_str("general", "view_mode", view_mode);
+    ini.set_str("general", "language", language);
 
     ini.set_int("network", "ws_port", ws_port);
     ini.set_int("network", "heartbeat_interval_s", heartbeat_interval_s);

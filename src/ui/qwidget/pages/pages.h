@@ -315,6 +315,8 @@ public:
 signals:
     /// 深色主题开关切换（主窗口统一 applyTheme：QSS + Dock 染色 + glyph）
     void themeChanged(bool dark);
+    /// 语言切换（i18n）：变更已落盘，主窗口 Toast 提示「重启后生效」
+    void languageChanged();
     /// 无人值守开关变更（widgets_main 接线托盘徽标，Doc16 §7）
     void unattEnabledChanged(bool on);
     /// 同名覆盖策略变更（widgets_main 接线 FileService 热生效，Doc11 §4.2）
@@ -366,6 +368,7 @@ private:
     ToggleSwitch* safeSw_{nullptr};
     ToggleSwitch* blockExecSw_{nullptr};  ///< 可执行后缀拦截（Doc19 §5）
     QComboBox* owCombo_{nullptr};
+    QComboBox* langCombo_{nullptr};  ///< 界面语言（i18n，general.language）
     ToggleSwitch* unattSw_{nullptr};
     QLineEdit* lvEd_{nullptr};
     QLineEdit* logMaxEd_{nullptr};

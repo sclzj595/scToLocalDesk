@@ -25,7 +25,7 @@ AppDialog {
     closePolicy: Popup.CloseOnEscape
 
     Text {
-        text: qsTr("请输入 ") + root.peerAlias + " 的无人值守密码"
+        text: qsTr("请输入 %1 的无人值守密码").arg(root.peerAlias)
         font.family: Theme.fontFamily
         font.pixelSize: Theme.fontBody
         color: Theme.textSecond

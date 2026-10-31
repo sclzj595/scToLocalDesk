@@ -149,6 +149,7 @@ ApplicationWindow {
                 }
 
                 Page_Settings {
+                    onRequestToast: text => toast.show(text)
                 }
             }
         }

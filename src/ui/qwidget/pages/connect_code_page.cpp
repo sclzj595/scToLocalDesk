@@ -33,7 +33,7 @@ ConnectCodePage::ConnectCodePage(QWidget* parent) : QWidget(parent) {
     lay->setContentsMargins(28, 24, 28, 24);
     lay->setSpacing(14);
 
-    lay->addWidget(makeTitle(QStringLiteral("通过连接码连接")));
+    lay->addWidget(makeTitle(tr("通过连接码连接")));
     lay->addWidget(makeHint(QStringLiteral(
         "输入对方首页展示的 9 位连接码，对方确认后建立会话；确认过一次将进入信任缓存")));
 
@@ -73,7 +73,7 @@ ConnectCodePage::ConnectCodePage(QWidget* parent) : QWidget(parent) {
     }
     inputRow->addSpacing(8);
 
-    auto* goBtn = new QPushButton(QStringLiteral("连  接"));
+    auto* goBtn = new QPushButton(tr("连  接"));
     goBtn->setObjectName(QStringLiteral("primaryBtn"));
     connect(goBtn, &QPushButton::clicked, this, &ConnectCodePage::tryConnect);
     inputRow->addWidget(goBtn);
@@ -86,9 +86,9 @@ ConnectCodePage::ConnectCodePage(QWidget* parent) : QWidget(parent) {
     lay->addWidget(errHint_);
 
     auto* head = new QHBoxLayout();
-    head->addWidget(new QLabel(QStringLiteral("最近连接")));
+    head->addWidget(new QLabel(tr("最近连接")));
     head->addStretch();
-    head->addWidget(makeHint(QStringLiteral("已信任设备免对方确认")));
+    head->addWidget(makeHint(tr("已信任设备免对方确认")));
     lay->addLayout(head);
 
     hist_list_ = new QListWidget();
@@ -108,8 +108,8 @@ ConnectCodePage::ConnectCodePage(QWidget* parent) : QWidget(parent) {
                 // 弹窗门面统一出口：令牌 QSS + DWM 圆角/描边（与主窗菜单同源）
                 QMenu* menu = GlassDialog::makeGlassMenu(hist_list_);
                 QAction* act_note =
-                    menu->addAction(QStringLiteral("修改备注"));
-                QAction* act_del = menu->addAction(QStringLiteral("删除此记录"));
+                    menu->addAction(tr("修改备注"));
+                QAction* act_del = menu->addAction(tr("删除此记录"));
                 QAction* picked =
                     menu->exec(hist_list_->mapToGlobal(pos));
                 menu->deleteLater();
@@ -120,8 +120,8 @@ ConnectCodePage::ConnectCodePage(QWidget* parent) : QWidget(parent) {
                 else if (picked == act_note) {
                     bool ok = false;
                     const QString note = GlassDialog::getText(
-                        this, QStringLiteral("设备备注"),
-                        QStringLiteral("标注对方是谁（可空）："),
+                        this, tr("设备备注"),
+                        tr("标注对方是谁（可空）："),
                         it->data(Qt::UserRole + 1).toString(), &ok);
                     if (ok) {
                         trust_->set_note(code.toStdString(), note.toStdString());
@@ -132,7 +132,7 @@ ConnectCodePage::ConnectCodePage(QWidget* parent) : QWidget(parent) {
     lay->addWidget(hist_list_, 1);
 
     // 空态占位（禁止假数据）：无信任记录时的提示行
-    hist_empty_ = new QLabel(QStringLiteral("暂无连接记录\n首次连接经对方确认后，将显示在此处"));
+    hist_empty_ = new QLabel(tr("暂无连接记录\n首次连接经对方确认后，将显示在此处"));
     hist_empty_->setAlignment(Qt::AlignCenter);
     hist_empty_->setStyleSheet(QStringLiteral(
         "color: %1; font-size: 13px;")
@@ -159,9 +159,9 @@ void ConnectCodePage::reload_history() {
                 QString::fromStdString(e.trusted_at), "yyyy-MM-dd HH:mm:ss");
             QString time_text;
             if (t.date() == today) {
-                time_text = t.toString("'今天' HH:mm");
+                time_text = t.toString(tr("'今天' HH:mm"));
             } else if (t.date() == today.addDays(-1)) {
-                time_text = t.toString("'昨天' HH:mm");
+                time_text = t.toString(tr("'昨天' HH:mm"));
             } else if (t.date().year() == today.year()) {
                 time_text = t.toString("MM-dd HH:mm");
             } else {
@@ -179,7 +179,7 @@ void ConnectCodePage::reload_history() {
             // 备注展示（PRD P6）：有备注附在名称后
             const QString note = QString::fromStdString(e.note);
             auto* it = new QListWidgetItem(
-                QStringLiteral("%1%2    %3    %4    连接")
+                tr("%1%2    %3    %4    连接")
                     .arg(QString::fromStdString(e.name),
                          note.isEmpty() ? QString() : QStringLiteral("（%1）").arg(note),
                          grouped, time_text));
@@ -301,7 +301,7 @@ void ConnectCodePage::tryConnect() {
     }
     if (code.length() != 9) {
         // 错误反馈：提示行染红 + 未填满的段抖动提示（染色 1.6s 后复原）
-        errHint_->setText(QStringLiteral("请输满 9 位连接码"));
+        errHint_->setText(tr("请输满 9 位连接码"));
         errHint_->setStyleSheet(QStringLiteral("color: %1;")
                                     .arg(GlassTheme::instance().accentRed().name(QColor::HexRgb)));
         QTimer::singleShot(1600, this, [this] {

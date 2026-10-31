@@ -16,6 +16,9 @@ Item {
     // IT 视图全量；切换行在通用组恒显（员工可自行打开）
     property bool itView: ScLocaldesk.settingsValue("general.view_mode") === "it"
 
+    // Toast 请求（MainWindow 挂载点转发，与 Page_FileTransfer 同款机制）
+    signal requestToast(string text)
+
     // 7 组字段 ↔ AppConfig（Doc18 §3.3）：初值经 ScLocaldesk.settingsValue 注入，
     // 变更经 settingsSetValue 校验/落盘 config.ini/即时生效项接服务 setter
 
@@ -52,6 +55,40 @@ Item {
                     label: qsTr("本机连接名")
                     value: ScLocaldesk.settingsValue("general.alias")
                     onEdited: v => ScLocaldesk.settingsSetValue("general.alias", v)
+                }
+                // 语言 Language（i18n Doc18 §7.3）：auto|zh|en 写 config
+                // general.language，.qm 需启动时装载 → 重启后生效
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: qsTr("语言 Language")
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontBody
+                        color: Theme.textMain
+                    }
+                    Item { Layout.fillWidth: true }
+                    ComboBox {
+                        id: langCombo
+                        width: 160
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontBody
+                        textRole: "label"
+                        valueRole: "value"
+                        model: [
+                            { label: qsTr("跟随系统"), value: "auto" },
+                            { label: qsTr("中文"), value: "zh" },
+                            { label: qsTr("English"), value: "en" }
+                        ]
+                        currentIndex: {
+                            const v = ScLocaldesk.language();
+                            const vs = ["auto", "zh", "en"];
+                            return Math.max(0, vs.indexOf(v));
+                        }
+                        onActivated: (idx) => {
+                            ScLocaldesk.setLanguage(langCombo.valueAt(idx));
+                            requestToast(qsTr("重启后生效"));
+                        }
+                    }
                 }
                 SwitchRow {
                     text: qsTr("开机自动启动")
@@ -272,7 +309,7 @@ Item {
 
                 Text {
                     id: trustEmpty
-                    text: qsTr("暂无信任设备（确认弹窗勾选"记住此设备"后进入）")
+                    text: qsTr("暂无信任设备（确认弹窗勾选「记住此设备」后进入）")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontHint
                     color: Theme.textHint

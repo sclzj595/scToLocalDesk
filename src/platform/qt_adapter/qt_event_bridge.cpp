@@ -28,7 +28,6 @@
 #include <QStandardPaths>
 
 #include <foundation/config_parser.hpp>
-#include <foundation/error_text.hpp>
 #include <platform/win32/auto_start.hpp>
 #include <platform/qt_adapter/qt_udp_discovery.hpp>
 #include <service/alias_service.hpp>
@@ -42,6 +41,12 @@
 #include <ui/qwidget/glass_theme.h>
 
 namespace sc::localdesk::platform {
+
+// 拨号失败/等确认超时统一文案（foundation::friendly_connect_fail 的 UI 侧
+// 镜像，Doc19 §7 员工视图红线）：调用点随后续 UI 专项接入，先以 NOOP
+// 入翻译表保证词条齐全（lupdate 识别 QT_TRANSLATE_NOOP）
+static const char* const kConnectFailText =
+    QT_TRANSLATE_NOOP("ErrorText", "无法连接对方，请确认网络与连接码");
 
 void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
                          RemoteSessionService* sessions, FileService* files,
@@ -76,13 +81,35 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
         }, Qt::QueuedConnection);
     });
     // 控制端状态流转（PRD P7）：stage 直传 + busy 属性联动（防重复发起置灰）。
-    // rejected 附带 friendly_reject 映射文案——REJECT reason 数值不出 UI 层
+    // rejected 附带员工可读文案——REJECT reason 数值不出 UI 层（Doc19 §7）：
+    // ErrorText 上下文取译文，源串与 foundation/error_text.hpp 对齐
+    //（core 日志仍用原表），本文件不再直接引用该表
     bus->subscribe<Evt_ConnectStateChanged>([this](const Evt_ConnectStateChanged& e) {
         QMetaObject::invokeMethod(this, [this, e] {
             QString reason_text;
             if (e.stage == "rejected" && e.reject_reason >= 0) {
-                reason_text = QString::fromUtf8(
-                    foundation::friendly_reject(e.reject_reason));
+                switch (e.reject_reason) {
+                case 2:  // SessionBusy（单会话红线占用）
+                    reason_text = QCoreApplication::translate(
+                        "ErrorText", "对方正忙，请稍后再试");
+                    break;
+                case 1:  // PasswordWrong（无人值守密码校验失败）
+                    reason_text = QCoreApplication::translate(
+                        "ErrorText", "密码不正确或已被修改");
+                    break;
+                case 4:  // Timeout（确认弹窗 30s 未响应自动拒）
+                    reason_text = QCoreApplication::translate(
+                        "ErrorText", "对方未响应，请求已过期");
+                    break;
+                case 0:  // ManualDenied（人工拒绝）
+                    reason_text = QCoreApplication::translate(
+                        "ErrorText", "对方拒绝了本次协助");
+                    break;
+                default:  // Other/未知 reason 同样不给内部细节
+                    reason_text = QCoreApplication::translate(
+                        "ErrorText", "连接被对方拒绝");
+                    break;
+                }
             }
             emit connectStateChanged(QString::fromStdString(e.stage),
                                      QString::fromStdString(e.alias), reason_text);
@@ -106,8 +133,9 @@ void QtEventBridge::init(foundation::EventBus* bus, AliasService* aliases,
                 "协助已结束", "对方拒绝了协助", "访问密码不正确",
                 "请求等待超时", "对方正在协助中", "网络中断，协助已断开", "对方已断开协助"};
             const int idx = static_cast<int>(e.reason);
-            emit sessionClosed(QString::fromUtf8(
-                kText[idx >= 0 && idx < 7 ? idx : 0]));
+            // UI 面向文案取译文（源串仅作词条键；BridgeText 上下文，i18n 收口）
+            emit sessionClosed(QCoreApplication::translate(
+                "BridgeText", kText[idx >= 0 && idx < 7 ? idx : 0]));
         }, Qt::QueuedConnection);
     });
     bus->subscribe<Evt_ConnectRequest>([this](const Evt_ConnectRequest& e) {
@@ -440,7 +468,8 @@ bool QtEventBridge::startControl(const QString& alias, bool unattended,
     if (sessions_ == nullptr) {
         SCLD_LOG(log_, foundation::LogLevel::Warn, "session",
                  "发起协助失败：服务未就绪");
-        emit controlStartFailed(QStringLiteral("服务未就绪"));
+        emit controlStartFailed(
+            QCoreApplication::translate("BridgeText", "服务未就绪"));
         return false;
     }
     // 寻址失败细分文案（PRD P5）：connect_to_peer 返回 bool 无原因，桥层
@@ -449,7 +478,8 @@ bool QtEventBridge::startControl(const QString& alias, bool unattended,
     if (!self.isEmpty() && alias == self) {
         SCLD_LOG(log_, foundation::LogLevel::Warn, "session",
                  "发起协助失败：目标为本机 [alias=" + alias.toStdString() + "]");
-        emit controlStartFailed(QStringLiteral("不能发起对本机的协助"));
+        emit controlStartFailed(
+            QCoreApplication::translate("BridgeText", "不能发起对本机的协助"));
         return false;
     }
     using SessState = RemoteSessionService::SessState;
@@ -457,15 +487,17 @@ bool QtEventBridge::startControl(const QString& alias, bool unattended,
         SCLD_LOG(log_, foundation::LogLevel::Warn, "session",
                  "发起协助失败：会话占用 state=" + std::to_string(
                      static_cast<int>(sessions_->state())));
-        emit controlStartFailed(QStringLiteral("当前会话尚未结束，请先断开"));
+        emit controlStartFailed(
+            QCoreApplication::translate("BridgeText", "当前会话尚未结束，请先断开"));
         return false;
     }
     DeviceInfo peer_info;
     if (aliases_ == nullptr || !aliases_->resolve(alias.toStdString(), peer_info)) {
         SCLD_LOG(log_, foundation::LogLevel::Warn, "session",
                  "发起协助失败：未发现设备 [alias=" + alias.toStdString() + "]");
-        emit controlStartFailed(QStringLiteral("未发现设备 [%1]，对方可能已下线")
-                                    .arg(alias));
+        emit controlStartFailed(
+            QCoreApplication::translate("BridgeText", "未发现设备 [%1]，对方可能已下线")
+                .arg(alias));
         return false;
     }
     return sessions_->connect_to_peer(alias.toStdString(), unattended,
@@ -648,13 +680,15 @@ bool QtEventBridge::addManualPeer(const QString& alias, const QString& ip, int p
     if (!validAlias(alias) || alias.contains(';') || alias.contains('|')
         || alias.contains('=')) {
         emit settingsRejected(QStringLiteral("discovery.manual_peers"),
-                              QStringLiteral("连接名需 3~20 字符且不含 ; | ="));
+                              QCoreApplication::translate(
+                                  "BridgeText", "连接名需 3~20 字符且不含 ; | ="));
         return false;
     }
     const QHostAddress addr(ip);
     if (addr.isNull() || addr.protocol() != QAbstractSocket::IPv4Protocol) {
         emit settingsRejected(QStringLiteral("discovery.manual_peers"),
-                              QStringLiteral("IP 格式非法（仅支持 IPv4）"));
+                              QCoreApplication::translate(
+                                  "BridgeText", "IP 格式非法（仅支持 IPv4）"));
         return false;
     }
     if (port == 0) {
@@ -662,7 +696,8 @@ bool QtEventBridge::addManualPeer(const QString& alias, const QString& ip, int p
     }
     if (port < 1024 || port > 65535) {
         emit settingsRejected(QStringLiteral("discovery.manual_peers"),
-                              QStringLiteral("端口需 1024~65535"));
+                              QCoreApplication::translate(
+                                  "BridgeText", "端口需 1024~65535"));
         return false;
     }
     // 去重更新：同名改址合并、同址直接命中，避免 config 里重复条目
@@ -740,9 +775,11 @@ QVariantList QtEventBridge::listTrusted() const {
             QString::fromStdString(e.trusted_at), "yyyy-MM-dd HH:mm:ss");
         QString time_text;
         if (t.date() == today) {
-            time_text = t.toString("'今天' HH:mm");
+            time_text = t.toString(
+                QCoreApplication::translate("BridgeText", "'今天' HH:mm"));
         } else if (t.date() == today.addDays(-1)) {
-            time_text = t.toString("'昨天' HH:mm");
+            time_text = t.toString(
+                QCoreApplication::translate("BridgeText", "'昨天' HH:mm"));
         } else if (t.date().year() == today.year()) {
             time_text = t.toString("MM-dd HH:mm");
         } else {
@@ -840,6 +877,9 @@ QString QtEventBridge::settingsValue(const QString& key) const {
     if (k == "general.alias") {
         return QString::fromStdString(cfg_->alias);
     }
+    if (k == "general.language") {
+        return QString::fromStdString(cfg_->language);  // auto|zh|en
+    }
     if (k == "app.auto_start") {
         return cfg_->auto_start ? QStringLiteral("true") : QStringLiteral("false");
     }
@@ -908,6 +948,37 @@ QString QtEventBridge::settingsValue(const QString& key) const {
     return {};
 }
 
+QString QtEventBridge::language() const {
+    return cfg_ != nullptr ? QString::fromStdString(cfg_->language)
+                           : QStringLiteral("auto");
+}
+
+void QtEventBridge::setLanguage(const QString& language) {
+    const QString v = language.trimmed();
+    // 校验（同 AppConfig::load 兜底口径）：仅 auto|zh|en，非法忽略
+    if (v != QLatin1String("auto") && v != QLatin1String("zh")
+        && v != QLatin1String("en")) {
+        SCLD_LOG(log_, foundation::LogLevel::Warn, "settings",
+                 "非法语言值已忽略 language=" + v.toStdString());
+        return;
+    }
+    if (cfg_ == nullptr || ini_ == nullptr
+        || cfg_->language == v.toStdString()) {
+        return;
+    }
+    cfg_->language = v.toStdString();
+    cfg_->save(*ini_);
+    if (ini_->save()) {
+        SCLD_LOG(log_, foundation::LogLevel::Info, "settings",
+                 "已保存 general.language=" + v.toStdString());
+        emit configKeySaved(QStringLiteral("general.language"), v);
+    }
+    else {
+        SCLD_LOG(log_, foundation::LogLevel::Error, "settings",
+                 "config.ini 落盘失败 general.language");
+    }
+}
+
 void QtEventBridge::settingsSetValue(const QString& key, const QString& value) {
     if (ini_ == nullptr || cfg_ == nullptr) {
         SCLD_LOG(log_, foundation::LogLevel::Warn, "settings",
@@ -950,6 +1021,15 @@ void QtEventBridge::settingsSetValue(const QString& key, const QString& value) {
             discovery_->update_self(v, static_cast<uint16_t>(cfg_->ws_port));
         }
         persist("");
+    }
+    else if (k == "general.language") {
+        // 界面语言（i18n）：翻译器装载在 main 启动期，切换后重启生效
+        if (v != "auto" && v != "zh" && v != "en") {
+            warn_invalid("auto/zh/en");
+            return;
+        }
+        cfg_->language = v;
+        persist("（重启生效）");
     }
     else if (k == "app.auto_start") {
         cfg_->auto_start = (value == QStringLiteral("true"));

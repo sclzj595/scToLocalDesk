@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <!-- i18n 翻译产物（Doc18 §7.3）：lrelease 生成于 src/translations/，
+         alias 保持资源路径 /i18n/scToLocalDesk_en.qm（两个 main 装载用） -->
+    <qresource prefix="/i18n">
+        <file alias="scToLocalDesk_en.qm">../translations/scToLocalDesk_en.qm</file>
+    </qresource>
+</RCC>

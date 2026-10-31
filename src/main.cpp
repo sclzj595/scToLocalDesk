@@ -19,6 +19,8 @@
     #include <QRandomGenerator>
     #include <QStandardPaths>
     #include <QTimer>
+    #include <QLocale>
+    #include <QTranslator>
 
     #include "core/auth/manual_confirm_authenticator.hpp"
     #include "core/auth/unattended_authenticator.hpp"
@@ -151,6 +153,24 @@ int main(int argc, char* argv[]) {
     }
     else {
         cfg.load(ini);
+    }
+
+    // 语言装载（i18n Doc18 §7.3）：config [general] language（auto|zh|en），
+    // auto = 系统 locale zh → 中文，否则英文；en 时挂 .qm。
+    // 必须在任何 UI 构造（QML engine/QML tr）之前执行（配置读取之后）
+    static QTranslator app_translator;  // 生命周期活到 app 结束（main 返回才析构）
+    {
+        const QString lang = QString::fromStdString(cfg.language);
+        const QString resolved =
+            (lang == QLatin1String("auto") || lang.isEmpty())
+                ? (QLocale::system().name().startsWith(QLatin1String("zh"))
+                       ? QStringLiteral("zh")
+                       : QStringLiteral("en"))
+                : lang;
+        if (resolved == QLatin1String("en")
+            && app_translator.load(QStringLiteral(":/i18n/scToLocalDesk_en.qm"))) {
+            QCoreApplication::installTranslator(&app_translator);
+        }
     }
 
     // ---------------- DI 组装（Doc03 §5） ----------------
@@ -633,8 +653,8 @@ int main(int argc, char* argv[]) {
                      [&sessions, &logger, &tray] {
                          SCLD_LOG(logger, LogLevel::Warn, "tray", "托盘一键断开所有远程会话");
                          sessions->close_session(protocol::CloseReason::Normal);
-                         tray.notify(QStringLiteral("远程协助"),
-                                     QStringLiteral("已断开所有远程会话"));
+                         tray.notify(QCoreApplication::translate("MainUI", "远程协助"),
+                                     QCoreApplication::translate("MainUI", "已断开所有远程会话"));
                      });
 
     // 键鼠冻结（Doc19 §2.1 会话内一键冻结输入）：托盘勾选 ↔ platform 层；

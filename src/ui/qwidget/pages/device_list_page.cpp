@@ -55,11 +55,11 @@ DeviceListPage::DeviceListPage(QWidget* parent) : QWidget(parent) {
     auto* selfLay = new QHBoxLayout(selfCard);
     selfLay->setContentsMargins(16, 14, 16, 14);
     selfLay->setSpacing(18);
-    selfLay->addWidget(makeAvatar(QStringLiteral("本"), 56));
+    selfLay->addWidget(makeAvatar(tr("本"), 56));
 
     auto* nameCol = new QVBoxLayout();
     nameCol->setSpacing(3);
-    nameCol->addWidget(makeHint(QStringLiteral("本机连接名")));
+    nameCol->addWidget(makeHint(tr("本机连接名")));
     self_name_lbl_ = new QLabel(QStringLiteral("—"));
     self_name_lbl_->setStyleSheet(QStringLiteral("font-size: 14px; font-weight: 600; color: %1;")
                                       .arg(GlassTheme::instance().textMain().name(QColor::HexRgb)));
@@ -69,7 +69,7 @@ DeviceListPage::DeviceListPage(QWidget* parent) : QWidget(parent) {
 
     auto* codeCol = new QVBoxLayout();
     codeCol->setSpacing(3);
-    codeCol->addWidget(makeHint(QStringLiteral("本机连接码")));
+    codeCol->addWidget(makeHint(tr("本机连接码")));
     self_code_lbl_ = new QLabel(QStringLiteral("—"));
     QFont codeFont = self_code_lbl_->font();
     codeFont.setPointSizeF(12.0);
@@ -81,7 +81,7 @@ DeviceListPage::DeviceListPage(QWidget* parent) : QWidget(parent) {
     codeCol->addWidget(self_code_lbl_);
     selfLay->addLayout(codeCol);
 
-    auto* copyBtn = new QPushButton(QStringLiteral("复制"));
+    auto* copyBtn = new QPushButton(tr("复制"));
     copyBtn->setObjectName(QStringLiteral("secondaryBtn"));
     copyBtn->setStyleSheet(QStringLiteral(
         "color: %1; border: 1px solid rgba(157,78,221,0.45); padding: 6px 16px;")
@@ -89,9 +89,9 @@ DeviceListPage::DeviceListPage(QWidget* parent) : QWidget(parent) {
     connect(copyBtn, &QPushButton::clicked, this, [this, copyBtn] {
         QApplication::clipboard()->setText(self_code_lbl_->text().split(' ').join(QString()));
         // 复制反馈：按钮文字临时变化（对齐 QML 版）
-        copyBtn->setText(QStringLiteral("已复制 ✓"));
+        copyBtn->setText(tr("已复制 ✓"));
         QTimer::singleShot(1600, copyBtn, [copyBtn] {
-            copyBtn->setText(QStringLiteral("复制"));
+            copyBtn->setText(tr("复制"));
         });
     });
     selfLay->addWidget(copyBtn);
@@ -99,11 +99,11 @@ DeviceListPage::DeviceListPage(QWidget* parent) : QWidget(parent) {
 
     // ---- 标题行 ----
     auto* head = new QHBoxLayout();
-    head->addWidget(makeTitle(QStringLiteral("局域网设备")));
+    head->addWidget(makeTitle(tr("局域网设备")));
     head->addStretch();
-    head->addWidget(makeHint(QStringLiteral("首次连接需对方确认，确认后免验证直连")));
+    head->addWidget(makeHint(tr("首次连接需对方确认，确认后免验证直连")));
     // 手动添加设备（Doc19 §6.3）：跨子网广播不可达时按 IP 直连
-    auto* manualBtn = new QPushButton(QStringLiteral("手动添加设备"));
+    auto* manualBtn = new QPushButton(tr("手动添加设备"));
     manualBtn->setObjectName(QStringLiteral("secondaryBtn"));
     manualBtn->setStyleSheet(QStringLiteral(
         "color: %1; border: 1px solid rgba(157,78,221,0.45); padding: 6px 16px;")
@@ -157,7 +157,7 @@ void DeviceListPage::apply_snapshot() {
             c.widget = makeDeviceCard(QString::fromStdString(dev.alias),
                                       code_text(dev.code),
                                       QString::fromStdString(dev.ip)
-                                          + (dev.manual ? QStringLiteral(" · 手动")
+                                          + (dev.manual ? tr(" · 手动")
                                                         : QString()),
                                       dev.status == 0x01, trusted);
             c.code = dev.code;
@@ -195,8 +195,8 @@ void DeviceListPage::apply_snapshot() {
                     card->findChild<QLabel*>(QStringLiteral("codeLbl"))
                         ->setText(code_text(c.code));
                     card->findChild<QLabel*>(QStringLiteral("ipLbl"))
-                        ->setText(c.busy ? QStringLiteral("会话中")
-                                         : QStringLiteral("可连接"));
+                        ->setText(c.busy ? tr("会话中")
+                                         : tr("可连接"));
                     auto* dot = card->findChild<QLabel*>(QStringLiteral("dotLbl"));
                     if (dot != nullptr) {
                         dot->setStyleSheet(QStringLiteral(
@@ -206,8 +206,8 @@ void DeviceListPage::apply_snapshot() {
                     }
                     auto* badge = card->findChild<QLabel*>(QStringLiteral("badgeLbl"));
                     if (badge != nullptr) {
-                        badge->setText(c.trusted ? QStringLiteral("已信任")
-                                                 : QStringLiteral("待确认"));
+                        badge->setText(c.trusted ? tr("已信任")
+                                                 : tr("待确认"));
                         badge->setStyleSheet(QStringLiteral(
                             "font-size: 11px; padding: 3px 8px; border-radius: 4px; color: %1; "
                             "background: %2;")
@@ -250,19 +250,19 @@ QString DeviceListPage::deviceIp(const QString& code) const {
 // 校验通过交装配层回调（bridge.addManualPeer：持久化 + 立即注入探活）
 void DeviceListPage::on_manual_add() {
     if (manual_add_ == nullptr) {
-        GlassDialog::warning(this, QStringLiteral("手动添加设备"),
-                             QStringLiteral("配置未注入，暂不可用"));
+        GlassDialog::warning(this, tr("手动添加设备"),
+                             tr("配置未注入，暂不可用"));
         return;
     }
     const QString alias = GlassDialog::getText(
-        this, QStringLiteral("手动添加设备"),
-        QStringLiteral("连接名（3~20 字符，不含 ; | =）"), {});
+        this, tr("手动添加设备"),
+        tr("连接名（3~20 字符，不含 ; | =）"), {});
     if (alias.isEmpty()) {
         return;  // 取消
     }
     const QString ipport = GlassDialog::getText(
-        this, QStringLiteral("手动添加设备"),
-        QStringLiteral("对端 IP[:端口]（端口留空用默认会话端口）"), {});
+        this, tr("手动添加设备"),
+        tr("对端 IP[:端口]（端口留空用默认会话端口）"), {});
     if (ipport.isEmpty()) {
         return;
     }
@@ -275,8 +275,8 @@ void DeviceListPage::on_manual_add() {
         bool ok = false;
         const int p = port_s.toInt(&ok);
         if (!ok || p < 1024 || p > 65535) {
-            GlassDialog::warning(this, QStringLiteral("手动添加设备"),
-                                 QStringLiteral("端口需 1024~65535"));
+            GlassDialog::warning(this, tr("手动添加设备"),
+                                 tr("端口需 1024~65535"));
             return;
         }
         port = static_cast<uint16_t>(p);
@@ -284,14 +284,14 @@ void DeviceListPage::on_manual_add() {
     QHostAddress addr;
     if (addr.setAddress(ip) == false
         || addr.protocol() != QAbstractSocket::IPv4Protocol) {
-        GlassDialog::warning(this, QStringLiteral("手动添加设备"),
-                             QStringLiteral("IP 格式非法（仅支持 IPv4）"));
+        GlassDialog::warning(this, tr("手动添加设备"),
+                             tr("IP 格式非法（仅支持 IPv4）"));
         return;
     }
     if (!manual_add_(alias.trimmed(), ip, port)) {
-        GlassDialog::warning(this, QStringLiteral("手动添加设备"),
-                             QStringLiteral("添加失败：连接名需 3~20 字符且不含 ; | =，"
-                                             "或与已有条目冲突"));
+        GlassDialog::warning(this, tr("手动添加设备"),
+                             tr("添加失败：连接名需 3~20 字符且不含 ; | =，"
+                                "或与已有条目冲突"));
     }
 }
 
@@ -352,7 +352,7 @@ QWidget* DeviceListPage::makeDeviceCard(const QString& name, const QString& code
     top->addStretch();
 
     // 信任角标（向日葵模式：确认后才有记忆缓存）
-    auto* badge = new QLabel(trusted ? QStringLiteral("已信任") : QStringLiteral("待确认"));
+    auto* badge = new QLabel(trusted ? tr("已信任") : tr("待确认"));
     badge->setObjectName(QStringLiteral("badgeLbl"));
     badge->setStyleSheet(QStringLiteral(
         "font-size: 11px; padding: 3px 8px; border-radius: 4px; color: %1; "
@@ -383,8 +383,8 @@ QWidget* DeviceListPage::makeDeviceCard(const QString& name, const QString& code
                   : GlassTheme::instance().accentBlue().name(QColor::HexRgb)));
     bottom->addWidget(dot);
     // 状态行对齐 QML：仅状态文字不含 IP（IP 已在连接名下方展示，避免重复）
-    auto* ipLbl = new QLabel(busy ? QStringLiteral("会话中")
-                                  : QStringLiteral("可连接"));
+    auto* ipLbl = new QLabel(busy ? tr("会话中")
+                                  : tr("可连接"));
     ipLbl->setObjectName(QStringLiteral("ipLbl"));
     ipLbl->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
                              .arg(GlassTheme::instance().textSecond().name(QColor::HexRgb)));

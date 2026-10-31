@@ -18,6 +18,8 @@
         #include <QPushButton>
         #include <QRandomGenerator>
         #include <QTimer>
+        #include <QLocale>
+        #include <QTranslator>
 
         #include "foundation/config_parser.hpp"
         #include "foundation/event_bus.hpp"
@@ -103,6 +105,24 @@ int main(int argc, char* argv[]) {
     }
     else {
         cfg.load(ini);
+    }
+
+    // 语言装载（i18n Doc18 §7.3）：config [general] language（auto|zh|en），
+    // auto = 系统 locale zh → 中文，否则英文；en 时挂 .qm。
+    // 必须在任何 UI 构造/tr 调用之前执行（本处位于配置读取之后、装配之前）
+    static QTranslator app_translator;  // 生命周期活到 app 结束（main 返回才析构）
+    {
+        const QString lang = QString::fromStdString(cfg.language);
+        const QString resolved =
+            (lang == QLatin1String("auto") || lang.isEmpty())
+                ? (QLocale::system().name().startsWith(QLatin1String("zh"))
+                       ? QStringLiteral("zh")
+                       : QStringLiteral("en"))
+                : lang;
+        if (resolved == QLatin1String("en")
+            && app_translator.load(QStringLiteral(":/i18n/scToLocalDesk_en.qm"))) {
+            QCoreApplication::installTranslator(&app_translator);
+        }
     }
 
     // 日志：exe 旁 logs/（兜底 FileLogger，5MB×5；与 QML 版口径一致）
@@ -286,8 +306,8 @@ int main(int argc, char* argv[]) {
             &win,
             [&win, bad_port] {
                 GlassDialog::warningNonModalTopmost(
-                    &win, QObject::tr("被控监听失败"),
-                    QObject::tr("会话端口 %1 被占用或无法监听，"
+                    &win, QCoreApplication::translate("WidgetsMain", "被控监听失败"),
+                    QCoreApplication::translate("WidgetsMain", "会话端口 %1 被占用或无法监听，"
                                    "对方将无法连接本机。\n请在 "
                                    "设置→网络 修改 WS 端口后重启。")
                         .arg(bad_port));
@@ -302,7 +322,7 @@ int main(int argc, char* argv[]) {
             [&win, &logger, e] {
                 SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Warn,
                          "smoke", "connect denied " + e.reason);
-                GlassDialog::warning(&win, QObject::tr("无法发起协助"),
+                GlassDialog::warning(&win, QCoreApplication::translate("WidgetsMain", "无法发起协助"),
                                      QString::fromStdString(e.reason));
             },
             Qt::QueuedConnection);
@@ -373,8 +393,8 @@ int main(int argc, char* argv[]) {
                              "alias", "别名冲突 alias=" + e.device_alias
                                           + " ip=" + e.conflict_ip);
                     GlassDialog::warning(
-                        &win, QObject::tr("别名冲突"),
-                        QObject::tr("检测到其他设备使用别名「%1」（%2），"
+                        &win, QCoreApplication::translate("WidgetsMain", "别名冲突"),
+                        QCoreApplication::translate("WidgetsMain", "检测到其他设备使用别名「%1」（%2），"
                                        "请在设置中修改本机连接名")
                             .arg(QString::fromStdString(e.device_alias),
                                  QString::fromStdString(e.conflict_ip)));
@@ -461,8 +481,8 @@ int main(int argc, char* argv[]) {
             QMetaObject::invokeMethod(
                 &tray,
                 [&tray, e] {
-                    tray.notify(QObject::tr("无人值守接入"),
-                                QObject::tr("【%1】已通过密码接入")
+                    tray.notify(QCoreApplication::translate("WidgetsMain", "无人值守接入"),
+                                QCoreApplication::translate("WidgetsMain", "【%1】已通过密码接入")
                                     .arg(QString::fromStdString(e.device_alias)));
                 },
                 Qt::QueuedConnection);
@@ -493,8 +513,8 @@ int main(int argc, char* argv[]) {
                 using sc::localdesk::foundation::LogLevel;
                 SCLD_LOG(logger, LogLevel::Warn, "tray", "托盘一键断开所有远程会话");
                 sessions->close_session(sc::localdesk::protocol::CloseReason::Normal);
-                tray.notify(QObject::tr("远程协助"),
-                            QObject::tr("已断开所有远程会话"));
+                tray.notify(QCoreApplication::translate("WidgetsMain", "远程协助"),
+                            QCoreApplication::translate("WidgetsMain", "已断开所有远程会话"));
             });
 
         // 键鼠冻结（Doc19 §2.1）：托盘勾选 ↔ platform 低级钩子；30 分钟
@@ -714,9 +734,9 @@ int main(int argc, char* argv[]) {
                     // parent 挂主窗（门面修复点）：原 nullptr 使模态框
                     // 不以主窗为父，层叠时可能落到主窗后面
                     if (GlassDialog::question(
-                            &win, QObject::tr("文件接收请求"),
-                            QObject::tr("%1 向本机发送文件：\n%2（%3 字节）\n是否接收？")
-                                .arg(alias.isEmpty() ? QObject::tr("对方") : alias, name)
+                            &win, QCoreApplication::translate("WidgetsMain", "文件接收请求"),
+                            QCoreApplication::translate("WidgetsMain", "%1 向本机发送文件：\n%2（%3 字节）\n是否接收？")
+                                .arg(alias.isEmpty() ? QCoreApplication::translate("WidgetsMain", "对方") : alias, name)
                                 .arg(e.size))) {
                         (void)files->accept_pending(e.file_id);
                         SCLD_LOG(logger, sc::localdesk::foundation::LogLevel::Info, "file",
@@ -738,19 +758,19 @@ int main(int argc, char* argv[]) {
                     const QString alias = QString::fromStdString(e.device_alias);
                     const QString name = QString::fromStdString(e.name);
                     QMessageBox box(&win);
-                    box.setWindowTitle(QObject::tr("同名文件冲突"));
+                    box.setWindowTitle(QCoreApplication::translate("WidgetsMain", "同名文件冲突"));
                     box.setIcon(QMessageBox::Question);
-                    box.setText(QObject::tr("%1 发送的文件已存在：\n%2（%3 字节）")
-                                    .arg(alias.isEmpty() ? QObject::tr("对方") : alias,
+                    box.setText(QCoreApplication::translate("WidgetsMain", "%1 发送的文件已存在：\n%2（%3 字节）")
+                                    .arg(alias.isEmpty() ? QCoreApplication::translate("WidgetsMain", "对方") : alias,
                                          name)
                                     .arg(e.size));
-                    box.setCheckBox(new QCheckBox(QObject::tr("记住本次选择（本次会话有效）"),
+                    box.setCheckBox(new QCheckBox(QCoreApplication::translate("WidgetsMain", "记住本次选择（本次会话有效）"),
                                                   &box));
                     QPushButton* over =
-                        box.addButton(QObject::tr("覆盖"), QMessageBox::AcceptRole);
-                    box.addButton(QObject::tr("重命名保存"), QMessageBox::YesRole);
+                        box.addButton(QCoreApplication::translate("WidgetsMain", "覆盖"), QMessageBox::AcceptRole);
+                    box.addButton(QCoreApplication::translate("WidgetsMain", "重命名保存"), QMessageBox::YesRole);
                     QPushButton* skip =
-                        box.addButton(QObject::tr("跳过"), QMessageBox::RejectRole);
+                        box.addButton(QCoreApplication::translate("WidgetsMain", "跳过"), QMessageBox::RejectRole);
                     box.setDefaultButton(skip);
                     (void)box.exec();
                     QString policy;

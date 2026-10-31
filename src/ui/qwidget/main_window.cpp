@@ -67,6 +67,10 @@ MainWindow::MainWindow() {
     stack_->addWidget(settingsPage);               // 4 设置
     // 设置页：深色开关 → 统一主题入口（清空信任已收口进设置页直调 TrustStore）
     connect(settingsPage, &SettingsPage::themeChanged, this, &MainWindow::applyTheme);
+    // 语言切换（i18n）：变更已落盘，翻译器装载在 main 启动期 → Toast 引导重启
+    connect(settingsPage, &SettingsPage::languageChanged, this, [this] {
+        showToast(tr("语言设置已保存，重启应用后生效"));
+    });
     updateDockStyle();   // 栈已就绪：应用初始选中态（第 0 项竖线+染色）
     body->addWidget(stack_, 1);
     root->addLayout(body, 1);

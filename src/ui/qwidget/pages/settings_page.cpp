@@ -55,7 +55,7 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     lay->setContentsMargins(28, 24, 28, 24);
     lay->setSpacing(16);
 
-    lay->addWidget(makeTitle(QStringLiteral("设置")));
+    lay->addWidget(makeTitle(tr("设置")));
 
     // 控件变更统一走 on_changed(key, value)；bind_config 前调用为空操作
     auto bind_ed = [this](QLineEdit* ed, const QString& key) {
@@ -69,42 +69,54 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
 
     // ---- 通用（Doc17 §3.1） ----
     QWidget* genBody = nullptr;
-    auto* grpGen = makeGroupCard(QStringLiteral("通用"), &genBody);
+    auto* grpGen = makeGroupCard(tr("通用"), &genBody);
     auto* genForm = new QFormLayout(genBody);
     genForm->setLabelAlignment(Qt::AlignLeft);
     viewSw_ = new ToggleSwitch();
     bind_sw(viewSw_, QStringLiteral("general.view_mode"));
-    genForm->addRow(QStringLiteral("IT 视图（显示全部高级配置）"), viewSw_);
+    genForm->addRow(tr("IT 视图（显示全部高级配置）"), viewSw_);
     aliasEd_ = new QLineEdit();
     aliasEd_->setFixedWidth(240);
     bind_ed(aliasEd_, QStringLiteral("general.alias"));
-    genForm->addRow(QStringLiteral("本机连接名"), aliasEd_);
+    genForm->addRow(tr("本机连接名"), aliasEd_);
     autoStartSw_ = new ToggleSwitch();
     bind_sw(autoStartSw_, QStringLiteral("app.auto_start"));
-    genForm->addRow(QStringLiteral("开机自动启动"), autoStartSw_);
+    genForm->addRow(tr("开机自动启动"), autoStartSw_);
     minTraySw_ = new ToggleSwitch();
     bind_sw(minTraySw_, QStringLiteral("app.minimize_to_tray"));
-    genForm->addRow(QStringLiteral("启动后最小化到托盘"), minTraySw_);
+    genForm->addRow(tr("启动后最小化到托盘"), minTraySw_);
+    // 界面语言（i18n Doc18 §7.3）：data 为 config 值（auto|zh|en）；
+    // 翻译器装载在 main 启动期，切换仅落盘 + Toast 引导重启
+    langCombo_ = new QComboBox();
+    langCombo_->setFixedWidth(240);
+    langCombo_->addItem(tr("跟随系统"), QStringLiteral("auto"));
+    langCombo_->addItem(tr("中文"), QStringLiteral("zh"));
+    langCombo_->addItem(QStringLiteral("English"), QStringLiteral("en"));
+    connect(langCombo_, &QComboBox::activated, this, [this](int idx) {
+        on_changed(QStringLiteral("general.language"),
+                   langCombo_->itemData(idx).toString());
+    });
+    genForm->addRow(tr("语言 Language"), langCombo_);
     lay->addWidget(grpGen);
 
     // ---- 外观（深色主题经 themeChanged 信号由主窗口统一应用） ----
     QWidget* lookBody = nullptr;
-    auto* grpLook = makeGroupCard(QStringLiteral("外观"), &lookBody);
+    auto* grpLook = makeGroupCard(tr("外观"), &lookBody);
     auto* lookForm = new QFormLayout(lookBody);
     lookForm->setLabelAlignment(Qt::AlignLeft);
     darkSw_ = new ToggleSwitch();
     darkSw_->setChecked(GlassTheme::instance().isDark());
     connect(darkSw_, &QAbstractButton::toggled, this, &SettingsPage::themeChanged);
     bind_sw(darkSw_, QStringLiteral("appearance.theme"));
-    lookForm->addRow(QStringLiteral("深色主题"), darkSw_);
+    lookForm->addRow(tr("深色主题"), darkSw_);
     reduceSw_ = new ToggleSwitch();
     bind_sw(reduceSw_, QStringLiteral("appearance.reduce_transparency"));
-    lookForm->addRow(QStringLiteral("降低透明度（无障碍）"), reduceSw_);
+    lookForm->addRow(tr("降低透明度（无障碍）"), reduceSw_);
     lay->addWidget(grpLook);
 
     // ---- 网络（Doc17 §3.2） ----
     QWidget* netBody = nullptr;
-    auto* grpNet = makeGroupCard(QStringLiteral("网络"), &netBody);
+    auto* grpNet = makeGroupCard(tr("网络"), &netBody);
     auto* netForm = new QFormLayout(netBody);
     portEd_ = make_num_ed(this);
     bind_ed(portEd_, QStringLiteral("network.ws_port"));
@@ -115,79 +127,79 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     bind_sw(mcSw_, QStringLiteral("network.multicast_enabled"));
     smEd_ = new QLineEdit();
     smEd_->setFixedWidth(240);
-    smEd_->setPlaceholderText(QStringLiteral("别名=IP:端口;别名2=IP2:端口2"));
+    smEd_->setPlaceholderText(tr("别名=IP:端口;别名2=IP2:端口2"));
     bind_ed(smEd_, QStringLiteral("network.static_map"));
     hbEd_ = make_num_ed(this, 2);
     bind_ed(hbEd_, QStringLiteral("network.heartbeat_interval_s"));
-    netForm->addRow(QStringLiteral("会话端口"), portEd_);
-    netForm->addRow(QStringLiteral("组播地址"), mcEd_);
-    netForm->addRow(QStringLiteral("组播发现（关闭走静态映射，重启生效）"), mcSw_);
-    netForm->addRow(QStringLiteral("静态映射"), smEd_);
-    netForm->addRow(QStringLiteral("心跳间隔（秒）"), hbEd_);
+    netForm->addRow(tr("会话端口"), portEd_);
+    netForm->addRow(tr("组播地址"), mcEd_);
+    netForm->addRow(tr("组播发现（关闭走静态映射，重启生效）"), mcSw_);
+    netForm->addRow(tr("静态映射"), smEd_);
+    netForm->addRow(tr("心跳间隔（秒）"), hbEd_);
     grpNet_ = grpNet;
     lay->addWidget(grpNet);
 
     // ---- 会话（Doc17 §3.3） ----
     QWidget* sessBody = nullptr;
-    auto* grpSess = makeGroupCard(QStringLiteral("远程会话"), &sessBody);
+    auto* grpSess = makeGroupCard(tr("远程会话"), &sessBody);
     auto* sessForm = new QFormLayout(sessBody);
     fpsEd_ = make_num_ed(this, 2);
     bind_ed(fpsEd_, QStringLiteral("session.fps"));
     qEd_ = make_num_ed(this, 3);
     bind_ed(qEd_, QStringLiteral("session.jpeg_quality"));
-    sessForm->addRow(QStringLiteral("帧率（fps）"), fpsEd_);
-    sessForm->addRow(QStringLiteral("JPEG 画质"), qEd_);
+    sessForm->addRow(tr("帧率（fps）"), fpsEd_);
+    sessForm->addRow(tr("JPEG 画质"), qEd_);
     grpSess_ = grpSess;
     lay->addWidget(grpSess);
 
     // ---- 文件（Doc17 §3.4） ----
     QWidget* fileBody = nullptr;
-    auto* grpFile = makeGroupCard(QStringLiteral("文件传输"), &fileBody);
+    auto* grpFile = makeGroupCard(tr("文件传输"), &fileBody);
     auto* fileForm = new QFormLayout(fileBody);
     dirEd_ = new QLineEdit();
     dirEd_->setFixedWidth(240);
     bind_ed(dirEd_, QStringLiteral("file.save_path"));
     chunkEd_ = make_num_ed(this, 4);
     bind_ed(chunkEd_, QStringLiteral("file.chunk_size_kb"));
-    fileForm->addRow(QStringLiteral("接收目录"), dirEd_);
-    fileForm->addRow(QStringLiteral("分片大小（KB）"), chunkEd_);
+    fileForm->addRow(tr("接收目录"), dirEd_);
+    fileForm->addRow(tr("分片大小（KB）"), chunkEd_);
     confirmSw_ = new ToggleSwitch();
     bind_sw(confirmSw_, QStringLiteral("file.confirm_before_transfer"));
-    fileForm->addRow(QStringLiteral("接收前需确认"), confirmSw_);
+    fileForm->addRow(tr("接收前需确认"), confirmSw_);
     safeSw_ = new ToggleSwitch();
     bind_sw(safeSw_, QStringLiteral("file.safe_path"));
-    fileForm->addRow(QStringLiteral("文件名安全校验"), safeSw_);
+    fileForm->addRow(tr("文件名安全校验"), safeSw_);
     // 可执行后缀拦截（Doc19 §5）：开启后收发两侧拒绝 exe/bat/cmd/ps1/msi/scr/com/vbs/js
     blockExecSw_ = new ToggleSwitch();
     bind_sw(blockExecSw_, QStringLiteral("file.block_executable"));
-    fileForm->addRow(QStringLiteral("拦截可执行文件"), blockExecSw_);
+    fileForm->addRow(tr("拦截可执行文件"), blockExecSw_);
     owCombo_ = new QComboBox();
     owCombo_->setFixedWidth(240);
-    owCombo_->addItem(QStringLiteral("每次询问（推荐）"), QStringLiteral("ask"));
-    owCombo_->addItem(QStringLiteral("直接覆盖"), QStringLiteral("overwrite"));
-    owCombo_->addItem(QStringLiteral("自动重命名 (1)"), QStringLiteral("rename"));
+    owCombo_->addItem(tr("每次询问（推荐）"), QStringLiteral("ask"));
+    owCombo_->addItem(tr("直接覆盖"), QStringLiteral("overwrite"));
+    owCombo_->addItem(tr("自动重命名 (1)"), QStringLiteral("rename"));
     connect(owCombo_, &QComboBox::activated, this, [this](int idx) {
         on_changed(QStringLiteral("file.overwrite"),
                    owCombo_->itemData(idx).toString());
     });
-    fileForm->addRow(QStringLiteral("同名覆盖策略"), owCombo_);
+    fileForm->addRow(tr("同名覆盖策略"), owCombo_);
     fileForm_ = fileForm;
     lay->addWidget(grpFile);
 
     // ---- 安全（清空信任缓存带即时反馈） ----
     QWidget* secBody = nullptr;
-    auto* grpSec = makeGroupCard(QStringLiteral("安全"), &secBody);
+    auto* grpSec = makeGroupCard(tr("安全"), &secBody);
     auto* secForm = new QFormLayout(secBody);
     unattSw_ = new ToggleSwitch();
     bind_sw(unattSw_, QStringLiteral("security.unattended_enabled"));
-    secForm->addRow(QStringLiteral("允许无人值守连接"), unattSw_);
+    secForm->addRow(tr("允许无人值守连接"), unattSw_);
     auto* pwdEd = new QLineEdit();
     pwdEd->setEchoMode(QLineEdit::Password);
-    pwdEd->setPlaceholderText(QStringLiteral("6~32 位"));
+    pwdEd->setPlaceholderText(tr("6~32 位"));
     pwdEd->setFixedWidth(240);
-    pwdEd->setToolTip(QStringLiteral("凭据派生（PBKDF2）与即时生效为 V1.0 任务"));
-    secForm->addRow(QStringLiteral("无人值守密码"), pwdEd);
-    auto* trustBtn = new QPushButton(QStringLiteral("清空全部信任"));
+    pwdEd->setToolTip(tr("凭据派生（PBKDF2）与即时生效为 V1.0 任务"));
+    secForm->addRow(tr("无人值守密码"), pwdEd);
+    auto* trustBtn = new QPushButton(tr("清空全部信任"));
     trustBtn->setObjectName(QStringLiteral("secondaryBtn"));
     trustBtn->setCursor(Qt::PointingHandCursor);
     connect(trustBtn, &QPushButton::clicked, this, [this] {
@@ -202,12 +214,12 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     // 备注编辑/清空。吊销后下次连接强制弹窗确认（TrustRemove 审计）
     auto* trustList = new QListWidget();
     trustList->setFixedHeight(140);
-    trustList->setToolTip(QStringLiteral("名单内设备连接本机免弹窗确认；吊销后恢复人工确认"));
+    trustList->setToolTip(tr("名单内设备连接本机免弹窗确认；吊销后恢复人工确认"));
     auto* trustBtnRow = new QHBoxLayout();
-    auto* trustNoteBtn = new QPushButton(QStringLiteral("修改备注"));
+    auto* trustNoteBtn = new QPushButton(tr("修改备注"));
     trustNoteBtn->setObjectName(QStringLiteral("secondaryBtn"));
     trustNoteBtn->setCursor(Qt::PointingHandCursor);
-    auto* trustRevokeBtn = new QPushButton(QStringLiteral("吊销选中"));
+    auto* trustRevokeBtn = new QPushButton(tr("吊销选中"));
     trustRevokeBtn->setObjectName(QStringLiteral("dangerBtn"));
     trustRevokeBtn->setCursor(Qt::PointingHandCursor);
     connect(trustNoteBtn, &QPushButton::clicked, this, [this, trustList] {
@@ -218,7 +230,7 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
         bool ok = false;
         // 弹窗门面统一出口；ok 区分空备注确认与取消
         const QString note = GlassDialog::getText(
-            this, QStringLiteral("设备备注"), QStringLiteral("标注对方是谁（可空）："),
+            this, tr("设备备注"), tr("标注对方是谁（可空）："),
             it->data(Qt::UserRole + 1).toString(), &ok);
         if (ok) {
             trust_->set_note(it->data(Qt::UserRole).toString().toStdString(),
@@ -242,19 +254,19 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     trustLay->setContentsMargins(0, 0, 0, 0);
     trustLay->addWidget(trustList);
     trustLay->addLayout(trustBtnRow);
-    secForm->addRow(QStringLiteral("信任设备"), trustWrap);
+    secForm->addRow(tr("信任设备"), trustWrap);
     trust_list_ = trustList;  // 数据注入走 set_trust_store（构造期后到）
 
     // ---- 黑名单管理（Doc19 §3.4，P0）：列表+移除+清空，拉黑动作后续从
     // 信任列表右键加——入口保持最小可用，命中行为在会话层（静默丢弃）
     auto* blList = new QListWidget();
     blList->setFixedHeight(120);
-    blList->setToolTip(QStringLiteral("名单内设备发起的连接请求将被直接丢弃（不提示对方）"));
+    blList->setToolTip(tr("名单内设备发起的连接请求将被直接丢弃（不提示对方）"));
     auto* blBtnRow = new QHBoxLayout();
-    auto* blRemoveBtn = new QPushButton(QStringLiteral("移除选中"));
+    auto* blRemoveBtn = new QPushButton(tr("移除选中"));
     blRemoveBtn->setObjectName(QStringLiteral("secondaryBtn"));
     blRemoveBtn->setCursor(Qt::PointingHandCursor);
-    auto* blClearBtn = new QPushButton(QStringLiteral("清空黑名单"));
+    auto* blClearBtn = new QPushButton(tr("清空黑名单"));
     blClearBtn->setObjectName(QStringLiteral("secondaryBtn"));
     blClearBtn->setCursor(Qt::PointingHandCursor);
     connect(blRemoveBtn, &QPushButton::clicked, this, [this, blList] {
@@ -278,14 +290,14 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     blLay->setContentsMargins(0, 0, 0, 0);
     blLay->addWidget(blList);
     blLay->addLayout(blBtnRow);
-    secForm->addRow(QStringLiteral("黑名单设备"), blWrap);
+    secForm->addRow(tr("黑名单设备"), blWrap);
     bl_list_ = blList;
     refresh_blacklist(blList);
     lay->addWidget(grpSec);
 
     // ---- 日志（Doc17 §3.6） ----
     QWidget* logBody = nullptr;
-    auto* grpLog = makeGroupCard(QStringLiteral("日志"), &logBody);
+    auto* grpLog = makeGroupCard(tr("日志"), &logBody);
     auto* logForm = new QFormLayout(logBody);
     lvEd_ = new QLineEdit();
     lvEd_->setFixedWidth(240);
@@ -295,15 +307,15 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     bind_ed(logMaxEd_, QStringLiteral("log.max_size_mb"));
     logFilesEd_ = make_num_ed(this, 2);
     bind_ed(logFilesEd_, QStringLiteral("log.max_files"));
-    logForm->addRow(QStringLiteral("日志级别"), lvEd_);
-    logForm->addRow(QStringLiteral("日志上限（MB）"), logMaxEd_);
-    logForm->addRow(QStringLiteral("日志文件数"), logFilesEd_);
+    logForm->addRow(tr("日志级别"), lvEd_);
+    logForm->addRow(tr("日志上限（MB）"), logMaxEd_);
+    logForm->addRow(tr("日志文件数"), logFilesEd_);
     // 打开日志目录（交接遗留）：QDesktopServices 系统文件管理器定位 exe 旁
     // logs/——路径口径与 AuditLogger/main 装配一致（applicationDirPath()+"/logs"）
-    auto* openLogBtn = new QPushButton(QStringLiteral("打开日志目录"));
+    auto* openLogBtn = new QPushButton(tr("打开日志目录"));
     openLogBtn->setObjectName(QStringLiteral("secondaryBtn"));
     openLogBtn->setCursor(Qt::PointingHandCursor);
-    openLogBtn->setToolTip(QStringLiteral("在文件管理器中打开日志所在目录"));
+    openLogBtn->setToolTip(tr("在文件管理器中打开日志所在目录"));
     connect(openLogBtn, &QPushButton::clicked, this, [] {
         QDesktopServices::openUrl(QUrl::fromLocalFile(
             QCoreApplication::applicationDirPath() + QStringLiteral("/logs")));
@@ -353,6 +365,14 @@ void SettingsPage::bind_config(foundation::IniConfig* ini, AppConfig* cfg) {
     }
     unattSw_->setChecked(cfg_->unattended_enabled);
     viewSw_->setChecked(cfg_->view_mode == "it");
+    // 界面语言回放：按 data 定位档位（auto/zh/en）
+    const QString lang = QString::fromStdString(cfg_->language);
+    for (int i = 0; i < langCombo_->count(); ++i) {
+        if (langCombo_->itemData(i).toString() == lang) {
+            langCombo_->setCurrentIndex(i);
+            break;
+        }
+    }
     lvEd_->setText(QString::fromStdString(cfg_->log_level));
     logMaxEd_->setText(QString::number(cfg_->log_max_size_mb));
     logFilesEd_->setText(QString::number(cfg_->log_max_files));
@@ -372,6 +392,14 @@ void SettingsPage::on_changed(const QString& key, const QString& value) {
             return;
         }
         cfg_->alias = v;
+    }
+    else if (k == "general.language") {
+        // 界面语言（i18n）：翻译器装载在 main 启动期，切换后重启生效
+        if (v != "auto" && v != "zh" && v != "en") {
+            return;
+        }
+        cfg_->language = v;
+        emit languageChanged();
     }
     else if (k == "app.auto_start") {
         cfg_->auto_start = (value == QStringLiteral("true"));

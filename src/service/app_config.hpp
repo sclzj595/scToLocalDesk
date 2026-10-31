@@ -18,6 +18,9 @@ struct AppConfig {
     std::string alias{"SC-PC"};
     std::string run_mode{"controlled"};  // controlled | controller
     std::string view_mode{"employee"};   // employee | it
+    /// 界面语言（i18n Doc18 §7.3）：auto（跟随系统）| zh | en，默认 auto；
+    /// 翻译器装载在两个 main 启动期（任何 UI 构造前），切换后重启生效
+    std::string language{"auto"};
     // [network]
     int ws_port{8899};
     int heartbeat_interval_s{3};

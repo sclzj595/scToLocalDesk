@@ -47,13 +47,13 @@ FileTransferPage::FileTransferPage(QWidget* parent) : QWidget(parent) {
     lay->setSpacing(16);
 
     auto* head = new QHBoxLayout();
-    head->addWidget(makeTitle(QStringLiteral("文件传输")));
+    head->addWidget(makeTitle(tr("文件传输")));
     head->addStretch();
-    auto* sendBtn = new QPushButton(QStringLiteral("发送文件…"));
+    auto* sendBtn = new QPushButton(tr("发送文件…"));
     sendBtn->setObjectName(QStringLiteral("primaryBtn"));
     head->addWidget(sendBtn);
     // 目录发送入口（Doc19 §5 目录递归传输）：整目录递归展开逐项发送
-    auto* sendDirBtn = new QPushButton(QStringLiteral("发送文件夹…"));
+    auto* sendDirBtn = new QPushButton(tr("发送文件夹…"));
     head->addWidget(sendDirBtn);
     lay->addLayout(head);
 
@@ -65,7 +65,7 @@ FileTransferPage::FileTransferPage(QWidget* parent) : QWidget(parent) {
     host_lay->addStretch();
 
     // 拖放提示条
-    drag_hint_ = new QLabel(QStringLiteral("可将文件拖入本区直接发送"), host_);
+    drag_hint_ = new QLabel(tr("可将文件拖入本区直接发送"), host_);
     drag_hint_->setAlignment(Qt::AlignCenter);
     drag_hint_->setStyleSheet(QStringLiteral(
         "color: %1; font-size: 12px; border: 1px dashed %2; border-radius: 12px;"
@@ -76,7 +76,7 @@ FileTransferPage::FileTransferPage(QWidget* parent) : QWidget(parent) {
     lay->addWidget(host_, 1);
 
     // 空态占位（禁止假数据）
-    empty_ = new QLabel(QStringLiteral("暂无传输任务\n连接设备后，从设备卡或\"发送文件\"发起传输"));
+    empty_ = new QLabel(tr("暂无传输任务\n连接设备后，从设备卡或\"发送文件\"发起传输"));
     empty_->setAlignment(Qt::AlignCenter);
     empty_->setStyleSheet(QStringLiteral(
         "color: %1; font-size: 13px;")
@@ -87,7 +87,7 @@ FileTransferPage::FileTransferPage(QWidget* parent) : QWidget(parent) {
 
     connect(sendBtn, &QPushButton::clicked, this, [this] {
         const QStringList files = QFileDialog::getOpenFileNames(
-            this, QStringLiteral("选择要发送的文件"));
+            this, tr("选择要发送的文件"));
         if (!files.isEmpty()) {
             emit filesPicked(files);
         }
@@ -95,7 +95,7 @@ FileTransferPage::FileTransferPage(QWidget* parent) : QWidget(parent) {
     connect(sendDirBtn, &QPushButton::clicked, this, [this] {
         // 目录发送（Doc19 §5）：getExistingDirectory 单选目录，FileService 递归展开
         const QString dir = QFileDialog::getExistingDirectory(
-            this, QStringLiteral("选择要发送的文件夹"));
+            this, tr("选择要发送的文件夹"));
         if (!dir.isEmpty()) {
             emit filesPicked(QStringList{dir});
         }
@@ -150,7 +150,7 @@ FileRow& FileTransferPage::upsert_row(const QString& file_id, const QString& nam
     row->addWidget(stLbl);
 
     // 排队态取消按钮（Doc19 §5 P2）：仅「排队中」显示，其余态隐藏
-    auto* cancelBtn = new QPushButton(QStringLiteral("取消"), card);
+    auto* cancelBtn = new QPushButton(tr("取消"), card);
     cancelBtn->setFixedSize(44, 24);
     cancelBtn->setCursor(Qt::PointingHandCursor);
     cancelBtn->setStyleSheet(QStringLiteral(
@@ -183,7 +183,7 @@ void FileTransferPage::on_file_queued(const QString& file_id, const QString& nam
     FileRow& r = upsert_row(file_id, name, 0);
     r.size->setText(human_size(total));
     r.bar->setValue(0);
-    r.status->setText(QStringLiteral("排队中"));
+    r.status->setText(tr("排队中"));
     r.status->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
                                 .arg(GlassTheme::instance().textHint().name(QColor::HexRgb)));
     if (r.cancel != nullptr) {
@@ -222,7 +222,7 @@ void FileTransferPage::on_file_done(const QString& file_id, const QString& name,
         r.cancel->hide();
     }
     r.bar->setValue(100);
-    r.status->setText(QStringLiteral("已完成"));
+    r.status->setText(tr("已完成"));
     r.status->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
                                 .arg(GlassTheme::instance().accentGreen().name(QColor::HexRgb)));
 }
@@ -232,7 +232,7 @@ void FileTransferPage::on_file_failed(const QString& file_id, const QString& nam
     if (r.cancel != nullptr) {
         r.cancel->hide();
     }
-    r.status->setText(QStringLiteral("失败"));
+    r.status->setText(tr("失败"));
     r.status->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
                                 .arg(GlassTheme::instance().accentRed().name(QColor::HexRgb)));
     r.bar->setStyleSheet(QStringLiteral(
@@ -248,7 +248,7 @@ void FileTransferPage::on_file_blocked(const QString& file_id, const QString& na
     if (r.cancel != nullptr) {
         r.cancel->hide();
     }
-    r.status->setText(QStringLiteral("已拦截可执行文件"));
+    r.status->setText(tr("已拦截可执行文件"));
     r.status->setStyleSheet(QStringLiteral("font-size: 12px; color: %1;")
                                 .arg(GlassTheme::instance().accentRed().name(QColor::HexRgb)));
     r.bar->setStyleSheet(QStringLiteral(

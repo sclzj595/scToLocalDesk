@@ -8,6 +8,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QColor>
+#include <QCoreApplication>
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QMenu>
@@ -52,16 +53,16 @@ QPointer<QMessageBox> confirmIncoming(QWidget* parent, const QString& peerIp,
                                       std::function<void()> onReject) {
     auto* box = new QMessageBox(parent);
     box->setAttribute(Qt::WA_DeleteOnClose);
-    box->setWindowTitle(QObject::tr("连接请求"));
+    box->setWindowTitle(QCoreApplication::translate("GlassDialog", "连接请求"));
     box->setText(peerIp.isEmpty()
-                     ? QObject::tr("对方请求远程协助本机，是否同意？")
-                     : QObject::tr("对方（%1）请求远程协助本机，是否同意？")
+                     ? QCoreApplication::translate("GlassDialog", "对方请求远程协助本机，是否同意？")
+                     : QCoreApplication::translate("GlassDialog", "对方（%1）请求远程协助本机，是否同意？")
                            .arg(peerIp));
     box->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
     box->setWindowFlag(Qt::WindowStaysOnTopHint, true);  // PRD 确认三件套：置顶
     // 键鼠授权勾选（P1 只读模式）：默认授权；取消勾选 = 只读，
     // approve(read_only) → Approved 附加字节告知控制端显示徽标
-    auto* allow_input = new QCheckBox(QObject::tr("允许对方键鼠控制"), box);
+    auto* allow_input = new QCheckBox(QCoreApplication::translate("GlassDialog", "允许对方键鼠控制"), box);
     allow_input->setChecked(true);
     box->setCheckBox(allow_input);
     QObject::connect(box, &QMessageBox::finished, box,
