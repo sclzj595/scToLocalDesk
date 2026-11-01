@@ -21,6 +21,11 @@ struct AppConfig {
     /// 界面语言（i18n Doc18 §7.3）：auto（跟随系统）| zh | en，默认 auto；
     /// 翻译器装载在两个 main 启动期（任何 UI 构造前），切换后重启生效
     std::string language{"auto"};
+    /// 单实例互斥档位（Doc19 §6.4）：per_exe（默认，锁 key 按 exe 名派生，
+    /// QML/Widgets 对照构建可并存）| global（产品语义，key 固定 scToLocalDesk.app，
+    /// QML/Widgets/headless 互斥，二次启动含跨 exe 唤起首实例后退出）。
+    /// 不进设置页：config.ini 手改本键，重启生效
+    std::string single_instance{"per_exe"};
     // [network]
     int ws_port{8899};
     int heartbeat_interval_s{3};

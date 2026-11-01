@@ -17,6 +17,13 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#endif
+
 #include "core/interface/types.hpp"
 #include "core/protocol/tlv.hpp"
 #include "foundation/config_parser.hpp"
@@ -228,6 +235,38 @@ int main(int argc, char** argv) {
         const int port = config.get_int("network", "ws_port", 8899);
         (void)port;
         // TODO(V1.0): 全量默认值初始化（Doc17 §3），首次运行回写
+    }
+
+    // ---------------- 单实例锁（Doc19 §6.4，main 内联实现：core-only 构建
+    // 不编 platform 层、Qt 版 SingleInstanceGuard 不可引用，故按平台就地 ~15 行） ----------------
+    // 档位：per_exe（默认）= 锁 "scToLocalDesk.headless"，headless 产物自身互斥
+    //（双开抢资源且无提示）；global = 锁 "scToLocalDesk.app"，与 GUI 产品实例同
+    // 全局身份（GUI 侧经 QLocalServer 承接互斥，headless 无 GUI 可唤起仅检测退出）
+    const std::string si_mode = config.get_str("general", "single_instance", "per_exe");
+    const std::string si_key =
+        si_mode == "global" ? "scToLocalDesk.app" : "scToLocalDesk.headless";
+    bool si_busy = false;
+#if defined(_WIN32)
+    // Win32 命名互斥体：持锁到进程退出，内核自动清理免残留
+    //（同 platform/win32/single_instance.cpp 口径）
+    HANDLE si_mutex = CreateMutexW(nullptr, TRUE,
+                                   std::wstring(si_key.begin(), si_key.end()).c_str());
+    si_busy = si_mutex != nullptr && GetLastError() == ERROR_ALREADY_EXISTS;
+    // CreateMutexW 失败（极端权限场景）：放弃互斥不阻断启动（与 Qt 守卫同口径）
+#else
+    // Linux：flock 锁文件非阻塞试探（LOCK_EX|LOCK_NB），锁随 fd 存活到进程退出
+    const std::string si_lock_path = "/tmp/scToLocalDesk." + si_key + ".lock";
+    const int si_fd = ::open(si_lock_path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+    if (si_fd >= 0 && ::flock(si_fd, LOCK_EX | LOCK_NB) != 0) {
+        si_busy = true;  // 已有实例持锁
+    }
+    // open 失败（只读 /tmp 等异常环境）：放弃互斥不阻断启动（与 Qt 守卫同口径）
+#endif
+    if (si_busy) {
+        const std::string msg = "检测到已有实例在运行（单实例锁 " + si_key + "），退出";
+        std::printf("[smoke] %s\n", msg.c_str());
+        logger->log(LogLevel::Warn, "main", msg);
+        return 2;
     }
 
     // ---------------- core 冒烟（Doc19 §6.3 / §5，失败退出码 1） ----------------

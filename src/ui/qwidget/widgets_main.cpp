@@ -89,12 +89,6 @@ int main(int argc, char* argv[]) {
         sc::localdesk::platform::CrashReporter::crash_for_test();
     }
 
-    // 单实例锁（exe 名作 key：与 QML 版互不排斥，对照构建可并存）
-    sc::localdesk::platform::SingleInstanceGuard guard;
-    if (!guard.acquire(QFileInfo(QApplication::applicationFilePath()).fileName())) {
-        return 0;   // 已有实例：唤起请求已投递
-    }
-
     // 配置加载（Doc17：exe 旁 config.ini，缺失则默认值落盘；Doc18 §3.3 设置页生命周期）
     sc::localdesk::foundation::IniConfig ini(
         QCoreApplication::applicationDirPath().toStdWString() + L"\\config.ini");
@@ -105,6 +99,17 @@ int main(int argc, char* argv[]) {
     }
     else {
         cfg.load(ini);
+    }
+
+    // 单实例锁（Doc19 §6.4 两档）：per_exe（默认）= exe 名作 key，与 QML 版互不排斥；
+    // global = 产品语义，key 固定 scToLocalDesk.app，QML/Widgets/headless 互斥，
+    // 二次启动（含跨 exe）唤起首实例主窗后退出
+    sc::localdesk::platform::SingleInstanceGuard guard;
+    const QString si_key = cfg.single_instance == "global"
+        ? QStringLiteral("scToLocalDesk.app")
+        : QFileInfo(QApplication::applicationFilePath()).fileName();
+    if (!guard.acquire(si_key)) {
+        return 0;   // 已有实例：唤起请求已投递
     }
 
     // 语言装载（i18n Doc18 §7.3）：config [general] language（auto|zh|en），

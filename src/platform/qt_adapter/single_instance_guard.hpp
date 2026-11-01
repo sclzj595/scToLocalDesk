@@ -2,7 +2,8 @@
 // scToLocalDesk | src/platform/qt_adapter/single_instance_guard.hpp
 // 单实例守卫（Doc02 §5）：QLocalServer/QLocalSocket 实现
 // Windows = 命名管道 / Unix = domain socket，均免残留清理，跨平台一致
-// key 按 exe 名派生：正式单 exe 全局单实例；QML/Widgets 对照构建可并存
+// key 由调用方传入（Doc19 §6.4）：per_exe = exe 名派生（QML/Widgets 对照构建
+// 可并存，默认）；global = 固定 scToLocalDesk.app（产品语义全局互斥）
 // 二次启动行为：连上首实例 → 投递 raise 请求 → 退出（首实例回调唤起主窗）
 // ============================================================
 #pragma once

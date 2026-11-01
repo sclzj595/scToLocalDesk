@@ -22,6 +22,16 @@
     #include <QLocale>
     #include <QTranslator>
 
+#ifndef _WIN32
+    // Linux SIGTERM 优雅退出（自管道惯例）依赖：POSIX 头 + QSocketNotifier
+    #include <QDebug>
+    #include <QSocketNotifier>
+    #include <fcntl.h>
+    #include <signal.h>
+    #include <sys/types.h>
+    #include <unistd.h>
+#endif
+
     #include "core/auth/manual_confirm_authenticator.hpp"
     #include "core/auth/unattended_authenticator.hpp"
     #include "core/interface/icrypto.hpp"
@@ -112,6 +122,33 @@ LogLevel parse_log_level(const std::string& s) {
     return LogLevel::Info;
 }
 
+#ifndef _WIN32
+// Linux SIGTERM/SIGINT 优雅退出（交接遗留）：经典自管道惯例——信号处理器只做
+// 异步信号安全的 write 一字节，事件循环经 QSocketNotifier 收字节后回主线程
+// quit()（走 exec 返回 → 焦点链清理 → 析构 flush 的既有清理链）
+int g_sigterm_fds[2] = {-1, -1};
+
+extern "C" void scld_term_signal_handler(int) {
+    const char tick = 't';
+    const ssize_t rc = write(g_sigterm_fds[1], &tick, 1);
+    (void)rc;  // 写失败（pipe 满极端场景）只能放弃通知，处理器内不可用非安全 API
+}
+
+void install_sigterm_handlers() {
+    if (pipe(g_sigterm_fds) != 0) {
+        return;  // 管道创建失败：退化为默认终止行为（无优雅退出，SIGKILL 兜底）
+    }
+    ::fcntl(g_sigterm_fds[0], F_SETFL, O_NONBLOCK);  // 通知器排空读端不阻塞
+    ::fcntl(g_sigterm_fds[1], F_SETFL, O_NONBLOCK);  // 处理器内 write 永不阻塞
+    struct sigaction sa;
+    sa.sa_handler = scld_term_signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;  // 被信号打断的系统调用自动重启，不影响正常链路
+    ::sigaction(SIGTERM, &sa, nullptr);
+    ::sigaction(SIGINT, &sa, nullptr);  // Ctrl+C 同走优雅退出
+}
+#endif
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -134,15 +171,24 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "[qt:%s] %s\n", lv, msg.toLocal8Bit().constData());
         fflush(stderr);
     });
-    QQuickStyle::setStyle(QStringLiteral("Basic"));
-
-    // ---------------- 单实例锁（exe 名作 key：对照构建可并存，正式单 exe 即全局） ----------------
-    platform::SingleInstanceGuard guard;
-    if (!guard.acquire(QFileInfo(QApplication::applicationFilePath()).fileName())) {
-        fprintf(stderr, "[main] another instance running, wake request sent\n");
-        fflush(stderr);
-        return 0;
+#ifndef _WIN32
+    // ---------------- Linux 优雅退出接线（systemd/kill TERM；Windows 侧不动） ----------------
+    install_sigterm_handlers();
+    if (g_sigterm_fds[0] >= 0) {
+        auto* term_notifier = new QSocketNotifier(g_sigterm_fds[0],
+                                                  QSocketNotifier::Read, &app);
+        QObject::connect(term_notifier, &QSocketNotifier::activated, &app,
+                         [term_notifier] {
+                             term_notifier->setEnabled(false);  // 一次性消费，防重复 quit
+                             char drain[16];
+                             while (read(g_sigterm_fds[0], drain, sizeof(drain)) > 0) {
+                             }
+                             qInfo() << "收到终止信号，优雅退出";
+                             QCoreApplication::quit();
+                         });
     }
+#endif
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     // ---------------- 配置加载（Doc17：exe 旁 config.ini，缺失则默认值落盘） ----------------
     IniConfig ini(QApplication::applicationDirPath().toStdString() + "/config.ini");
@@ -153,6 +199,19 @@ int main(int argc, char* argv[]) {
     }
     else {
         cfg.load(ini);
+    }
+
+    // ---------------- 单实例锁（Doc19 §6.4 两档）：per_exe（默认）= exe 名作 key，
+    // QML/Widgets 对照构建可并存；global = 产品语义，key 固定 scToLocalDesk.app，
+    // QML/Widgets/headless 互斥，二次启动（含跨 exe）唤起首实例主窗后退出
+    platform::SingleInstanceGuard guard;
+    const QString si_key = cfg.single_instance == "global"
+        ? QStringLiteral("scToLocalDesk.app")
+        : QFileInfo(QApplication::applicationFilePath()).fileName();
+    if (!guard.acquire(si_key)) {
+        fprintf(stderr, "[main] another instance running, wake request sent\n");
+        fflush(stderr);
+        return 0;
     }
 
     // 语言装载（i18n Doc18 §7.3）：config [general] language（auto|zh|en），
